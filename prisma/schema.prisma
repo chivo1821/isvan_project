@@ -1,0 +1,325 @@
+// Fase 1 (solo UI): este schema define el modelo de datos / tipos para tipar los
+// datos mock en src/lib/mock-data/. No se ejecuta "migrate" ni "db push" en esta
+// fase — solo "prisma generate" para producir los tipos de TypeScript.
+
+// Fase 1: sin "url" en el datasource (Prisma 7 exige moverla a prisma.config.ts /
+// al constructor de PrismaClient, ver prisma.config.ts). No se usa en esta fase.
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------- Enums ----------
+
+enum RolUsuario {
+  ADMIN
+  VENTAS
+  INVENTARIO
+  DESPACHOS
+  APROBADOR
+  REPARTIDOR
+}
+
+enum CategoriaProducto {
+  HELADO
+  PIZZA
+}
+
+enum EstadoVenta {
+  PENDIENTE
+  EN_REVISION
+  APROBADA
+  RECHAZADA
+  DESPACHADA
+  ANULADA
+}
+
+enum AccionRevision {
+  APROBADA
+  RECHAZADA
+}
+
+enum EstadoFactura {
+  PENDIENTE
+  PAGADA
+  VENCIDA
+}
+
+enum EstadoDespacho {
+  BORRADOR
+  PENDIENTE_APROBACION
+  APROBADO
+  RECHAZADO
+  EN_PREPARACION
+  EN_TRANSITO
+  ENTREGADO
+  CANCELADO
+}
+
+enum TipoVehiculo {
+  CAMION_REFRIGERADO
+  CAMIONETA
+  MOTO
+}
+
+enum EstadoVehiculo {
+  FUNCIONAL
+  EN_MANTENIMIENTO
+  FUERA_DE_SERVICIO
+}
+
+// ---------- Usuarios ----------
+
+model Usuario {
+  id               String   @id @default(cuid())
+  nombre           String
+  email            String   @unique
+  rol              RolUsuario
+  avatarUrl        String?
+  activo           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  ventas           Venta[]
+  despachosCreados Despacho[]           @relation("DespachosCreadosPor")
+  aprobacionesDespacho DespachoAprobacion[]
+  revisionesVenta  VentaRevision[]
+}
+
+// ---------- Catalogo / Inventario ----------
+
+model Producto {
+  id                 String            @id @default(cuid())
+  sku                String            @unique
+  nombre             String
+  categoria          CategoriaProducto
+  subcategoria       String?
+  unidadMedida       String
+  requiereCadenaFrio Boolean           @default(true)
+  temperaturaMinC    Int?
+  temperaturaMaxC    Int?
+  precioUnitario     Decimal
+  imagenUrl          String?
+  activo             Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+
+  stocks        StockAlmacen[]
+  ventaItems    VentaItem[]
+  despachoItems DespachoItem[]
+}
+
+model Almacen {
+  id            String   @id @default(cuid())
+  nombre        String
+  tipo          String // "Centro de Distribucion" | "Planta" | "Tienda"
+  direccion     String
+  ciudad        String
+  lat           Float
+  lng           Float
+  esFrigorifico Boolean  @default(true)
+
+  stocks          StockAlmacen[]
+  despachosOrigen Despacho[]     @relation("DespachoOrigen")
+  vehiculos       Vehiculo[]
+}
+
+model StockAlmacen {
+  id          String   @id @default(cuid())
+  productoId  String
+  producto    Producto @relation(fields: [productoId], references: [id])
+  almacenId   String
+  almacen     Almacen  @relation(fields: [almacenId], references: [id])
+  cantidad    Int
+  stockMinimo Int
+
+  @@unique([productoId, almacenId])
+}
+
+// ---------- Tasa de cambio ----------
+
+// Historico de la tasa oficial del BCV (Bolivares por USD). Venta y Factura
+// guardan su propia copia ("congelada") de la tasa vigente el dia que se
+// registraron, para que el equivalente en Bs de un registro pasado no
+// cambie cuando la tasa fluctue — pero ambos montos (USD y Bs) siguen
+// mostrandose siempre juntos, ya que el USD es el valor estable para
+// comparar entre fechas.
+model TasaCambio {
+  id     String   @id @default(cuid())
+  fecha  DateTime @unique
+  tasa   Decimal // Bs por 1 USD
+}
+
+// ---------- Clientes y Facturas ----------
+
+model Cliente {
+  // El codigo del cliente es la llave primaria (no hay un id autogenerado aparte).
+  codigo    String   @id // ej. "CLI-0001"
+  nombre    String
+  tipo      String // "Tienda" | "Distribuidor" | "Consumidor final"
+  direccion String
+  ciudad    String
+  lat       Float?
+  lng       Float?
+  telefono  String?
+  email     String?
+
+  facturas  Factura[]
+  ventas    Venta[]
+  despachos Despacho[] @relation("DespachoDestino")
+}
+
+model Factura {
+  id               String        @id @default(cuid())
+  numero           String        @unique // ej. "F-00123"
+  clienteId        String
+  cliente          Cliente       @relation(fields: [clienteId], references: [codigo])
+  monto            Decimal
+  fechaEmision     DateTime
+  fechaVencimiento DateTime
+  estado           EstadoFactura @default(PENDIENTE)
+
+  // Tasa BCV (Bs por USD) vigente el dia de fechaEmision — "congelada" para
+  // que el equivalente en Bs de una factura vieja no cambie con el tiempo.
+  // Ver TasaCambio.
+  tasaBcv Decimal
+
+  // Datos de pago, capturados de forma opcional (no un historial normalizado
+  // de abonos). Lo que importa operativamente es si el pago reportado ya fue
+  // validado por alguien (pagoAprobado), no llevar un libro contable completo.
+  fechaPago    DateTime?
+  montoPagado  Decimal?
+  metodoPago   String?
+  pagoAprobado Boolean   @default(false)
+}
+
+// ---------- Ventas ----------
+
+model Venta {
+  id         String      @id @default(cuid())
+  numero     String      @unique // ej. "V-0001"
+  clienteId  String
+  cliente    Cliente     @relation(fields: [clienteId], references: [codigo])
+  vendedorId String
+  vendedor   Usuario     @relation(fields: [vendedorId], references: [id])
+  fecha      DateTime    @default(now())
+  estado     EstadoVenta @default(PENDIENTE)
+  total      Decimal // en USD — es la fuente de verdad para reportes/analisis
+
+  // Tasa BCV (Bs por USD) vigente el dia de "fecha" — se guarda ("congela")
+  // al registrar la venta para que el equivalente en Bs de una venta pasada
+  // no cambie cuando la tasa fluctue despues. total en USD sigue siendo el
+  // valor canonico para comparar ventas entre distintas fechas. Ver TasaCambio.
+  tasaBcv Decimal
+
+  items      VentaItem[]
+  revisiones VentaRevision[]
+  despachos  Despacho[]
+}
+
+model VentaItem {
+  id             String   @id @default(cuid())
+  ventaId        String
+  venta          Venta    @relation(fields: [ventaId], references: [id])
+  productoId     String
+  producto       Producto @relation(fields: [productoId], references: [id])
+  cantidad       Int
+  precioUnitario Decimal
+  subtotal       Decimal
+}
+
+// Auditoria de la aprobacion/rechazo de una VENTA que quedo EN_REVISION por
+// facturas pendientes del cliente. Independiente de DespachoAprobacion.
+model VentaRevision {
+  id         String         @id @default(cuid())
+  ventaId    String
+  venta      Venta          @relation(fields: [ventaId], references: [id])
+  usuarioId  String
+  usuario    Usuario        @relation(fields: [usuarioId], references: [id])
+  accion     AccionRevision
+  comentario String?
+  fecha      DateTime       @default(now())
+}
+
+// ---------- Flota ----------
+
+model Vehiculo {
+  id                 String         @id @default(cuid())
+  placa              String         @unique
+  tipo               TipoVehiculo
+  capacidadKg        Float
+  tieneRefrigeracion Boolean        @default(true)
+  estado             EstadoVehiculo @default(FUNCIONAL)
+  almacenBaseId      String
+  almacenBase        Almacen        @relation(fields: [almacenBaseId], references: [id])
+  conductorNombre    String?
+  ultimaRevision     DateTime?
+
+  despachos Despacho[]
+}
+
+// ---------- Despachos ----------
+
+model Despacho {
+  id                   String         @id @default(cuid())
+  numero               String         @unique // ej. "D-0001"
+  ventaId              String?
+  venta                Venta?         @relation(fields: [ventaId], references: [id])
+  origenId             String
+  origen               Almacen        @relation("DespachoOrigen", fields: [origenId], references: [id])
+  destinoClienteId     String
+  destinoCliente       Cliente        @relation("DespachoDestino", fields: [destinoClienteId], references: [codigo])
+  creadoPorId          String
+  creadoPor            Usuario        @relation("DespachosCreadosPor", fields: [creadoPorId], references: [id])
+  estado               EstadoDespacho @default(BORRADOR)
+  fechaCreacion        DateTime       @default(now())
+  fechaEstimadaEntrega DateTime?
+
+  vehiculoId       String?
+  vehiculo         Vehiculo? @relation(fields: [vehiculoId], references: [id])
+
+  // Resultado del optimizador de rutas (mock en esta fase).
+  distanciaEstimadaKm Float?
+  tiempoEstimadoMin   Int?
+  rutaCalculada       Boolean @default(false)
+
+  items        DespachoItem[]
+  aprobaciones DespachoAprobacion[]
+  ruta         RutaPunto[]
+}
+
+model DespachoItem {
+  id         String   @id @default(cuid())
+  despachoId String
+  despacho   Despacho @relation(fields: [despachoId], references: [id])
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+  cantidad   Int
+}
+
+// Auditoria de la aprobacion/rechazo del DESPACHO (independiente de VentaRevision).
+model DespachoAprobacion {
+  id         String         @id @default(cuid())
+  despachoId String
+  despacho   Despacho       @relation(fields: [despachoId], references: [id])
+  usuarioId  String
+  usuario    Usuario        @relation(fields: [usuarioId], references: [id])
+  accion     AccionRevision
+  comentario String?
+  fecha      DateTime       @default(now())
+}
+
+// Waypoints de una ruta: usados tanto para la ruta calculada por el optimizador
+// como para el seguimiento en vivo del despacho.
+model RutaPunto {
+  id          String   @id @default(cuid())
+  despachoId  String
+  despacho    Despacho @relation(fields: [despachoId], references: [id])
+  orden       Int
+  lat         Float
+  lng         Float
+  estado      String // "salida" | "en_ruta" | "parada" | "entregado"
+  timestamp   DateTime
+  descripcion String?
+}

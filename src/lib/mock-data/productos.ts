@@ -1,0 +1,23 @@
+// MOCK DATA — reemplazar en Fase 2 por datos reales desde el backend.
+import type { Producto } from "./types";
+
+export const productos: Producto[] = [
+  { id: "prod-1", sku: "HEL-PAL-001", nombre: "Paleta de Chocolate", categoria: "HELADO", subcategoria: "Paleta", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 0.75, activo: true },
+  { id: "prod-2", sku: "HEL-PAL-002", nombre: "Paleta de Fresa", categoria: "HELADO", subcategoria: "Paleta", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 0.75, activo: true },
+  { id: "prod-3", sku: "HEL-PAL-003", nombre: "Paleta de Coco", categoria: "HELADO", subcategoria: "Paleta", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 0.8, activo: true },
+  { id: "prod-4", sku: "HEL-TAR-001", nombre: "Tarrina Vainilla 1L", categoria: "HELADO", subcategoria: "Tarrina", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 4.5, activo: true },
+  { id: "prod-5", sku: "HEL-TAR-002", nombre: "Tarrina Chocolate 1L", categoria: "HELADO", subcategoria: "Tarrina", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 4.5, activo: true },
+  { id: "prod-6", sku: "HEL-TAR-003", nombre: "Tarrina Ron con Pasas 1L", categoria: "HELADO", subcategoria: "Tarrina", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 5.0, activo: true },
+  { id: "prod-7", sku: "HEL-TAR-004", nombre: "Tarrina Napolitana 1L", categoria: "HELADO", subcategoria: "Tarrina", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 4.75, activo: true },
+  { id: "prod-8", sku: "HEL-CON-001", nombre: "Cono Clásico", categoria: "HELADO", subcategoria: "Cono", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 1.2, activo: true },
+  { id: "prod-9", sku: "HEL-CON-002", nombre: "Cono Doble Chocolate", categoria: "HELADO", subcategoria: "Cono", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 1.5, activo: true },
+  { id: "prod-10", sku: "HEL-GAL-001", nombre: "Sandwich de Galleta", categoria: "HELADO", subcategoria: "Sandwich", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -12, precioUnitario: 1.3, activo: true },
+  { id: "prod-11", sku: "PIZ-MAR-001", nombre: "Pizza Margarita Familiar", categoria: "PIZZA", subcategoria: "Familiar", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 8.5, activo: true },
+  { id: "prod-12", sku: "PIZ-PEP-001", nombre: "Pizza Pepperoni Familiar", categoria: "PIZZA", subcategoria: "Familiar", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 9.0, activo: true },
+  { id: "prod-13", sku: "PIZ-HAW-001", nombre: "Pizza Hawaiana Familiar", categoria: "PIZZA", subcategoria: "Familiar", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 9.0, activo: true },
+  { id: "prod-14", sku: "PIZ-4QU-001", nombre: "Pizza 4 Quesos Familiar", categoria: "PIZZA", subcategoria: "Familiar", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 9.5, activo: true },
+  { id: "prod-15", sku: "PIZ-VEG-001", nombre: "Pizza Vegetariana Mediana", categoria: "PIZZA", subcategoria: "Mediana", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 6.5, activo: true },
+  { id: "prod-16", sku: "PIZ-PEP-002", nombre: "Pizza Pepperoni Personal", categoria: "PIZZA", subcategoria: "Personal", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 3.5, activo: true },
+  { id: "prod-17", sku: "PIZ-MAR-002", nombre: "Pizza Margarita Personal", categoria: "PIZZA", subcategoria: "Personal", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 3.25, activo: true },
+  { id: "prod-18", sku: "PIZ-CAR-001", nombre: "Pizza Carnívora Familiar", categoria: "PIZZA", subcategoria: "Familiar", unidadMedida: "unidad", requiereCadenaFrio: true, temperaturaMinC: -18, temperaturaMaxC: -15, precioUnitario: 10.0, activo: true },
+];

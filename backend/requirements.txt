@@ -1,0 +1,7 @@
+# Fase 2 — listado de referencia, no instalado ni usado en la Fase 1 (solo UI)
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic
+python-dotenv
