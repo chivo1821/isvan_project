@@ -7,6 +7,7 @@ import {
   IceCreamConeIcon,
   LayoutDashboardIcon,
   MapPinnedIcon,
+  NavigationIcon,
   PackageIcon,
   ShoppingCartIcon,
   TruckIcon,
@@ -72,7 +73,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Seguimiento",
-    items: [{ label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon }],
+    items: [
+      { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon },
+      { label: "Despachador", href: "/despachador", icon: NavigationIcon },
+    ],
   },
   {
     label: "Administración",

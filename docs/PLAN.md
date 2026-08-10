@@ -50,7 +50,8 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 | **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | `POST /despachos` genera un despacho real desde una venta aprobada; aprobar/rechazar (`POST /despachos/{id}/aprobacion`) independiente de la revisión de venta |
 | **Ruta óptima + sugerencia de vehículo** | dentro de `/despachos/[id]` | "Calcular ruta óptima" previsualiza con la lógica portada de `network_analysis/page_1`; "Confirmar ruta" persiste de verdad (`POST /despachos/{id}/ruta`, guarda `RutaPunto`). Sugerencia de vehículo y "Asignar" reales (`GET`/`POST /despachos/{id}/vehiculos-sugeridos`, `/asignar-vehiculo`) |
 | **Flota** | `/flota`, `/flota/[id]` | "Agregar vehículo" (`POST /vehiculos`) y cambio de estado (`PATCH /vehiculos/{id}/estado`) persisten |
-| **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con despachos activos reales, línea de tiempo desde `RutaPunto` |
+| **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con despachos `APROBADO`/`EN_TRANSITO` (aprobados listos para salir + en camino), línea de tiempo desde `RutaPunto` |
+| **Despachador** | `/despachador`, `/despachador/[id]` | Vista dedicada para el chofer: sus despachos `APROBADO`/`EN_TRANSITO`, mapa grande con la ruta real, botones "Salí del almacén" (`POST /despachos/{id}/iniciar`) y "Marcar como entregado" (`POST /despachos/{id}/entregar`) |
 | **Usuarios** | `/usuarios` | "Agregar usuario" (`POST /usuarios`) persiste |
 
 ## Historial de decisiones y correcciones
@@ -102,6 +103,30 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
     etc.) pero ahora son `async` y hacen `fetch` a la API — el resto del
     código (páginas, componentes) casi no tuvo que cambiar su lógica, solo
     agregar `await`.
+14. **Una venta nueva se bloquea (409) si el cliente tiene un ciclo abierto**:
+    se detectó que un cliente podía acumular ventas `APROBADA` sin límite
+    aunque la anterior no se hubiera entregado. Ahora `POST /ventas` revisa
+    si el cliente tiene una `Venta` `APROBADA` cuyo `Despacho` (si existe) no
+    esté en `ENTREGADO`/`RECHAZADO`, y si es así rechaza la venta nueva hasta
+    que ese ciclo se cierre. Ver `backend/app/api/ventas.py`.
+15. **Módulo Despachador + cierre real del ciclo del despacho**: antes nada
+    transicionaba un despacho de `APROBADO` a `EN_TRANSITO`/`ENTREGADO`, por
+    lo que Seguimiento nunca mostraba despachos recién aprobados y el ciclo
+    de la venta jamás se cerraba. Se agregaron `POST /despachos/{id}/iniciar`
+    (`APROBADO`→`EN_TRANSITO`) y `POST /despachos/{id}/entregar`
+    (`EN_TRANSITO`→`ENTREGADO`, también marca el último `RutaPunto` como
+    `entregado`), expuestos en el nuevo módulo `/despachador` para que el
+    chofer los dispare. Seguimiento se actualizó para mostrar
+    `APROBADO`+`EN_TRANSITO` (antes solo `EN_TRANSITO`/`EN_PREPARACION`, un
+    estado que nunca se usaba).
+16. **Mapas: `fitBounds` real en vez de `zoom` fijo adivinado** — el zoom
+    fijo hacía que rutas medianas/largas se dibujaran fuera del contenedor
+    visible. `src/components/map/leaflet-map.tsx` ahora acepta un prop
+    `bounds` y encuadra todos los puntos automáticamente (con reintento si el
+    contenedor todavía mide cero al montar). También se corrigió
+    `RouteOptimizerSection` para restaurar la ruta ya persistida de un
+    despacho (antes solo reconocía 2 despachos de ejemplo de Fase 1 via un
+    diccionario mock).
 
 ## Modelo de datos
 

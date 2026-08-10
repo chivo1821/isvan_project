@@ -22,12 +22,18 @@ const TONE_POR_ESTADO: Record<RutaPunto["estado"], Tone> = {
   entregado: "success",
 };
 
-export function SeguimientoDetalleMap({ ruta }: { ruta: RutaPunto[] }) {
+export function SeguimientoDetalleMap({
+  ruta,
+  className = "h-[26rem]",
+}: {
+  ruta: RutaPunto[];
+  className?: string;
+}) {
   const path: [number, number][] = ruta.map((p) => [p.lat, p.lng]);
   const center = path[Math.floor(path.length / 2)] ?? [10.16, -68.0077];
 
   return (
-    <LeafletMap center={center} zoom={9} className="h-[26rem]">
+    <LeafletMap center={center} zoom={9} bounds={path.length > 1 ? path : undefined} className={className}>
       {path.length > 1 && <RoutePolyline positions={path} />}
       {ruta.map((punto) => (
         <DespachoMarker key={punto.id} position={[punto.lat, punto.lng]} tone={TONE_POR_ESTADO[punto.estado]}>

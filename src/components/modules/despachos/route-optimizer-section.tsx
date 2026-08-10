@@ -9,7 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { geoJsonToLatLngPath } from "@/lib/route-analysis/common";
 import { calcularMejorRuta, type RutaResultado } from "@/lib/route-analysis/find-path";
-import { getMejorRutaByDespachoId, type DespachoConDetalle } from "@/lib/mock-data";
+import type { DespachoConDetalle } from "@/lib/mock-data";
+
+// Reconstruye el resultado (misma forma que calcularMejorRuta) a partir de
+// los RutaPunto ya persistidos, en vez de un mock local de 2 despachos de
+// ejemplo — asi cualquier despacho con ruta confirmada la restaura al
+// recargar la pagina, no solo los de Fase 1.
+function rutaDesdeDespachoPersistido(despacho: DespachoConDetalle): RutaResultado | null {
+  if (!despacho.rutaCalculada || despacho.ruta.length === 0) return null;
+  return {
+    geometry: despacho.ruta.map((p) => [p.lng, p.lat]),
+    distanciaKm: despacho.distanciaEstimadaKm ?? 0,
+    tiempoMin: despacho.tiempoEstimadoMin ?? 0,
+  };
+}
 
 type RutaCalculadaApi = {
   distanciaEstimadaKm: number;
@@ -32,9 +45,7 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
   const [calculando, setCalculando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [confirmada, setConfirmada] = useState(despacho.rutaCalculada);
-  const [ruta, setRuta] = useState<RutaResultado | null>(() =>
-    despacho.rutaCalculada ? getMejorRutaByDespachoId(despacho.id) ?? null : null
-  );
+  const [ruta, setRuta] = useState<RutaResultado | null>(() => rutaDesdeDespachoPersistido(despacho));
 
   const destino = despacho.destinoCliente;
   const tieneCoordenadas = destino.lat != null && destino.lng != null;
@@ -73,6 +84,9 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
 
   const path = ruta ? geoJsonToLatLngPath(ruta.geometry) : null;
   const center: [number, number] = path ? path[Math.floor(path.length / 2)] : [despacho.origen.lat, despacho.origen.lng];
+  const bounds: [number, number][] | undefined = path
+    ? [[despacho.origen.lat, despacho.origen.lng], [destino.lat!, destino.lng!], ...path]
+    : undefined;
 
   return (
     <Card>
@@ -101,7 +115,7 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
           </div>
         ) : (
           <>
-            <LeafletMap center={center} zoom={path && path.length > 2 && ruta.distanciaKm > 100 ? 7 : 12} className="h-72">
+            <LeafletMap center={center} zoom={12} bounds={bounds} className="h-72">
               <DespachoMarker position={[despacho.origen.lat, despacho.origen.lng]} tone="primary">
                 {despacho.origen.nombre}
               </DespachoMarker>

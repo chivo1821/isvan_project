@@ -274,10 +274,6 @@ export async function getRutaByDespachoId(despachoId: string): Promise<RutaPunto
   return rutaPuntos.filter((r) => r.despachoId === despachoId).sort((a, b) => a.orden - b.orden);
 }
 
-export function getMejorRutaByDespachoId(despachoId: string) {
-  return rutasOptimizadas[despachoId];
-}
-
 // Despachos que ocupan un vehiculo en este momento (no liberado todavia).
 const ESTADOS_DESPACHO_ACTIVOS = ["PENDIENTE_APROBACION", "APROBADO", "EN_PREPARACION", "EN_TRANSITO"] as const;
 

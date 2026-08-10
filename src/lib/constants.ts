@@ -115,11 +115,19 @@ function toLocalDate(value: Date | string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
 }
 
+// Zona horaria fija (no la del servidor/navegador): sin esto, el render del
+// servidor (Node, timezone de la maquina) y el del navegador (timezone local
+// del usuario) pueden formatear la misma fecha distinto y romper la
+// hidratacion de React. Ademas es lo correcto para una empresa venezolana,
+// sin importar donde corra el servidor.
+const TIMEZONE = "America/Caracas";
+
 export function formatDate(value: Date | string) {
   return new Intl.DateTimeFormat("es-VE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: TIMEZONE,
   }).format(toLocalDate(value));
 }
 
@@ -130,5 +138,6 @@ export function formatDateTime(value: Date | string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: TIMEZONE,
   }).format(toLocalDate(value));
 }

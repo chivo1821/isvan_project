@@ -53,6 +53,21 @@ def crear_venta(data: VentaCreate):
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
+            'SELECT 1 FROM "Venta" v '
+            'LEFT JOIN "Despacho" d ON d."ventaId" = v."id" '
+            'WHERE v."clienteId" = %s AND v."estado" = \'APROBADA\' '
+            'AND (d."id" IS NULL OR d."estado" NOT IN (\'ENTREGADO\', \'RECHAZADO\')) '
+            "LIMIT 1",
+            (data.clienteId,),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                409,
+                "El cliente tiene una venta aprobada cuyo despacho todavia no fue entregado; "
+                "no se puede registrar una venta nueva hasta cerrar ese ciclo.",
+            )
+
+        cur.execute(
             'SELECT 1 FROM "Factura" WHERE "clienteId" = %s AND "estado" = ANY(%s) LIMIT 1',
             (data.clienteId, list(FACTURA_ESTADOS_DEUDA)),
         )

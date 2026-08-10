@@ -87,6 +87,17 @@ npm run dev:all
 (o dos terminales: `npm run dev` y `npm run dev:api`). El frontend espera la
 API en `NEXT_PUBLIC_API_URL` (`.env`, default `http://localhost:8000`).
 
+Para cerrar todo (Next.js + uvicorn) al terminar de trabajar:
+
+```bash
+npm run stop
+```
+
+Cierra por puerto (3000/8000) y, si `uvicorn --reload` dejó un proceso hijo
+huérfano (pasa a veces en Windows con `multiprocessing`), cae de respaldo a
+cerrar los procesos `python`/`node` restantes. Ver
+[`scripts/stop-dev.ps1`](../scripts/stop-dev.ps1).
+
 ## Fuera de alcance (todavía)
 
 - Autenticación/RBAC — no hay login; las acciones usan el usuario mock fijo

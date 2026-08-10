@@ -187,3 +187,52 @@ def asignar_vehiculo(despacho_id: str, data: AsignarVehiculoRequest):
             raise HTTPException(404, "Despacho no encontrado")
         conn.commit()
         return _con_items(cur, row)
+
+
+@router.post("/{despacho_id}/iniciar", response_model=Despacho)
+def iniciar_ruta(despacho_id: str):
+    """El despachador marca que salio del almacen con el despacho."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(404, "Despacho no encontrado")
+        if despacho["estado"] != "APROBADO":
+            raise HTTPException(400, "Solo se puede iniciar un despacho aprobado")
+        if not despacho["vehiculoId"]:
+            raise HTTPException(400, "Asigna un vehiculo antes de iniciar la ruta")
+
+        cur.execute(
+            'UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "id" = %s RETURNING *',
+            (despacho_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _con_items(cur, row)
+
+
+@router.post("/{despacho_id}/entregar", response_model=Despacho)
+def marcar_entregado(despacho_id: str):
+    """El despachador marca que el despacho llego a su destino, cerrando el ciclo de la venta."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(404, "Despacho no encontrado")
+        if despacho["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "Solo se puede marcar como entregado un despacho en transito")
+
+        cur.execute(
+            'UPDATE "Despacho" SET "estado" = \'ENTREGADO\' WHERE "id" = %s RETURNING *',
+            (despacho_id,),
+        )
+        row = cur.fetchone()
+
+        cur.execute(
+            'UPDATE "RutaPunto" SET "estado" = \'entregado\' WHERE "despachoId" = %s '
+            'AND "orden" = (SELECT MAX("orden") FROM "RutaPunto" WHERE "despachoId" = %s)',
+            (despacho_id, despacho_id),
+        )
+
+        conn.commit()
+        return _con_items(cur, row)

@@ -7,7 +7,10 @@ import {
 import { ESTADO_DESPACHO_META } from "@/lib/constants";
 import { getDespachosConDetalle } from "@/lib/mock-data";
 
-const ESTADOS_ACTIVOS = ["EN_TRANSITO", "EN_PREPARACION"] as const;
+// Un despacho queda visible en Seguimiento desde que se aprueba (listo para
+// salir del almacen) hasta que el despachador lo marca como entregado — ver
+// POST /despachos/{id}/iniciar y /entregar.
+const ESTADOS_ACTIVOS = ["APROBADO", "EN_TRANSITO"] as const;
 
 export default async function SeguimientoPage() {
   const despachos = await getDespachosConDetalle();
@@ -29,11 +32,11 @@ export default async function SeguimientoPage() {
     <div className="space-y-6">
       <PageHeader
         title="Seguimiento"
-        subtitle="Ubicación de los despachos activos (en preparación y en tránsito)"
+        subtitle="Ubicación de los despachos activos (aprobados listos para salir y en tránsito)"
       />
       <div className="flex flex-wrap gap-2">
+        <StatusBadge {...ESTADO_DESPACHO_META.APROBADO} />
         <StatusBadge {...ESTADO_DESPACHO_META.EN_TRANSITO} />
-        <StatusBadge {...ESTADO_DESPACHO_META.EN_PREPARACION} />
       </div>
       <SeguimientoOverview despachos={puntos} center={[10.3, -67.8]} />
     </div>

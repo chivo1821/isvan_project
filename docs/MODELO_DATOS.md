@@ -223,6 +223,12 @@ generado puede convertirse en un `Despacho` (ver wizard "Nuevo despacho").
 `total` es siempre en USD (valor canónico para reportes); `tasaBcv` congela
 la tasa del día para mostrar el Bs histórico correcto.
 
+**Un cliente no puede tener dos ciclos de venta abiertos a la vez**:
+`POST /ventas` rechaza (409) una venta nueva si el cliente ya tiene una
+`Venta` `APROBADA` cuyo `Despacho` asociado (si existe) todavía no llegó a
+`ENTREGADO` (ni fue `RECHAZADO`). El ciclo se cierra cuando el despachador
+marca el despacho como entregado desde `/despachador` — ver "Despacho" abajo.
+
 ### VentaItem
 Línea de producto dentro de una venta, con el precio "congelado" al momento de
 vender (para que cambios futuros de precio no alteren ventas históricas).
@@ -247,6 +253,17 @@ casos históricos/manuales). Tiene su **propio** flujo de aprobación
 del optimizador de rutas (`POST /despachos/{id}/ruta`) — persistido de
 verdad, aunque el cálculo en sí sigue siendo una síntesis mock (sin SuperMap
 iServer real todavía, ver `backend/app/services/route_analysis.py`).
+
+El flujo completo de `estado` en uso hoy es:
+`PENDIENTE_APROBACION` → (aprobación) → `APROBADO` → (el despachador marca
+"Salí del almacén" en `/despachador`, `POST /despachos/{id}/iniciar`, exige
+`vehiculoId` asignado) → `EN_TRANSITO` → (el despachador marca "Marcar como
+entregado", `POST /despachos/{id}/entregar`) → `ENTREGADO`. Un despacho es
+visible en Seguimiento (`/seguimiento`) mientras esté en `APROBADO` o
+`EN_TRANSITO`; deja de aparecer al llegar a `ENTREGADO`, momento en el que
+también se cierra el ciclo de la `Venta` de origen (ver arriba). Los estados
+`BORRADOR`, `EN_PREPARACION` y `CANCELADO` existen en el enum pero ningún
+flujo actual los usa todavía.
 
 ### DespachoItem
 Línea de producto dentro de un despacho (copiada de los items de la venta
