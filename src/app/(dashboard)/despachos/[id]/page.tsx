@@ -18,7 +18,7 @@ import { getDespachoConDetalle } from "@/lib/mock-data";
 
 export default async function DespachoDetallePage({ params }: PageProps<"/despachos/[id]">) {
   const { id } = await params;
-  const despacho = getDespachoConDetalle(id);
+  const despacho = await getDespachoConDetalle(id);
   if (!despacho) notFound();
 
   return (

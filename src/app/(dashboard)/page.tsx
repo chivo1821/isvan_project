@@ -41,18 +41,23 @@ import {
 
 const HOY = "2026-08-07";
 
-export default function DashboardPage() {
-  const ventas = getVentasConDetalle();
-  const ventasHoy = ventas.filter((v) => v.fecha === HOY);
+export default async function DashboardPage() {
+  const [ventas, ventasEnRevision, productosBajoStock, despachosPendientes, despachosEnTransito, vehiculosDisponibles] =
+    await Promise.all([
+      getVentasConDetalle(),
+      getVentasEnRevision(),
+      getProductosBajoStock(),
+      getDespachosPendientesAprobacion(),
+      getDespachosEnTransito(),
+      getVehiculosDisponibles(),
+    ]);
+
+  // La API devuelve "fecha" como timestamp ISO completo.
+  const ventasHoy = ventas.filter((v) => v.fecha.slice(0, 10) === HOY);
   const totalVentasHoy = ventasHoy.reduce((sum, v) => sum + v.total, 0);
   // Suma el Bs de cada venta con su propia tasa (todas del mismo dia, pero
   // consistente con el resto de la app donde cada venta usa su tasaBcv).
   const totalVentasHoyBs = ventasHoy.reduce((sum, v) => sum + convertirUsdABs(v.total, v.tasaBcv), 0);
-  const ventasEnRevision = getVentasEnRevision();
-  const productosBajoStock = getProductosBajoStock();
-  const despachosPendientes = getDespachosPendientesAprobacion();
-  const despachosEnTransito = getDespachosEnTransito();
-  const vehiculosDisponibles = getVehiculosDisponibles();
 
   const ventasRecientes = [...ventas]
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))

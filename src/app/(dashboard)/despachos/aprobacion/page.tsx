@@ -11,10 +11,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/constants";
-import { getDespachosPendientesAprobacion } from "@/lib/mock-data";
+import { getDespachosPendientesAprobacion, getUsuarioActualRaw } from "@/lib/mock-data";
 
-export default function AprobacionDespachosPage() {
-  const despachos = getDespachosPendientesAprobacion();
+export default async function AprobacionDespachosPage() {
+  const [despachos, usuarioActual] = await Promise.all([getDespachosPendientesAprobacion(), getUsuarioActualRaw()]);
 
   return (
     <div className="space-y-6">
@@ -58,8 +58,10 @@ export default function AprobacionDespachosPage() {
                     <TableCell className="text-right">
                       <div className="flex justify-end">
                         <AprobacionDespachoActions
+                          despachoId={d.id}
                           despachoNumero={d.numero}
                           destinoNombre={d.destinoCliente.nombre}
+                          usuarioId={usuarioActual.id}
                           size="sm"
                         />
                       </div>

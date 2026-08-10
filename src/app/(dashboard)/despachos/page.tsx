@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 import { DespachosTable } from "@/components/modules/despachos/despachos-table";
 import { getDespachosConDetalle, getDespachosPendientesAprobacion } from "@/lib/mock-data";
 
-export default function DespachosPage() {
-  const despachos = getDespachosConDetalle().sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
-  const pendientes = getDespachosPendientesAprobacion().length;
+export default async function DespachosPage() {
+  const [despachosSinOrdenar, pendientesLista] = await Promise.all([
+    getDespachosConDetalle(),
+    getDespachosPendientesAprobacion(),
+  ]);
+  const despachos = despachosSinOrdenar.sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
+  const pendientes = pendientesLista.length;
 
   return (
     <div className="space-y-6">

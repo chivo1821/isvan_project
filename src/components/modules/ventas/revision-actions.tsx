@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,24 +19,50 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-export function RevisionActions({ ventaNumero, clienteNombre }: { ventaNumero: string; clienteNombre: string }) {
+export function RevisionActions({
+  ventaId,
+  ventaNumero,
+  clienteNombre,
+  usuarioId,
+}: {
+  ventaId: string;
+  ventaNumero: string;
+  clienteNombre: string;
+  usuarioId: string;
+}) {
   const router = useRouter();
   const [comentario, setComentario] = useState("");
   const [open, setOpen] = useState<"aprobar" | "rechazar" | null>(null);
+  const [enviando, setEnviando] = useState(false);
 
-  function confirmar(accion: "aprobar" | "rechazar") {
-    if (accion === "aprobar") {
-      toast.success(`Venta ${ventaNumero} aprobada`, {
-        description: `Se generará el despacho para ${clienteNombre}. (Simulación: no se persiste todavía.)`,
+  async function confirmar(accion: "aprobar" | "rechazar") {
+    setEnviando(true);
+    try {
+      await apiPost(`/ventas/${ventaId}/revision`, {
+        usuarioId,
+        accion: accion === "aprobar" ? "APROBADA" : "RECHAZADA",
+        comentario: comentario.trim() || undefined,
       });
-    } else {
-      toast.error(`Venta ${ventaNumero} rechazada`, {
-        description: `No se generará despacho para ${clienteNombre}. (Simulación: no se persiste todavía.)`,
+      if (accion === "aprobar") {
+        toast.success(`Venta ${ventaNumero} aprobada`, {
+          description: `Ya se puede generar el despacho para ${clienteNombre} desde "Nuevo despacho".`,
+        });
+      } else {
+        toast.error(`Venta ${ventaNumero} rechazada`, {
+          description: `No se generará despacho para ${clienteNombre}.`,
+        });
+      }
+      setOpen(null);
+      setComentario("");
+      router.push("/ventas/revision");
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo registrar la revisión", {
+        description: err instanceof Error ? err.message : undefined,
       });
+    } finally {
+      setEnviando(false);
     }
-    setOpen(null);
-    setComentario("");
-    router.push("/ventas/revision");
   }
 
   return (
@@ -67,7 +94,7 @@ export function RevisionActions({ ventaNumero, clienteNombre }: { ventaNumero: s
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={() => confirmar("rechazar")}>
+            <Button variant="destructive" disabled={enviando} onClick={() => confirmar("rechazar")}>
               Confirmar rechazo
             </Button>
           </DialogFooter>
@@ -85,7 +112,8 @@ export function RevisionActions({ ventaNumero, clienteNombre }: { ventaNumero: s
           <DialogHeader>
             <DialogTitle>Aprobar {ventaNumero}</DialogTitle>
             <DialogDescription>
-              Al aprobar, se generará el despacho para {clienteNombre} pese a las facturas pendientes.
+              Al aprobar, la venta queda lista para generar despacho para {clienteNombre} pese a las facturas
+              pendientes.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -101,7 +129,9 @@ export function RevisionActions({ ventaNumero, clienteNombre }: { ventaNumero: s
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button onClick={() => confirmar("aprobar")}>Confirmar aprobación</Button>
+            <Button disabled={enviando} onClick={() => confirmar("aprobar")}>
+              Confirmar aprobación
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

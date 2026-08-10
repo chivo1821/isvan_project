@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatBs, formatCurrency, formatDualCurrency } from "@/lib/constants";
-import { clienteTieneFacturaPendiente, clientes, getFacturasPendientesByCliente, productos } from "@/lib/mock-data";
+import type { Cliente, Factura, Producto, Venta } from "@/lib/mock-data";
 
 const ventaSchema = z.object({
   clienteId: z.string().min(1, "Selecciona un cliente"),
@@ -35,7 +36,17 @@ const ventaSchema = z.object({
 
 type VentaFormValues = z.infer<typeof ventaSchema>;
 
-export function NuevaVentaForm() {
+export function NuevaVentaForm({
+  clientes,
+  productos,
+  facturas,
+  vendedorId,
+}: {
+  clientes: Cliente[];
+  productos: Producto[];
+  facturas: Factura[];
+  vendedorId: string;
+}) {
   const router = useRouter();
   const {
     control,
@@ -52,7 +63,9 @@ export function NuevaVentaForm() {
   const clienteId = watch("clienteId");
   const items = watch("items");
 
-  const facturasPendientesCliente = clienteId ? getFacturasPendientesByCliente(clienteId) : [];
+  const facturasPendientesCliente = clienteId
+    ? facturas.filter((f) => f.clienteId === clienteId && (f.estado === "PENDIENTE" || f.estado === "VENCIDA"))
+    : [];
 
   const total = items.reduce((sum, item) => {
     const producto = productos.find((p) => p.id === item.productoId);
@@ -60,21 +73,31 @@ export function NuevaVentaForm() {
     return sum + (producto ? producto.precioUnitario * cantidad : 0);
   }, 0);
 
-  function onSubmit(values: VentaFormValues) {
-    const tieneDeuda = clienteTieneFacturaPendiente(values.clienteId);
+  async function onSubmit(values: VentaFormValues) {
     const cliente = clientes.find((c) => c.codigo === values.clienteId);
-
-    if (tieneDeuda) {
-      toast.warning("Venta enviada a revisión", {
-        description: `${cliente?.nombre} tiene facturas pendientes o vencidas. Un aprobador debe revisar esta venta antes de generar el despacho. (Simulación: no se persiste todavía — ver el flujo real en "Revisión de ventas".)`,
+    try {
+      const venta = await apiPost<Venta>("/ventas", {
+        clienteId: values.clienteId,
+        vendedorId,
+        items: values.items,
       });
-    } else {
-      toast.success("Venta aprobada automáticamente", {
-        description: `${cliente?.nombre} no tiene facturas pendientes. En un sistema conectado, el despacho se generaría de inmediato. (Simulación: no se persiste todavía.)`,
+
+      if (venta.estado === "EN_REVISION") {
+        toast.warning("Venta enviada a revisión", {
+          description: `${cliente?.nombre} tiene facturas pendientes o vencidas. Un aprobador debe revisar esta venta antes de generar el despacho.`,
+        });
+      } else {
+        toast.success("Venta aprobada automáticamente", {
+          description: `${cliente?.nombre} no tiene facturas pendientes. Ya se puede generar el despacho desde "Nuevo despacho".`,
+        });
+      }
+      router.push(`/ventas/${venta.id}`);
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo registrar la venta", {
+        description: err instanceof Error ? err.message : undefined,
       });
     }
-
-    router.push("/ventas");
   }
 
   return (

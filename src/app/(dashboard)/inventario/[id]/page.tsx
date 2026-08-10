@@ -4,14 +4,14 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { CATEGORIA_PRODUCTO_META, formatDualCurrency } from "@/lib/constants";
-import { getAlmacenById, getProductoById, getStockByProducto } from "@/lib/mock-data";
+import { getAlmacenesRaw, getProductoById, getStockByProducto } from "@/lib/mock-data";
 
 export default async function ProductoDetallePage({ params }: PageProps<"/inventario/[id]">) {
   const { id } = await params;
-  const producto = getProductoById(id);
+  const producto = await getProductoById(id);
   if (!producto) notFound();
 
-  const stocks = getStockByProducto(producto.id);
+  const [stocks, almacenes] = await Promise.all([getStockByProducto(producto.id), getAlmacenesRaw()]);
   const stockTotal = stocks.reduce((sum, s) => sum + s.cantidad, 0);
 
   return (
@@ -49,7 +49,7 @@ export default async function ProductoDetallePage({ params }: PageProps<"/invent
           </CardHeader>
           <CardContent className="space-y-4">
             {stocks.map((s) => {
-              const almacen = getAlmacenById(s.almacenId);
+              const almacen = almacenes.find((a) => a.id === s.almacenId);
               const porcentaje = Math.min(100, Math.round((s.cantidad / (s.stockMinimo * 2)) * 100));
               const bajo = s.cantidad < s.stockMinimo;
               return (

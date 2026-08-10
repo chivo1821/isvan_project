@@ -16,11 +16,14 @@ import { getAlmacenById, getDespachosByVehiculoId, getVehiculoById } from "@/lib
 
 export default async function VehiculoDetallePage({ params }: PageProps<"/flota/[id]">) {
   const { id } = await params;
-  const vehiculo = getVehiculoById(id);
+  const vehiculo = await getVehiculoById(id);
   if (!vehiculo) notFound();
 
-  const almacenBase = getAlmacenById(vehiculo.almacenBaseId);
-  const historial = getDespachosByVehiculoId(vehiculo.id).sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
+  const [almacenBase, historialSinOrdenar] = await Promise.all([
+    getAlmacenById(vehiculo.almacenBaseId),
+    getDespachosByVehiculoId(vehiculo.id),
+  ]);
+  const historial = historialSinOrdenar.sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
 
   return (
     <div className="space-y-6">

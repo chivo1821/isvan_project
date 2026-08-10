@@ -1,9 +1,10 @@
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { usuarioActual } from "@/lib/mock-data/usuarios";
+import { getUsuarioActualRaw } from "@/lib/mock-data/usuarios";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const usuarioActual = await getUsuarioActualRaw();
   return (
     <SidebarProvider>
       <AppSidebar />

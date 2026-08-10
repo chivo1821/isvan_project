@@ -26,10 +26,10 @@ import { getFacturasByCliente, getVentaConDetalle } from "@/lib/mock-data";
 
 export default async function VentaDetallePage({ params }: PageProps<"/ventas/[id]">) {
   const { id } = await params;
-  const venta = getVentaConDetalle(id);
+  const venta = await getVentaConDetalle(id);
   if (!venta) notFound();
 
-  const facturas = getFacturasByCliente(venta.cliente.codigo);
+  const facturas = await getFacturasByCliente(venta.cliente.codigo);
   const facturasPendientes = facturas.filter((f) => f.estado === "PENDIENTE" || f.estado === "VENCIDA");
 
   return (

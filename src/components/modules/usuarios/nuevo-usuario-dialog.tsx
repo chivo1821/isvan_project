@@ -6,6 +6,7 @@ import { PlusIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,9 +43,6 @@ const usuarioSchema = z.object({
 
 type UsuarioFormValues = z.infer<typeof usuarioSchema>;
 
-// Contador simple para ids de usuarios agregados en esta sesion (no persisten).
-let siguienteIdUsuario = 1;
-
 export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => void }) {
   const [open, setOpen] = useState(false);
   const {
@@ -52,27 +50,24 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<UsuarioFormValues>({
     resolver: zodResolver(usuarioSchema),
     defaultValues: { nombre: "", email: "", rol: undefined },
   });
 
-  function onSubmit(values: UsuarioFormValues) {
-    const usuario: Usuario = {
-      id: `usr-local-${siguienteIdUsuario++}`,
-      nombre: values.nombre,
-      email: values.email,
-      rol: values.rol,
-      avatarUrl: null,
-      activo: true,
-    };
-    onAdd(usuario);
-    toast.success(`Usuario ${usuario.nombre} agregado`, {
-      description: "(Simulación: no se persiste todavía — se perderá al recargar la página.)",
-    });
-    reset();
-    setOpen(false);
+  async function onSubmit(values: UsuarioFormValues) {
+    try {
+      const usuario = await apiPost<Usuario>("/usuarios", values);
+      onAdd(usuario);
+      toast.success(`Usuario ${usuario.nombre} agregado`);
+      reset();
+      setOpen(false);
+    } catch (err) {
+      toast.error("No se pudo agregar el usuario", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
   }
 
   return (
@@ -139,7 +134,9 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
                 Cancelar
               </Button>
             </DialogClose>
-            <Button type="submit">Agregar usuario</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              Agregar usuario
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

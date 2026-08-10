@@ -21,14 +21,17 @@ import {
   formatCurrency,
   formatDate,
 } from "@/lib/constants";
-import { getFacturasPendientesByCliente, getVentaConDetalle } from "@/lib/mock-data";
+import { getFacturasPendientesByCliente, getUsuarioActualRaw, getVentaConDetalle } from "@/lib/mock-data";
 
 export default async function RevisionVentaDetallePage({ params }: PageProps<"/ventas/revision/[id]">) {
   const { id } = await params;
-  const venta = getVentaConDetalle(id);
+  const venta = await getVentaConDetalle(id);
   if (!venta) notFound();
 
-  const facturasPendientes = getFacturasPendientesByCliente(venta.cliente.codigo);
+  const [facturasPendientes, usuarioActual] = await Promise.all([
+    getFacturasPendientesByCliente(venta.cliente.codigo),
+    getUsuarioActualRaw(),
+  ]);
   const montoAdeudado = facturasPendientes.reduce((sum, f) => sum + f.monto, 0);
   const montoAdeudadoBs = facturasPendientes.reduce((sum, f) => sum + convertirUsdABs(f.monto, f.tasaBcv), 0);
 
@@ -120,7 +123,7 @@ export default async function RevisionVentaDetallePage({ params }: PageProps<"/v
             Ver venta completa →
           </Link>
         </div>
-        <RevisionActions ventaNumero={venta.numero} clienteNombre={venta.cliente.nombre} />
+        <RevisionActions ventaId={venta.id} ventaNumero={venta.numero} clienteNombre={venta.cliente.nombre} usuarioId={usuarioActual.id} />
       </div>
     </div>
   );

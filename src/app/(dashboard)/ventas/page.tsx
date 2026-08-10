@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { VentasTable } from "@/components/modules/ventas/ventas-table";
 import { getVentasConDetalle, getVentasEnRevision } from "@/lib/mock-data";
 
-export default function VentasPage() {
-  const ventas = getVentasConDetalle().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  const enRevision = getVentasEnRevision().length;
+export default async function VentasPage() {
+  const [ventasSinOrdenar, enRevisionLista] = await Promise.all([getVentasConDetalle(), getVentasEnRevision()]);
+  const ventas = ventasSinOrdenar.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const enRevision = enRevisionLista.length;
 
   return (
     <div className="space-y-6">

@@ -3,9 +3,10 @@
 Este documento describe el modelo de datos del sistema en términos de negocio.
 La fuente de verdad técnica es [`prisma/schema.prisma`](../prisma/schema.prisma);
 este archivo es su equivalente legible, pensado para discutir el modelo sin
-necesidad de leer Prisma. Durante la Fase 1 (solo UI) este modelo no está
-conectado a una base de datos real — se usa para tipar los datos mock en
-`src/lib/mock-data/`.
+necesidad de leer Prisma. El modelo ya está conectado a una Postgres real
+(local por ahora): `prisma migrate` crea las tablas, la API FastAPI en
+`backend/` las lee/escribe con `psycopg`, y el frontend consume esa API — ver
+[`docs/PLAN.md`](./PLAN.md) para la arquitectura completa.
 
 ## Diagrama entidad-relación
 
@@ -198,13 +199,12 @@ de un registro pasado no cambie con la fluctuación del bolívar. El monto en
 USD sigue siendo siempre el valor estable para comparar entre fechas — la UI
 muestra ambas monedas juntas en todos los montos de venta/factura.
 
-**Ya tiene un sync real** (no solo mock): `backend/app/jobs/sync_tasa_bcv.py`
-consulta [dolarapi.com](https://ve.dolarapi.com/v1/dolares/oficial) y hace
-upsert en esta tabla todos los días a las 6:00pm (Tarea Programada de
-Windows), sobre una Postgres local por ahora. Ver
-[`backend/app/jobs/README.md`](../backend/app/jobs/README.md). El frontend
-Next.js todavía no lee de ahí — sigue usando
-`src/lib/mock-data/tasas-cambio.ts` hasta que se conecte el resto de Fase 2.
+Se sincroniza sola: `backend/app/jobs/sync_tasa_bcv.py` consulta
+[dolarapi.com](https://ve.dolarapi.com/v1/dolares/oficial) y hace upsert en
+esta tabla todos los días a las 6:00pm (Tarea Programada de Windows), sobre
+una Postgres local por ahora. Cada venta nueva usa `GET /tasa-cambio/actual`
+(la fila más reciente) para su `tasaBcv`. Ver
+[`backend/app/jobs/README.md`](../backend/app/jobs/README.md).
 
 ### Factura
 Facturas de un cliente. `estado` (pendiente/pagada/vencida) es lo que
@@ -244,7 +244,9 @@ despachos sin venta asociada (usados en los datos de ejemplo para representar
 casos históricos/manuales). Tiene su **propio** flujo de aprobación
 (`EstadoDespacho` + `DespachoAprobacion`), independiente de `VentaRevision`.
 `distanciaEstimadaKm`/`tiempoEstimadoMin`/`rutaCalculada` guardan el resultado
-del optimizador de rutas (mock en esta fase).
+del optimizador de rutas (`POST /despachos/{id}/ruta`) — persistido de
+verdad, aunque el cálculo en sí sigue siendo una síntesis mock (sin SuperMap
+iServer real todavía, ver `backend/app/services/route_analysis.py`).
 
 ### DespachoItem
 Línea de producto dentro de un despacho (copiada de los items de la venta

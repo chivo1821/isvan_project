@@ -9,10 +9,9 @@ import { getDespachosConDetalle } from "@/lib/mock-data";
 
 const ESTADOS_ACTIVOS = ["EN_TRANSITO", "EN_PREPARACION"] as const;
 
-export default function SeguimientoPage() {
-  const despachosActivos = getDespachosConDetalle().filter((d) =>
-    (ESTADOS_ACTIVOS as readonly string[]).includes(d.estado)
-  );
+export default async function SeguimientoPage() {
+  const despachos = await getDespachosConDetalle();
+  const despachosActivos = despachos.filter((d) => (ESTADOS_ACTIVOS as readonly string[]).includes(d.estado));
 
   const puntos: DespachoSeguimientoItem[] = despachosActivos.map((d) => {
     const ultimoPunto = d.ruta[d.ruta.length - 1];

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2Icon, PackageIcon, WarehouseIcon } from "lucide-react";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { StepWizard, type WizardStep } from "@/components/shared/step-wizard";
 import { Button } from "@/components/ui/button";
@@ -24,31 +25,46 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBs, formatCurrency, formatDualCurrency } from "@/lib/constants";
-import { almacenes, getVentasAprobadasSinDespacho } from "@/lib/mock-data";
+import type { Almacen, Despacho, VentaConDetalle } from "@/lib/mock-data";
 
 const STEPS: WizardStep[] = [
   { id: "venta", label: "Venta" },
   { id: "confirmar", label: "Confirmar" },
 ];
 
-// La empresa opera con un unico almacen, asi que el origen del despacho es
-// siempre el mismo — no hace falta pedirselo al usuario.
-const origen = almacenes[0];
-
-export function NuevoDespachoWizard() {
+export function NuevoDespachoWizard({
+  ventasElegibles,
+  origen,
+  creadoPorId,
+}: {
+  ventasElegibles: VentaConDetalle[];
+  origen: Almacen;
+  creadoPorId: string;
+}) {
   const router = useRouter();
-  const ventasElegibles = getVentasAprobadasSinDespacho();
   const [ventaId, setVentaId] = useState("");
+  const [confirmando, setConfirmando] = useState(false);
 
   const venta = ventasElegibles.find((v) => v.id === ventaId);
   const ventaLista = Boolean(venta);
   const currentStep = !ventaLista ? 1 : 2;
 
-  function confirmarDespacho() {
-    toast.success("Despacho creado", {
-      description: `Se creó el despacho ${origen.nombre} → ${venta?.cliente.nombre} a partir de la venta ${venta?.numero}, en estado "Pendiente de aprobación". (Simulación: no se persiste todavía.)`,
-    });
-    router.push("/despachos");
+  async function confirmarDespacho() {
+    if (!venta) return;
+    setConfirmando(true);
+    try {
+      const despacho = await apiPost<Despacho>("/despachos", { ventaId: venta.id, creadoPorId });
+      toast.success("Despacho creado", {
+        description: `Se creó el despacho ${despacho.numero}: ${origen.nombre} → ${venta.cliente.nombre}, en estado "Pendiente de aprobación".`,
+      });
+      router.push("/despachos");
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo crear el despacho", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+      setConfirmando(false);
+    }
   }
 
   return (
@@ -160,9 +176,9 @@ export function NuevoDespachoWizard() {
                 </div>
               </div>
             )}
-            <Button className="mt-4 w-full" disabled={!ventaLista} onClick={confirmarDespacho}>
+            <Button className="mt-4 w-full" disabled={!ventaLista || confirmando} onClick={confirmarDespacho}>
               <CheckCircle2Icon />
-              Confirmar despacho
+              {confirmando ? "Confirmando..." : "Confirmar despacho"}
             </Button>
           </NumberedCard>
         </div>

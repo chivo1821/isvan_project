@@ -17,7 +17,7 @@ const ICONO_POR_ESTADO = {
 
 export default async function SeguimientoDetallePage({ params }: PageProps<"/seguimiento/[id]">) {
   const { id } = await params;
-  const despacho = getDespachoConDetalle(id);
+  const despacho = await getDespachoConDetalle(id);
   if (!despacho) notFound();
 
   return (

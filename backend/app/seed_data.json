@@ -1,0 +1,1361 @@
+{
+  "usuarios": [
+    {
+      "id": "usr-1",
+      "nombre": "Gustavo Marquina",
+      "email": "gustavo.marquina@heladosypizzas.com",
+      "rol": "ADMIN",
+      "avatarUrl": null,
+      "activo": true
+    },
+    {
+      "id": "usr-2",
+      "nombre": "Carla Pérez",
+      "email": "carla.perez@heladosypizzas.com",
+      "rol": "VENTAS",
+      "avatarUrl": null,
+      "activo": true
+    },
+    {
+      "id": "usr-3",
+      "nombre": "Miguel Ángel Torres",
+      "email": "miguel.torres@heladosypizzas.com",
+      "rol": "DESPACHOS",
+      "avatarUrl": null,
+      "activo": true
+    },
+    {
+      "id": "usr-4",
+      "nombre": "Rosa Delgado",
+      "email": "rosa.delgado@heladosypizzas.com",
+      "rol": "APROBADOR",
+      "avatarUrl": null,
+      "activo": true
+    },
+    {
+      "id": "usr-5",
+      "nombre": "José Ramírez",
+      "email": "jose.ramirez@heladosypizzas.com",
+      "rol": "INVENTARIO",
+      "avatarUrl": null,
+      "activo": true
+    },
+    {
+      "id": "usr-6",
+      "nombre": "Andrea Silva",
+      "email": "andrea.silva@heladosypizzas.com",
+      "rol": "REPARTIDOR",
+      "avatarUrl": null,
+      "activo": true
+    }
+  ],
+  "almacenes": [
+    {
+      "id": "alm-catia",
+      "nombre": "Almacén Catia",
+      "tipo": "Centro de Distribución",
+      "direccion": "Catia",
+      "ciudad": "Caracas",
+      "lat": 10.512937,
+      "lng": -66.944611,
+      "esFrigorifico": true
+    }
+  ],
+  "productos": [
+    {
+      "id": "prod-1",
+      "sku": "HEL-PAL-001",
+      "nombre": "Paleta de Chocolate",
+      "categoria": "HELADO",
+      "subcategoria": "Paleta",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 0.75,
+      "activo": true
+    },
+    {
+      "id": "prod-2",
+      "sku": "HEL-PAL-002",
+      "nombre": "Paleta de Fresa",
+      "categoria": "HELADO",
+      "subcategoria": "Paleta",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 0.75,
+      "activo": true
+    },
+    {
+      "id": "prod-3",
+      "sku": "HEL-PAL-003",
+      "nombre": "Paleta de Coco",
+      "categoria": "HELADO",
+      "subcategoria": "Paleta",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 0.8,
+      "activo": true
+    },
+    {
+      "id": "prod-4",
+      "sku": "HEL-TAR-001",
+      "nombre": "Tarrina Vainilla 1L",
+      "categoria": "HELADO",
+      "subcategoria": "Tarrina",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 4.5,
+      "activo": true
+    },
+    {
+      "id": "prod-5",
+      "sku": "HEL-TAR-002",
+      "nombre": "Tarrina Chocolate 1L",
+      "categoria": "HELADO",
+      "subcategoria": "Tarrina",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 4.5,
+      "activo": true
+    },
+    {
+      "id": "prod-6",
+      "sku": "HEL-TAR-003",
+      "nombre": "Tarrina Ron con Pasas 1L",
+      "categoria": "HELADO",
+      "subcategoria": "Tarrina",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 5,
+      "activo": true
+    },
+    {
+      "id": "prod-7",
+      "sku": "HEL-TAR-004",
+      "nombre": "Tarrina Napolitana 1L",
+      "categoria": "HELADO",
+      "subcategoria": "Tarrina",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 4.75,
+      "activo": true
+    },
+    {
+      "id": "prod-8",
+      "sku": "HEL-CON-001",
+      "nombre": "Cono Clásico",
+      "categoria": "HELADO",
+      "subcategoria": "Cono",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 1.2,
+      "activo": true
+    },
+    {
+      "id": "prod-9",
+      "sku": "HEL-CON-002",
+      "nombre": "Cono Doble Chocolate",
+      "categoria": "HELADO",
+      "subcategoria": "Cono",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 1.5,
+      "activo": true
+    },
+    {
+      "id": "prod-10",
+      "sku": "HEL-GAL-001",
+      "nombre": "Sandwich de Galleta",
+      "categoria": "HELADO",
+      "subcategoria": "Sandwich",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -12,
+      "precioUnitario": 1.3,
+      "activo": true
+    },
+    {
+      "id": "prod-11",
+      "sku": "PIZ-MAR-001",
+      "nombre": "Pizza Margarita Familiar",
+      "categoria": "PIZZA",
+      "subcategoria": "Familiar",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 8.5,
+      "activo": true
+    },
+    {
+      "id": "prod-12",
+      "sku": "PIZ-PEP-001",
+      "nombre": "Pizza Pepperoni Familiar",
+      "categoria": "PIZZA",
+      "subcategoria": "Familiar",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 9,
+      "activo": true
+    },
+    {
+      "id": "prod-13",
+      "sku": "PIZ-HAW-001",
+      "nombre": "Pizza Hawaiana Familiar",
+      "categoria": "PIZZA",
+      "subcategoria": "Familiar",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 9,
+      "activo": true
+    },
+    {
+      "id": "prod-14",
+      "sku": "PIZ-4QU-001",
+      "nombre": "Pizza 4 Quesos Familiar",
+      "categoria": "PIZZA",
+      "subcategoria": "Familiar",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 9.5,
+      "activo": true
+    },
+    {
+      "id": "prod-15",
+      "sku": "PIZ-VEG-001",
+      "nombre": "Pizza Vegetariana Mediana",
+      "categoria": "PIZZA",
+      "subcategoria": "Mediana",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 6.5,
+      "activo": true
+    },
+    {
+      "id": "prod-16",
+      "sku": "PIZ-PEP-002",
+      "nombre": "Pizza Pepperoni Personal",
+      "categoria": "PIZZA",
+      "subcategoria": "Personal",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 3.5,
+      "activo": true
+    },
+    {
+      "id": "prod-17",
+      "sku": "PIZ-MAR-002",
+      "nombre": "Pizza Margarita Personal",
+      "categoria": "PIZZA",
+      "subcategoria": "Personal",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 3.25,
+      "activo": true
+    },
+    {
+      "id": "prod-18",
+      "sku": "PIZ-CAR-001",
+      "nombre": "Pizza Carnívora Familiar",
+      "categoria": "PIZZA",
+      "subcategoria": "Familiar",
+      "unidadMedida": "unidad",
+      "requiereCadenaFrio": true,
+      "temperaturaMinC": -18,
+      "temperaturaMaxC": -15,
+      "precioUnitario": 10,
+      "activo": true
+    }
+  ],
+  "stock": [
+    {
+      "id": "stk-1",
+      "productoId": "prod-1",
+      "almacenId": "alm-catia",
+      "cantidad": 1400,
+      "stockMinimo": 500
+    },
+    {
+      "id": "stk-2",
+      "productoId": "prod-2",
+      "almacenId": "alm-catia",
+      "cantidad": 1200,
+      "stockMinimo": 500
+    },
+    {
+      "id": "stk-3",
+      "productoId": "prod-3",
+      "almacenId": "alm-catia",
+      "cantidad": 380,
+      "stockMinimo": 500
+    },
+    {
+      "id": "stk-4",
+      "productoId": "prod-4",
+      "almacenId": "alm-catia",
+      "cantidad": 320,
+      "stockMinimo": 120
+    },
+    {
+      "id": "stk-5",
+      "productoId": "prod-5",
+      "almacenId": "alm-catia",
+      "cantidad": 300,
+      "stockMinimo": 120
+    },
+    {
+      "id": "stk-6",
+      "productoId": "prod-6",
+      "almacenId": "alm-catia",
+      "cantidad": 90,
+      "stockMinimo": 120
+    },
+    {
+      "id": "stk-7",
+      "productoId": "prod-7",
+      "almacenId": "alm-catia",
+      "cantidad": 250,
+      "stockMinimo": 120
+    },
+    {
+      "id": "stk-8",
+      "productoId": "prod-8",
+      "almacenId": "alm-catia",
+      "cantidad": 420,
+      "stockMinimo": 150
+    },
+    {
+      "id": "stk-9",
+      "productoId": "prod-9",
+      "almacenId": "alm-catia",
+      "cantidad": 110,
+      "stockMinimo": 150
+    },
+    {
+      "id": "stk-10",
+      "productoId": "prod-10",
+      "almacenId": "alm-catia",
+      "cantidad": 280,
+      "stockMinimo": 130
+    },
+    {
+      "id": "stk-11",
+      "productoId": "prod-11",
+      "almacenId": "alm-catia",
+      "cantidad": 260,
+      "stockMinimo": 90
+    },
+    {
+      "id": "stk-12",
+      "productoId": "prod-12",
+      "almacenId": "alm-catia",
+      "cantidad": 230,
+      "stockMinimo": 90
+    },
+    {
+      "id": "stk-13",
+      "productoId": "prod-13",
+      "almacenId": "alm-catia",
+      "cantidad": 190,
+      "stockMinimo": 90
+    },
+    {
+      "id": "stk-14",
+      "productoId": "prod-14",
+      "almacenId": "alm-catia",
+      "cantidad": 70,
+      "stockMinimo": 90
+    },
+    {
+      "id": "stk-15",
+      "productoId": "prod-15",
+      "almacenId": "alm-catia",
+      "cantidad": 110,
+      "stockMinimo": 70
+    },
+    {
+      "id": "stk-16",
+      "productoId": "prod-16",
+      "almacenId": "alm-catia",
+      "cantidad": 400,
+      "stockMinimo": 140
+    },
+    {
+      "id": "stk-17",
+      "productoId": "prod-17",
+      "almacenId": "alm-catia",
+      "cantidad": 150,
+      "stockMinimo": 180
+    },
+    {
+      "id": "stk-18",
+      "productoId": "prod-18",
+      "almacenId": "alm-catia",
+      "cantidad": 140,
+      "stockMinimo": 90
+    }
+  ],
+  "clientes": [
+    {
+      "codigo": "CLI-0001",
+      "nombre": "Abastos La Esperanza",
+      "tipo": "Tienda",
+      "direccion": "Av. Bolívar Norte, C.C. La Esperanza",
+      "ciudad": "Valencia",
+      "lat": 10.1751,
+      "lng": -68.0011,
+      "telefono": "+58 241 555 0101",
+      "email": "compras@laesperanza.com"
+    },
+    {
+      "codigo": "CLI-0002",
+      "nombre": "Distribuidora Don Pepe",
+      "tipo": "Distribuidor",
+      "direccion": "Calle Real, Sector Los Ruices",
+      "ciudad": "Caracas",
+      "lat": 10.4956,
+      "lng": -66.8836,
+      "telefono": "+58 212 555 0102",
+      "email": "pedidos@donpepe.com"
+    },
+    {
+      "codigo": "CLI-0003",
+      "nombre": "Supermercado Frescos",
+      "tipo": "Tienda",
+      "direccion": "Av. Las Delicias, C.C. Frescos Plaza",
+      "ciudad": "Maracay",
+      "lat": 10.2569,
+      "lng": -67.5859,
+      "telefono": "+58 243 555 0103",
+      "email": "compras@frescosmercado.com"
+    },
+    {
+      "codigo": "CLI-0004",
+      "nombre": "Heladería Polo Norte",
+      "tipo": "Tienda",
+      "direccion": "Av. Francisco de Miranda, Chacao",
+      "ciudad": "Caracas",
+      "lat": 10.4966,
+      "lng": -66.8536,
+      "telefono": "+58 212 555 0104",
+      "email": "gerencia@polonorte.com"
+    },
+    {
+      "codigo": "CLI-0005",
+      "nombre": "Mayorista Los Andes",
+      "tipo": "Distribuidor",
+      "direccion": "Av. Libertador, Zona Este",
+      "ciudad": "Barquisimeto",
+      "lat": 10.0747,
+      "lng": -69.347,
+      "telefono": "+58 251 555 0105",
+      "email": "ventas@mayoristalosandes.com"
+    },
+    {
+      "codigo": "CLI-0006",
+      "nombre": "Pizzería Roma Express",
+      "tipo": "Tienda",
+      "direccion": "Av. Bolívar, C.C. Roma",
+      "ciudad": "Valencia",
+      "lat": 10.1685,
+      "lng": -68.0125,
+      "telefono": "+58 241 555 0106",
+      "email": "pedidos@romaexpress.com"
+    },
+    {
+      "codigo": "CLI-0007",
+      "nombre": "Abasto El Trigal",
+      "tipo": "Tienda",
+      "direccion": "Sector El Trigal Centro",
+      "ciudad": "Valencia",
+      "lat": 10.1462,
+      "lng": -68.0198,
+      "telefono": "+58 241 555 0107",
+      "email": "compras@eltrigal.com"
+    },
+    {
+      "codigo": "CLI-0008",
+      "nombre": "Distribuidora Oriente",
+      "tipo": "Distribuidor",
+      "direccion": "Av. Rómulo Gallegos, Sector Oriente",
+      "ciudad": "Caracas",
+      "lat": 10.4886,
+      "lng": -66.8236,
+      "telefono": "+58 212 555 0108",
+      "email": "administracion@distoriente.com"
+    }
+  ],
+  "facturas": [
+    {
+      "id": "fac-1",
+      "numero": "F-01001",
+      "clienteId": "CLI-0001",
+      "monto": 320.5,
+      "fechaEmision": "2026-06-15",
+      "fechaVencimiento": "2026-07-15",
+      "estado": "VENCIDA",
+      "tasaBcv": 186.05,
+      "fechaPago": null,
+      "montoPagado": null,
+      "metodoPago": null,
+      "pagoAprobado": false
+    },
+    {
+      "id": "fac-2",
+      "numero": "F-01002",
+      "clienteId": "CLI-0001",
+      "monto": 150,
+      "fechaEmision": "2026-07-20",
+      "fechaVencimiento": "2026-08-20",
+      "estado": "PENDIENTE",
+      "tasaBcv": 192.6,
+      "fechaPago": "2026-08-01",
+      "montoPagado": 75,
+      "metodoPago": "Transferencia",
+      "pagoAprobado": false
+    },
+    {
+      "id": "fac-3",
+      "numero": "F-01003",
+      "clienteId": "CLI-0003",
+      "monto": 480,
+      "fechaEmision": "2026-06-01",
+      "fechaVencimiento": "2026-07-01",
+      "estado": "VENCIDA",
+      "tasaBcv": 183.4,
+      "fechaPago": null,
+      "montoPagado": null,
+      "metodoPago": null,
+      "pagoAprobado": false
+    },
+    {
+      "id": "fac-4",
+      "numero": "F-01004",
+      "clienteId": "CLI-0005",
+      "monto": 210.75,
+      "fechaEmision": "2026-07-25",
+      "fechaVencimiento": "2026-08-25",
+      "estado": "PENDIENTE",
+      "tasaBcv": 193.9,
+      "fechaPago": null,
+      "montoPagado": null,
+      "metodoPago": null,
+      "pagoAprobado": false
+    },
+    {
+      "id": "fac-5",
+      "numero": "F-01005",
+      "clienteId": "CLI-0008",
+      "monto": 600,
+      "fechaEmision": "2026-05-10",
+      "fechaVencimiento": "2026-06-10",
+      "estado": "VENCIDA",
+      "tasaBcv": 179.85,
+      "fechaPago": null,
+      "montoPagado": null,
+      "metodoPago": null,
+      "pagoAprobado": false
+    },
+    {
+      "id": "fac-6",
+      "numero": "F-01006",
+      "clienteId": "CLI-0002",
+      "monto": 300,
+      "fechaEmision": "2026-05-01",
+      "fechaVencimiento": "2026-06-01",
+      "estado": "PAGADA",
+      "tasaBcv": 178.2,
+      "fechaPago": "2026-05-28",
+      "montoPagado": 300,
+      "metodoPago": "Transferencia",
+      "pagoAprobado": true
+    },
+    {
+      "id": "fac-7",
+      "numero": "F-01007",
+      "clienteId": "CLI-0004",
+      "monto": 275,
+      "fechaEmision": "2026-06-10",
+      "fechaVencimiento": "2026-07-10",
+      "estado": "PAGADA",
+      "tasaBcv": 185.1,
+      "fechaPago": "2026-07-02",
+      "montoPagado": 275,
+      "metodoPago": "Pago móvil",
+      "pagoAprobado": true
+    }
+  ],
+  "tasasCambio": [
+    {
+      "id": "tc-1",
+      "fecha": "2026-05-01",
+      "tasa": 178.2
+    },
+    {
+      "id": "tc-2",
+      "fecha": "2026-05-10",
+      "tasa": 179.85
+    },
+    {
+      "id": "tc-3",
+      "fecha": "2026-06-01",
+      "tasa": 183.4
+    },
+    {
+      "id": "tc-4",
+      "fecha": "2026-06-10",
+      "tasa": 185.1
+    },
+    {
+      "id": "tc-5",
+      "fecha": "2026-06-15",
+      "tasa": 186.05
+    },
+    {
+      "id": "tc-6",
+      "fecha": "2026-07-15",
+      "tasa": 191.3
+    },
+    {
+      "id": "tc-7",
+      "fecha": "2026-07-20",
+      "tasa": 192.6
+    },
+    {
+      "id": "tc-8",
+      "fecha": "2026-07-25",
+      "tasa": 193.9
+    },
+    {
+      "id": "tc-9",
+      "fecha": "2026-07-28",
+      "tasa": 194.7
+    },
+    {
+      "id": "tc-10",
+      "fecha": "2026-07-29",
+      "tasa": 194.95
+    },
+    {
+      "id": "tc-11",
+      "fecha": "2026-07-30",
+      "tasa": 195.2
+    },
+    {
+      "id": "tc-12",
+      "fecha": "2026-07-31",
+      "tasa": 195.65
+    },
+    {
+      "id": "tc-13",
+      "fecha": "2026-08-04",
+      "tasa": 196.1
+    },
+    {
+      "id": "tc-14",
+      "fecha": "2026-08-05",
+      "tasa": 196.3
+    },
+    {
+      "id": "tc-15",
+      "fecha": "2026-08-06",
+      "tasa": 196.55
+    },
+    {
+      "id": "tc-16",
+      "fecha": "2026-08-07",
+      "tasa": 196.85
+    }
+  ],
+  "vehiculos": [
+    {
+      "id": "veh-1",
+      "placa": "AB123CD",
+      "tipo": "CAMION_REFRIGERADO",
+      "capacidadKg": 3000,
+      "tieneRefrigeracion": true,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Andrea Silva",
+      "ultimaRevision": "2026-07-20"
+    },
+    {
+      "id": "veh-2",
+      "placa": "AC456DE",
+      "tipo": "CAMION_REFRIGERADO",
+      "capacidadKg": 3000,
+      "tieneRefrigeracion": true,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Freddy González",
+      "ultimaRevision": "2026-07-15"
+    },
+    {
+      "id": "veh-3",
+      "placa": "AD789FG",
+      "tipo": "CAMIONETA",
+      "capacidadKg": 1200,
+      "tieneRefrigeracion": true,
+      "estado": "EN_MANTENIMIENTO",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Luis Bravo",
+      "ultimaRevision": "2026-08-02"
+    },
+    {
+      "id": "veh-4",
+      "placa": "AE012HI",
+      "tipo": "CAMIONETA",
+      "capacidadKg": 1200,
+      "tieneRefrigeracion": true,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Kelly Marín",
+      "ultimaRevision": "2026-06-28"
+    },
+    {
+      "id": "veh-5",
+      "placa": "AF345JK",
+      "tipo": "MOTO",
+      "capacidadKg": 50,
+      "tieneRefrigeracion": false,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Ronald Peña",
+      "ultimaRevision": "2026-07-10"
+    },
+    {
+      "id": "veh-6",
+      "placa": "AG678LM",
+      "tipo": "CAMION_REFRIGERADO",
+      "capacidadKg": 3000,
+      "tieneRefrigeracion": true,
+      "estado": "FUERA_DE_SERVICIO",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": null,
+      "ultimaRevision": "2026-05-05"
+    },
+    {
+      "id": "veh-7",
+      "placa": "AH901NO",
+      "tipo": "CAMION_REFRIGERADO",
+      "capacidadKg": 2500,
+      "tieneRefrigeracion": true,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Carlos Uzcátegui",
+      "ultimaRevision": "2026-07-29"
+    },
+    {
+      "id": "veh-8",
+      "placa": "AI234PQ",
+      "tipo": "CAMIONETA",
+      "capacidadKg": 1000,
+      "tieneRefrigeracion": false,
+      "estado": "FUNCIONAL",
+      "almacenBaseId": "alm-catia",
+      "conductorNombre": "Marisela Gómez",
+      "ultimaRevision": "2026-07-18"
+    }
+  ],
+  "ventas": [
+    {
+      "id": "venta-1",
+      "numero": "V-0001",
+      "clienteId": "CLI-0002",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-05",
+      "estado": "APROBADA",
+      "total": 305,
+      "tasaBcv": 196.3,
+      "items": [
+        {
+          "id": "vi-1",
+          "productoId": "prod-11",
+          "cantidad": 20,
+          "precioUnitario": 8.5,
+          "subtotal": 170
+        },
+        {
+          "id": "vi-2",
+          "productoId": "prod-4",
+          "cantidad": 30,
+          "precioUnitario": 4.5,
+          "subtotal": 135
+        }
+      ]
+    },
+    {
+      "id": "venta-2",
+      "numero": "V-0002",
+      "clienteId": "CLI-0001",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-06",
+      "estado": "EN_REVISION",
+      "total": 210,
+      "tasaBcv": 196.55,
+      "items": [
+        {
+          "id": "vi-3",
+          "productoId": "prod-1",
+          "cantidad": 100,
+          "precioUnitario": 0.75,
+          "subtotal": 75
+        },
+        {
+          "id": "vi-4",
+          "productoId": "prod-12",
+          "cantidad": 15,
+          "precioUnitario": 9,
+          "subtotal": 135
+        }
+      ]
+    },
+    {
+      "id": "venta-3",
+      "numero": "V-0003",
+      "clienteId": "CLI-0001",
+      "vendedorId": "usr-2",
+      "fecha": "2026-07-30",
+      "estado": "DESPACHADA",
+      "total": 195,
+      "tasaBcv": 195.2,
+      "items": [
+        {
+          "id": "vi-5",
+          "productoId": "prod-6",
+          "cantidad": 20,
+          "precioUnitario": 5,
+          "subtotal": 100
+        },
+        {
+          "id": "vi-6",
+          "productoId": "prod-14",
+          "cantidad": 10,
+          "precioUnitario": 9.5,
+          "subtotal": 95
+        }
+      ]
+    },
+    {
+      "id": "venta-4",
+      "numero": "V-0004",
+      "clienteId": "CLI-0003",
+      "vendedorId": "usr-2",
+      "fecha": "2026-07-28",
+      "estado": "RECHAZADA",
+      "total": 225,
+      "tasaBcv": 194.7,
+      "items": [
+        {
+          "id": "vi-7",
+          "productoId": "prod-13",
+          "cantidad": 25,
+          "precioUnitario": 9,
+          "subtotal": 225
+        }
+      ]
+    },
+    {
+      "id": "venta-5",
+      "numero": "V-0005",
+      "clienteId": "CLI-0006",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-07",
+      "estado": "PENDIENTE",
+      "total": 200,
+      "tasaBcv": 196.85,
+      "items": [
+        {
+          "id": "vi-8",
+          "productoId": "prod-17",
+          "cantidad": 40,
+          "precioUnitario": 3.25,
+          "subtotal": 130
+        },
+        {
+          "id": "vi-9",
+          "productoId": "prod-16",
+          "cantidad": 20,
+          "precioUnitario": 3.5,
+          "subtotal": 70
+        }
+      ]
+    },
+    {
+      "id": "venta-6",
+      "numero": "V-0006",
+      "clienteId": "CLI-0008",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-07",
+      "estado": "EN_REVISION",
+      "total": 180,
+      "tasaBcv": 196.85,
+      "items": [
+        {
+          "id": "vi-10",
+          "productoId": "prod-18",
+          "cantidad": 18,
+          "precioUnitario": 10,
+          "subtotal": 180
+        }
+      ]
+    },
+    {
+      "id": "venta-7",
+      "numero": "V-0007",
+      "clienteId": "CLI-0005",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-04",
+      "estado": "EN_REVISION",
+      "total": 172.5,
+      "tasaBcv": 196.1,
+      "items": [
+        {
+          "id": "vi-11",
+          "productoId": "prod-2",
+          "cantidad": 150,
+          "precioUnitario": 0.75,
+          "subtotal": 112.5
+        },
+        {
+          "id": "vi-12",
+          "productoId": "prod-9",
+          "cantidad": 40,
+          "precioUnitario": 1.5,
+          "subtotal": 60
+        }
+      ]
+    },
+    {
+      "id": "venta-8",
+      "numero": "V-0008",
+      "clienteId": "CLI-0007",
+      "vendedorId": "usr-2",
+      "fecha": "2026-07-15",
+      "estado": "ANULADA",
+      "total": 60,
+      "tasaBcv": 191.3,
+      "items": [
+        {
+          "id": "vi-13",
+          "productoId": "prod-8",
+          "cantidad": 50,
+          "precioUnitario": 1.2,
+          "subtotal": 60
+        }
+      ]
+    },
+    {
+      "id": "venta-9",
+      "numero": "V-0009",
+      "clienteId": "CLI-0004",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-07",
+      "estado": "APROBADA",
+      "total": 80.5,
+      "tasaBcv": 196.85,
+      "items": [
+        {
+          "id": "vi-14",
+          "productoId": "prod-8",
+          "cantidad": 40,
+          "precioUnitario": 1.2,
+          "subtotal": 48
+        },
+        {
+          "id": "vi-15",
+          "productoId": "prod-10",
+          "cantidad": 25,
+          "precioUnitario": 1.3,
+          "subtotal": 32.5
+        }
+      ]
+    },
+    {
+      "id": "venta-10",
+      "numero": "V-0010",
+      "clienteId": "CLI-0007",
+      "vendedorId": "usr-2",
+      "fecha": "2026-08-06",
+      "estado": "APROBADA",
+      "total": 102.5,
+      "tasaBcv": 196.55,
+      "items": [
+        {
+          "id": "vi-16",
+          "productoId": "prod-1",
+          "cantidad": 50,
+          "precioUnitario": 0.75,
+          "subtotal": 37.5
+        },
+        {
+          "id": "vi-17",
+          "productoId": "prod-17",
+          "cantidad": 20,
+          "precioUnitario": 3.25,
+          "subtotal": 65
+        }
+      ]
+    }
+  ],
+  "ventaRevisiones": [
+    {
+      "id": "vrev-1",
+      "ventaId": "venta-3",
+      "usuarioId": "usr-4",
+      "accion": "APROBADA",
+      "comentario": "Cliente se comprometió a regularizar el pago pendiente; se aprueba el despacho.",
+      "fecha": "2026-07-31"
+    },
+    {
+      "id": "vrev-2",
+      "ventaId": "venta-4",
+      "usuarioId": "usr-4",
+      "accion": "RECHAZADA",
+      "comentario": "Factura vencida hace más de 30 días sin gestión de pago; se rechaza hasta regularizar.",
+      "fecha": "2026-07-29"
+    }
+  ],
+  "despachos": [
+    {
+      "id": "desp-1",
+      "numero": "D-0001",
+      "ventaId": "venta-1",
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0002",
+      "creadoPorId": "usr-3",
+      "estado": "PENDIENTE_APROBACION",
+      "fechaCreacion": "2026-08-05",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": null,
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-1",
+          "productoId": "prod-11",
+          "cantidad": 20
+        },
+        {
+          "id": "di-2",
+          "productoId": "prod-4",
+          "cantidad": 30
+        }
+      ]
+    },
+    {
+      "id": "desp-2",
+      "numero": "D-0002",
+      "ventaId": "venta-3",
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0001",
+      "creadoPorId": "usr-3",
+      "estado": "ENTREGADO",
+      "fechaCreacion": "2026-07-31",
+      "fechaEstimadaEntrega": "2026-08-01",
+      "vehiculoId": "veh-1",
+      "distanciaEstimadaKm": 165,
+      "tiempoEstimadoMin": 150,
+      "rutaCalculada": true,
+      "items": [
+        {
+          "id": "di-3",
+          "productoId": "prod-6",
+          "cantidad": 20
+        },
+        {
+          "id": "di-4",
+          "productoId": "prod-14",
+          "cantidad": 10
+        }
+      ]
+    },
+    {
+      "id": "desp-3",
+      "numero": "D-0003",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0004",
+      "creadoPorId": "usr-3",
+      "estado": "BORRADOR",
+      "fechaCreacion": "2026-08-07",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": null,
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-5",
+          "productoId": "prod-5",
+          "cantidad": 15
+        },
+        {
+          "id": "di-6",
+          "productoId": "prod-8",
+          "cantidad": 30
+        }
+      ]
+    },
+    {
+      "id": "desp-4",
+      "numero": "D-0004",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0003",
+      "creadoPorId": "usr-3",
+      "estado": "APROBADO",
+      "fechaCreacion": "2026-08-03",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": null,
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-7",
+          "productoId": "prod-11",
+          "cantidad": 15
+        },
+        {
+          "id": "di-8",
+          "productoId": "prod-16",
+          "cantidad": 25
+        }
+      ]
+    },
+    {
+      "id": "desp-5",
+      "numero": "D-0005",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0002",
+      "creadoPorId": "usr-3",
+      "estado": "RECHAZADO",
+      "fechaCreacion": "2026-08-02",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": null,
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-9",
+          "productoId": "prod-1",
+          "cantidad": 200
+        }
+      ]
+    },
+    {
+      "id": "desp-6",
+      "numero": "D-0006",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0008",
+      "creadoPorId": "usr-3",
+      "estado": "EN_PREPARACION",
+      "fechaCreacion": "2026-08-06",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": "veh-2",
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-10",
+          "productoId": "prod-18",
+          "cantidad": 30
+        },
+        {
+          "id": "di-11",
+          "productoId": "prod-13",
+          "cantidad": 20
+        }
+      ]
+    },
+    {
+      "id": "desp-7",
+      "numero": "D-0007",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0005",
+      "creadoPorId": "usr-3",
+      "estado": "EN_TRANSITO",
+      "fechaCreacion": "2026-08-05",
+      "fechaEstimadaEntrega": "2026-08-07",
+      "vehiculoId": "veh-1",
+      "distanciaEstimadaKm": 355,
+      "tiempoEstimadoMin": 260,
+      "rutaCalculada": true,
+      "items": [
+        {
+          "id": "di-12",
+          "productoId": "prod-2",
+          "cantidad": 300
+        },
+        {
+          "id": "di-13",
+          "productoId": "prod-9",
+          "cantidad": 60
+        }
+      ]
+    },
+    {
+      "id": "desp-8",
+      "numero": "D-0008",
+      "ventaId": null,
+      "origenId": "alm-catia",
+      "destinoClienteId": "CLI-0008",
+      "creadoPorId": "usr-3",
+      "estado": "CANCELADO",
+      "fechaCreacion": "2026-07-25",
+      "fechaEstimadaEntrega": null,
+      "vehiculoId": null,
+      "distanciaEstimadaKm": null,
+      "tiempoEstimadoMin": null,
+      "rutaCalculada": false,
+      "items": [
+        {
+          "id": "di-14",
+          "productoId": "prod-15",
+          "cantidad": 10
+        }
+      ]
+    }
+  ],
+  "despachoAprobaciones": [
+    {
+      "id": "dap-1",
+      "despachoId": "desp-2",
+      "usuarioId": "usr-4",
+      "accion": "APROBADA",
+      "comentario": "Cliente al día tras la revisión de venta; se aprueba el despacho.",
+      "fecha": "2026-07-31"
+    },
+    {
+      "id": "dap-2",
+      "despachoId": "desp-4",
+      "usuarioId": "usr-4",
+      "accion": "APROBADA",
+      "comentario": null,
+      "fecha": "2026-08-03"
+    },
+    {
+      "id": "dap-3",
+      "despachoId": "desp-5",
+      "usuarioId": "usr-4",
+      "accion": "RECHAZADA",
+      "comentario": "Faltan datos del vehículo asignado y el destino no está confirmado; se rechaza el despacho.",
+      "fecha": "2026-08-02"
+    },
+    {
+      "id": "dap-4",
+      "despachoId": "desp-6",
+      "usuarioId": "usr-4",
+      "accion": "APROBADA",
+      "comentario": null,
+      "fecha": "2026-08-06"
+    },
+    {
+      "id": "dap-5",
+      "despachoId": "desp-7",
+      "usuarioId": "usr-4",
+      "accion": "APROBADA",
+      "comentario": null,
+      "fecha": "2026-08-04"
+    }
+  ],
+  "rutaPuntos": [
+    {
+      "id": "rp-1",
+      "despachoId": "desp-2",
+      "orden": 1,
+      "lat": 10.512937,
+      "lng": -66.944611,
+      "estado": "salida",
+      "timestamp": "2026-08-01T08:00:00",
+      "descripcion": "Salida de Almacén Catia"
+    },
+    {
+      "id": "rp-2",
+      "despachoId": "desp-2",
+      "orden": 2,
+      "lat": 10.35,
+      "lng": -67.45,
+      "estado": "en_ruta",
+      "timestamp": "2026-08-01T09:20:00",
+      "descripcion": "Pasando por Los Teques, Autopista Regional del Centro"
+    },
+    {
+      "id": "rp-3",
+      "despachoId": "desp-2",
+      "orden": 3,
+      "lat": 10.1751,
+      "lng": -68.0011,
+      "estado": "entregado",
+      "timestamp": "2026-08-01T10:45:00",
+      "descripcion": "Entregado en Abastos La Esperanza"
+    },
+    {
+      "id": "rp-4",
+      "despachoId": "desp-7",
+      "orden": 1,
+      "lat": 10.512937,
+      "lng": -66.944611,
+      "estado": "salida",
+      "timestamp": "2026-08-07T06:00:00",
+      "descripcion": "Salida de Almacén Catia"
+    },
+    {
+      "id": "rp-5",
+      "despachoId": "desp-7",
+      "orden": 2,
+      "lat": 10.16,
+      "lng": -68,
+      "estado": "en_ruta",
+      "timestamp": "2026-08-07T08:10:00",
+      "descripcion": "Pasando por Valencia"
+    },
+    {
+      "id": "rp-6",
+      "despachoId": "desp-7",
+      "orden": 3,
+      "lat": 10.11,
+      "lng": -68.75,
+      "estado": "en_ruta",
+      "timestamp": "2026-08-07T10:15:00",
+      "descripcion": "Aproximándose a Barquisimeto (posición actual)"
+    }
+  ]
+}

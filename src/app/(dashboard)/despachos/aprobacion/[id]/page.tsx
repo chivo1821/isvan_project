@@ -13,11 +13,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CATEGORIA_PRODUCTO_META, ESTADO_DESPACHO_META } from "@/lib/constants";
-import { getDespachoConDetalle } from "@/lib/mock-data";
+import { getDespachoConDetalle, getUsuarioActualRaw } from "@/lib/mock-data";
 
 export default async function AprobacionDespachoDetallePage({ params }: PageProps<"/despachos/aprobacion/[id]">) {
   const { id } = await params;
-  const despacho = getDespachoConDetalle(id);
+  const [despacho, usuarioActual] = await Promise.all([getDespachoConDetalle(id), getUsuarioActualRaw()]);
   if (!despacho) notFound();
 
   const requiereCadenaFrio = despacho.itemsConProducto.some((item) => item.producto.requiereCadenaFrio);
@@ -76,7 +76,12 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
         <Link href={`/despachos/${despacho.id}`} className="text-sm text-muted-foreground hover:underline">
           Ver despacho completo →
         </Link>
-        <AprobacionDespachoActions despachoNumero={despacho.numero} destinoNombre={despacho.destinoCliente.nombre} />
+        <AprobacionDespachoActions
+          despachoId={despacho.id}
+          despachoNumero={despacho.numero}
+          destinoNombre={despacho.destinoCliente.nombre}
+          usuarioId={usuarioActual.id}
+        />
       </div>
     </div>
   );

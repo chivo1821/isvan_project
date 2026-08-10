@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CATEGORIA_PRODUCTO_META, formatDualCurrency } from "@/lib/constants";
-import { getStockTotalByProducto, productos } from "@/lib/mock-data";
+import { getProductosRaw, getStockTotalByProducto } from "@/lib/mock-data";
 import type { CategoriaProducto } from "@prisma/client";
 
 type Grupo = {
@@ -13,12 +13,13 @@ type Grupo = {
   valorInventario: number;
 };
 
-export default function CategoriasPage() {
+export default async function CategoriasPage() {
+  const productos = await getProductosRaw();
   const grupos = new Map<string, Grupo>();
 
   for (const producto of productos) {
     const key = `${producto.categoria}::${producto.subcategoria ?? "Otros"}`;
-    const stockTotal = getStockTotalByProducto(producto.id);
+    const stockTotal = await getStockTotalByProducto(producto.id);
     const existente = grupos.get(key);
     if (existente) {
       existente.cantidadProductos += 1;

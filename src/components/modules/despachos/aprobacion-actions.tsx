@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,13 +20,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 export function AprobacionDespachoActions({
+  despachoId,
   despachoNumero,
   destinoNombre,
+  usuarioId,
   size = "default",
   stopPropagation = false,
 }: {
+  despachoId: string;
   despachoNumero: string;
   destinoNombre: string;
+  usuarioId: string;
   size?: "default" | "sm";
   /** Util cuando el componente vive dentro de una fila clickeable de una tabla. */
   stopPropagation?: boolean;
@@ -33,20 +38,36 @@ export function AprobacionDespachoActions({
   const router = useRouter();
   const [comentario, setComentario] = useState("");
   const [open, setOpen] = useState<"aprobar" | "rechazar" | null>(null);
+  const [enviando, setEnviando] = useState(false);
 
-  function confirmar(accion: "aprobar" | "rechazar") {
-    if (accion === "aprobar") {
-      toast.success(`Despacho ${despachoNumero} aprobado`, {
-        description: `Pasa a preparación con destino ${destinoNombre}. (Simulación: no se persiste todavía.)`,
+  async function confirmar(accion: "aprobar" | "rechazar") {
+    setEnviando(true);
+    try {
+      await apiPost(`/despachos/${despachoId}/aprobacion`, {
+        usuarioId,
+        accion: accion === "aprobar" ? "APROBADA" : "RECHAZADA",
+        comentario: comentario.trim() || undefined,
       });
-    } else {
-      toast.error(`Despacho ${despachoNumero} rechazado`, {
-        description: `No continuará hacia ${destinoNombre}. (Simulación: no se persiste todavía.)`,
+      if (accion === "aprobar") {
+        toast.success(`Despacho ${despachoNumero} aprobado`, {
+          description: `Pasa a preparación con destino ${destinoNombre}.`,
+        });
+      } else {
+        toast.error(`Despacho ${despachoNumero} rechazado`, {
+          description: `No continuará hacia ${destinoNombre}.`,
+        });
+      }
+      setOpen(null);
+      setComentario("");
+      router.push("/despachos/aprobacion");
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo registrar la aprobación", {
+        description: err instanceof Error ? err.message : undefined,
       });
+    } finally {
+      setEnviando(false);
     }
-    setOpen(null);
-    setComentario("");
-    router.push("/despachos/aprobacion");
   }
 
   return (
@@ -76,7 +97,7 @@ export function AprobacionDespachoActions({
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={() => confirmar("rechazar")}>
+            <Button variant="destructive" disabled={enviando} onClick={() => confirmar("rechazar")}>
               Confirmar rechazo
             </Button>
           </DialogFooter>
@@ -107,7 +128,9 @@ export function AprobacionDespachoActions({
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button onClick={() => confirmar("aprobar")}>Confirmar aprobación</Button>
+            <Button disabled={enviando} onClick={() => confirmar("aprobar")}>
+              Confirmar aprobación
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

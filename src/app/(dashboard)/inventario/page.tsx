@@ -3,14 +3,17 @@ import { LayoutGridIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { ProductosTable, type ProductoConStock } from "@/components/modules/inventario/productos-table";
-import { getStockTotalByProducto, productoTieneStockBajo, productos } from "@/lib/mock-data";
+import { getProductosRaw, getStockTotalByProducto, productoTieneStockBajo } from "@/lib/mock-data";
 
-export default function InventarioPage() {
-  const productosConStock: ProductoConStock[] = productos.map((p) => ({
-    ...p,
-    stockTotal: getStockTotalByProducto(p.id),
-    stockBajo: productoTieneStockBajo(p.id),
-  }));
+export default async function InventarioPage() {
+  const productos = await getProductosRaw();
+  const productosConStock: ProductoConStock[] = await Promise.all(
+    productos.map(async (p) => ({
+      ...p,
+      stockTotal: await getStockTotalByProducto(p.id),
+      stockBajo: await productoTieneStockBajo(p.id),
+    }))
+  );
 
   return (
     <div className="space-y-6">

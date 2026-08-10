@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { apiPatch } from "@/lib/api-client";
 import { NuevoVehiculoDialog } from "@/components/modules/flota/nuevo-vehiculo-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -37,27 +38,33 @@ export function VehiculosTable({
   const [estados, setEstados] = useState<Record<string, EstadoVehiculo>>(() =>
     Object.fromEntries(vehiculos.map((v) => [v.id, v.estado]))
   );
-  // Vehiculos agregados en esta sesion no tienen pagina de detalle (no existen
-  // en los datos mock del servidor), asi que no se muestran como enlace.
-  const [nuevosIds, setNuevosIds] = useState<Set<string>>(new Set());
+  const almacenBase = almacenes[0];
 
-  function cambiarEstado(vehiculo: Vehiculo, nuevoEstado: EstadoVehiculo) {
+  async function cambiarEstado(vehiculo: Vehiculo, nuevoEstado: EstadoVehiculo) {
+    const anterior = estados[vehiculo.id];
     setEstados((prev) => ({ ...prev, [vehiculo.id]: nuevoEstado }));
-    toast.info(`Vehículo ${vehiculo.placa} actualizado`, {
-      description: `Nuevo estado: ${ESTADO_VEHICULO_META[nuevoEstado].label}. (Simulación: no se persiste todavía.)`,
-    });
+    try {
+      await apiPatch(`/vehiculos/${vehiculo.id}/estado`, { estado: nuevoEstado });
+      toast.info(`Vehículo ${vehiculo.placa} actualizado`, {
+        description: `Nuevo estado: ${ESTADO_VEHICULO_META[nuevoEstado].label}.`,
+      });
+    } catch (err) {
+      setEstados((prev) => ({ ...prev, [vehiculo.id]: anterior }));
+      toast.error("No se pudo actualizar el estado", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
   }
 
   function agregarVehiculo(vehiculo: Vehiculo) {
     setLista((prev) => [vehiculo, ...prev]);
     setEstados((prev) => ({ ...prev, [vehiculo.id]: vehiculo.estado }));
-    setNuevosIds((prev) => new Set(prev).add(vehiculo.id));
   }
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <NuevoVehiculoDialog onAdd={agregarVehiculo} />
+        <NuevoVehiculoDialog almacenBaseNombre={almacenBase?.nombre ?? ""} onAdd={agregarVehiculo} />
       </div>
       <div className="overflow-hidden rounded-lg border border-border">
         <Table>
@@ -79,13 +86,9 @@ export function VehiculosTable({
               return (
                 <TableRow key={vehiculo.id}>
                   <TableCell className="font-medium">
-                    {nuevosIds.has(vehiculo.id) ? (
-                      <span>{vehiculo.placa}</span>
-                    ) : (
-                      <Link href={`/flota/${vehiculo.id}`} className="hover:underline">
-                        {vehiculo.placa}
-                      </Link>
-                    )}
+                    <Link href={`/flota/${vehiculo.id}`} className="hover:underline">
+                      {vehiculo.placa}
+                    </Link>
                   </TableCell>
                   <TableCell>{TIPO_VEHICULO_META[vehiculo.tipo].label}</TableCell>
                   <TableCell>{vehiculo.capacidadKg.toLocaleString("es-VE")} kg</TableCell>

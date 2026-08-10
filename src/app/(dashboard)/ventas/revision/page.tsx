@@ -16,8 +16,14 @@ import {
 import { convertirUsdABs, formatBsAmount, formatBs, formatCurrency, formatDate } from "@/lib/constants";
 import { getFacturasPendientesByCliente, getVentasEnRevision } from "@/lib/mock-data";
 
-export default function RevisionVentasPage() {
-  const ventas = getVentasEnRevision();
+export default async function RevisionVentasPage() {
+  const ventasSinFacturas = await getVentasEnRevision();
+  const ventas = await Promise.all(
+    ventasSinFacturas.map(async (venta) => ({
+      venta,
+      facturas: await getFacturasPendientesByCliente(venta.cliente.codigo),
+    }))
+  );
 
   return (
     <div className="space-y-6">
@@ -45,8 +51,7 @@ export default function RevisionVentasPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ventas.map((venta) => {
-                  const facturas = getFacturasPendientesByCliente(venta.cliente.codigo);
+                {ventas.map(({ venta, facturas }) => {
                   const montoAdeudado = facturas.reduce((sum, f) => sum + f.monto, 0);
                   // Cada factura puede tener su propia tasa BCV "congelada"; se suma el
                   // Bs ya convertido de cada una en vez de aplicar una sola tasa al total.

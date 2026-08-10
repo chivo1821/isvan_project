@@ -4,11 +4,18 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { RouteIcon } from "lucide-react";
 import { toast } from "sonner";
+import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { geoJsonToLatLngPath } from "@/lib/route-analysis/common";
 import { calcularMejorRuta, type RutaResultado } from "@/lib/route-analysis/find-path";
 import { getMejorRutaByDespachoId, type DespachoConDetalle } from "@/lib/mock-data";
+
+type RutaCalculadaApi = {
+  distanciaEstimadaKm: number;
+  tiempoEstimadoMin: number;
+  ruta: { lat: number; lng: number }[];
+};
 
 const LeafletMap = dynamic(() => import("@/components/map/leaflet-map").then((m) => m.LeafletMap), {
   ssr: false,
@@ -23,6 +30,7 @@ const RoutePolyline = dynamic(() => import("@/components/map/route-polyline").th
 
 export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetalle }) {
   const [calculando, setCalculando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const [confirmada, setConfirmada] = useState(despacho.rutaCalculada);
   const [ruta, setRuta] = useState<RutaResultado | null>(() =>
     despacho.rutaCalculada ? getMejorRutaByDespachoId(despacho.id) ?? null : null
@@ -46,11 +54,21 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
     }, 600);
   }
 
-  function confirmar() {
-    setConfirmada(true);
-    toast.success("Ruta confirmada", {
-      description: `Distancia estimada: ${ruta?.distanciaKm} km · Tiempo estimado: ${ruta?.tiempoMin} min. (Simulación: no se persiste todavía.)`,
-    });
+  async function confirmar() {
+    setConfirmando(true);
+    try {
+      const resultado = await apiPost<RutaCalculadaApi>(`/despachos/${despacho.id}/ruta`);
+      setConfirmada(true);
+      toast.success("Ruta confirmada", {
+        description: `Distancia estimada: ${resultado.distanciaEstimadaKm} km · Tiempo estimado: ${resultado.tiempoEstimadoMin} min.`,
+      });
+    } catch (err) {
+      toast.error("No se pudo confirmar la ruta", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setConfirmando(false);
+    }
   }
 
   const path = ruta ? geoJsonToLatLngPath(ruta.geometry) : null;
@@ -97,8 +115,8 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
                 Ruta estimada (simulada) — en Fase 2 se calculará contra un servicio real de análisis de redes.
               </p>
               {!confirmada ? (
-                <Button size="sm" onClick={confirmar}>
-                  Confirmar ruta
+                <Button size="sm" onClick={confirmar} disabled={confirmando}>
+                  {confirmando ? "Confirmando..." : "Confirmar ruta"}
                 </Button>
               ) : (
                 <span className="text-xs font-medium text-success">Ruta confirmada</span>

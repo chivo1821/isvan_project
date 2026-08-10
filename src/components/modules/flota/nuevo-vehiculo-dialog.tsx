@@ -6,6 +6,7 @@ import { PlusIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -28,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TIPO_VEHICULO_META } from "@/lib/constants";
-import { almacenes, type Vehiculo } from "@/lib/mock-data";
+import type { Vehiculo } from "@/lib/mock-data";
 import type { TipoVehiculo } from "@prisma/client";
 
 const TIPOS: TipoVehiculo[] = ["CAMION_REFRIGERADO", "CAMIONETA", "MOTO"];
@@ -43,17 +44,20 @@ const vehiculoSchema = z.object({
 
 type VehiculoFormValues = z.infer<typeof vehiculoSchema>;
 
-// Contador simple para ids de vehiculos agregados en esta sesion (no persisten).
-let siguienteIdVehiculo = 1;
-
-export function NuevoVehiculoDialog({ onAdd }: { onAdd: (vehiculo: Vehiculo) => void }) {
+export function NuevoVehiculoDialog({
+  almacenBaseNombre,
+  onAdd,
+}: {
+  almacenBaseNombre: string;
+  onAdd: (vehiculo: Vehiculo) => void;
+}) {
   const [open, setOpen] = useState(false);
   const {
     control,
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<VehiculoFormValues>({
     resolver: zodResolver(vehiculoSchema),
     defaultValues: {
@@ -65,24 +69,24 @@ export function NuevoVehiculoDialog({ onAdd }: { onAdd: (vehiculo: Vehiculo) => 
     },
   });
 
-  function onSubmit(values: VehiculoFormValues) {
-    const vehiculo: Vehiculo = {
-      id: `veh-local-${siguienteIdVehiculo++}`,
-      placa: values.placa.toUpperCase(),
-      tipo: values.tipo,
-      capacidadKg: values.capacidadKg,
-      tieneRefrigeracion: values.tieneRefrigeracion,
-      estado: "FUNCIONAL",
-      almacenBaseId: almacenes[0].id,
-      conductorNombre: values.conductorNombre?.trim() || null,
-      ultimaRevision: null,
-    };
-    onAdd(vehiculo);
-    toast.success(`Vehículo ${vehiculo.placa} agregado`, {
-      description: "(Simulación: no se persiste todavía — se perderá al recargar la página.)",
-    });
-    reset();
-    setOpen(false);
+  async function onSubmit(values: VehiculoFormValues) {
+    try {
+      const vehiculo = await apiPost<Vehiculo>("/vehiculos", {
+        placa: values.placa.toUpperCase(),
+        tipo: values.tipo,
+        capacidadKg: values.capacidadKg,
+        tieneRefrigeracion: values.tieneRefrigeracion,
+        conductorNombre: values.conductorNombre?.trim() || undefined,
+      });
+      onAdd(vehiculo);
+      toast.success(`Vehículo ${vehiculo.placa} agregado`);
+      reset();
+      setOpen(false);
+    } catch (err) {
+      toast.error("No se pudo agregar el vehículo", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
   }
 
   return (
@@ -103,7 +107,7 @@ export function NuevoVehiculoDialog({ onAdd }: { onAdd: (vehiculo: Vehiculo) => 
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Agregar vehículo</DialogTitle>
-            <DialogDescription>Se agrega a la flota con base en {almacenes[0].nombre}.</DialogDescription>
+            <DialogDescription>Se agrega a la flota con base en {almacenBaseNombre}.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
@@ -171,7 +175,9 @@ export function NuevoVehiculoDialog({ onAdd }: { onAdd: (vehiculo: Vehiculo) => 
                 Cancelar
               </Button>
             </DialogClose>
-            <Button type="submit">Agregar vehículo</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              Agregar vehículo
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

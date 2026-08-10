@@ -1,8 +1,9 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { VehiculosTable } from "@/components/modules/flota/vehiculos-table";
-import { almacenes, vehiculos } from "@/lib/mock-data";
+import { getAlmacenesRaw, getVehiculosRaw } from "@/lib/mock-data";
 
-export default function FlotaPage() {
+export default async function FlotaPage() {
+  const [almacenes, vehiculos] = await Promise.all([getAlmacenesRaw(), getVehiculosRaw()]);
   return (
     <div className="space-y-6">
       <PageHeader
