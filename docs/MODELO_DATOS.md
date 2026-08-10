@@ -198,6 +198,14 @@ de un registro pasado no cambie con la fluctuación del bolívar. El monto en
 USD sigue siendo siempre el valor estable para comparar entre fechas — la UI
 muestra ambas monedas juntas en todos los montos de venta/factura.
 
+**Ya tiene un sync real** (no solo mock): `backend/app/jobs/sync_tasa_bcv.py`
+consulta [dolarapi.com](https://ve.dolarapi.com/v1/dolares/oficial) y hace
+upsert en esta tabla todos los días a las 6:00pm (Tarea Programada de
+Windows), sobre una Postgres local por ahora. Ver
+[`backend/app/jobs/README.md`](../backend/app/jobs/README.md). El frontend
+Next.js todavía no lee de ahí — sigue usando
+`src/lib/mock-data/tasas-cambio.ts` hasta que se conecte el resto de Fase 2.
+
 ### Factura
 Facturas de un cliente. `estado` (pendiente/pagada/vencida) es lo que
 dispara el flujo de revisión de ventas: si el cliente tiene alguna factura

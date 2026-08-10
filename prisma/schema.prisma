@@ -12,6 +12,15 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Nota: se evaluo agregar un generator "prisma-client-py" para que el
+// backend Python comparta este mismo schema, pero su motor bundleado
+// (5.17.x) todavia exige "url" dentro de este datasource — algo que
+// Prisma 7 ya no permite aca (se movio a prisma.config.ts). Mientras ese
+// paquete de terceros no se actualice, el backend (ver
+// backend/app/jobs/sync_tasa_bcv.py) accede a Postgres directo con
+// psycopg + SQL plano contra las tablas que este schema ya crea via
+// "migrate" — sin duplicar el modelo, solo sin un ORM Python.
+
 // ---------- Enums ----------
 
 enum RolUsuario {

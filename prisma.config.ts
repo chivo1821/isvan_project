@@ -1,9 +1,14 @@
-import { defineConfig } from "prisma/config";
+import "dotenv/config";
+import { defineConfig, env } from "prisma/config";
 
-// Fase 1 (solo UI): este archivo solo declara donde vive el schema para que
-// "npx prisma generate" pueda tipar los datos mock. La URL real de conexion
-// (DATABASE_URL) y el resto de la configuracion de Migrate/Client se conectan
-// en Fase 2, cuando exista una base de datos PostgreSQL real.
+// Prisma 7 ya no acepta "url" dentro de datasource en schema.prisma — la
+// conexion real se configura aca. DATABASE_URL viene de .env (ver
+// .env.example). Sin un .env con DATABASE_URL definido, "prisma generate"
+// sigue funcionando (no necesita conexion), pero "migrate"/"db push"/correr
+// el PrismaClient si la necesitan.
 export default defineConfig({
   schema: "prisma/schema.prisma",
+  datasource: {
+    url: env("DATABASE_URL"),
+  },
 });

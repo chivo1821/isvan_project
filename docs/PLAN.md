@@ -12,9 +12,10 @@ despachos, Flota de vehículos y Seguimiento con mapas.
 - **Estilo visual**: paleta clara y cálida inspirada en heladerías
   venezolanas (crema + rojo-naranja + amarillo), sidebar agrupado por
   módulos, wizards con tarjetas numeradas.
-- **Estado actual**: **Fase 1 completa** — toda la UI está construida y
-  funcionando sobre datos mock (`src/lib/mock-data/`), sin backend ni base de
-  datos real conectada.
+- **Estado actual**: **Fase 1 completa** (UI sobre datos mock) + primera
+  pieza real de Fase 2 en marcha: sync diario de la tasa BCV contra una
+  Postgres local (ver más abajo). El resto de la app sigue en mock — el
+  frontend Next.js todavía no lee de esta base de datos.
 
 ## Módulos construidos
 
@@ -67,6 +68,19 @@ se ajustó varias veces con feedback del negocio:
     que NO se necesita peso real por producto (el promedio por categoría
     alcanza) ni devoluciones/notas de crédito por ahora. Ver
     [`docs/MODELO_DATOS.md`](./MODELO_DATOS.md#decisiones-confirmadas).
+13. **Sync diario real de la tasa BCV** — primera pieza de Fase 2, aislada
+    del resto de la app (que sigue en mock). Un script Python
+    (`backend/app/jobs/sync_tasa_bcv.py`) consulta
+    [dolarapi.com](https://ve.dolarapi.com/v1/dolares/oficial) y hace upsert
+    en `TasaCambio` sobre una Postgres **local** (se migrará a la nube más
+    adelante), disparado por una Tarea Programada de Windows a las 6:00pm.
+    Acceso a datos con `psycopg` + SQL plano en vez de `prisma-client-py`:
+    ese paquete de terceros trae un motor que todavía exige la URL dentro de
+    `schema.prisma`, algo que Prisma 7 ya no permite (se movió a
+    `prisma.config.ts`) — incompatibilidad real descubierta al implementar,
+    documentada junto al `generator client` en `prisma/schema.prisma`. Ver
+    [`backend/app/jobs/README.md`](../backend/app/jobs/README.md) para el
+    setup y la operación día a día.
 
 ## Modelo de datos
 
@@ -85,8 +99,10 @@ relaciones y diagrama ER. Fuente técnica: [`prisma/schema.prisma`](../prisma/sc
 - Análisis TSP multi-parada (roadmap, no descartado).
 - Tasa de cambio BCV real (hoy es una constante fija).
 - Persistencia de las altas hechas desde los modales de Vehículo/Usuario.
-- Sincronización real de `TasaCambio` con el feed del BCV (hoy son valores
-  mock fijos por fecha en `src/lib/mock-data/tasas-cambio.ts`).
+- Conectar el frontend Next.js a leer `TasaCambio` en vivo desde Postgres
+  (hoy el sync ya corre y escribe en la DB local, pero la UI sigue usando
+  `src/lib/mock-data/tasas-cambio.ts`).
+- Migrar la Postgres local del sync de tasa BCV a un servidor en la nube.
 - UI para registrar/aprobar pagos de factura (hoy los campos existen en el
   modelo y se muestran como badge informativo, pero no hay formulario para
   cargarlos).

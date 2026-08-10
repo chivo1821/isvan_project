@@ -1,7 +1,11 @@
-# Fase 2 — listado de referencia, no instalado ni usado en la Fase 1 (solo UI)
+# Fase 2 — listado de referencia; instalado a partir de la tarea de sync de
+# la tasa BCV (ver app/jobs/sync_tasa_bcv.py). Acceso a Postgres via psycopg
+# (SQL plano contra las tablas que prisma/schema.prisma ya crea via
+# "migrate") en vez de un ORM Python — ver la nota en schema.prisma sobre
+# por que no se uso prisma-client-py.
 fastapi
 uvicorn[standard]
-sqlalchemy
-psycopg2-binary
+psycopg[binary]
+httpx
 pydantic
 python-dotenv
