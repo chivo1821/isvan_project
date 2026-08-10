@@ -46,7 +46,7 @@ export function LeafletMap({
   zoom = 7,
   bounds,
   className,
-  scrollWheelZoom = false,
+  scrollWheelZoom = true,
   children,
 }: {
   center: [number, number];
