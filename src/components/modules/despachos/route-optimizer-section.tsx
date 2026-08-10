@@ -126,7 +126,8 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
             </LeafletMap>
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                Ruta estimada (simulada) — en Fase 2 se calculará contra un servicio real de análisis de redes.
+                Vista previa aproximada — al confirmar se calcula la ruta real contra el servicio de análisis de
+                redes.
               </p>
               {!confirmada ? (
                 <Button size="sm" onClick={confirmar} disabled={confirmando}>

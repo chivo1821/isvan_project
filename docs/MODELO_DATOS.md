@@ -256,9 +256,11 @@ despachos sin venta asociada (usados en los datos de ejemplo para representar
 casos históricos/manuales). Tiene su **propio** flujo de aprobación
 (`EstadoDespacho` + `DespachoAprobacion`), independiente de `VentaRevision`.
 `distanciaEstimadaKm`/`tiempoEstimadoMin`/`rutaCalculada` guardan el resultado
-del optimizador de rutas (`POST /despachos/{id}/ruta`) — persistido de
-verdad, aunque el cálculo en sí sigue siendo una síntesis mock (sin SuperMap
-iServer real todavía, ver `backend/app/services/route_analysis.py`).
+del optimizador de rutas (`POST /despachos/{id}/ruta`) — calculado contra el
+servicio real de SuperMap iServer (Transportation Analyst) si
+`NETWORK_ANALYST_URL` está configurado, con fallback automático a una
+síntesis mock si el servicio no responde o no encuentra camino. Ver
+`backend/app/services/route_analysis.py`.
 
 El flujo completo de `estado` en uso hoy es:
 `PENDIENTE_APROBACION` → (aprobación) → `APROBADO` → (el despachador marca

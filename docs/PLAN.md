@@ -48,7 +48,7 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 | **Ventas** | `/ventas`, `/ventas/nueva`, `/ventas/[id]`, `/ventas/revision`, `/ventas/revision/[id]` | Crear venta real (`POST /ventas`): si el cliente tiene facturas `PENDIENTE`/`VENCIDA` en la base → `EN_REVISION`, si no → `APROBADA` automática, con la tasa BCV real del día. Aprobar/rechazar en revisión persiste (`POST /ventas/{id}/revision`) |
 | **Inventario** | `/inventario`, `/inventario/categorias`, `/inventario/[id]` | Catálogo y stock reales, precios en USD y Bs |
 | **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | `POST /despachos` genera un despacho real desde una venta aprobada, sugiriendo por producto `cantidad = min(solicitado, stock disponible)`; el coordinador puede ajustarla a mano (`PATCH /despachos/{id}/items/{itemId}`) antes de que salga del almacén. Aprobar/rechazar (`POST /despachos/{id}/aprobacion`) independiente de la revisión de venta |
-| **Ruta óptima + sugerencia de vehículo** | dentro de `/despachos/[id]` | "Calcular ruta óptima" previsualiza con la lógica portada de `network_analysis/page_1`; "Confirmar ruta" persiste de verdad (`POST /despachos/{id}/ruta`, guarda `RutaPunto`). Sugerencia de vehículo y "Asignar" reales (`GET`/`POST /despachos/{id}/vehiculos-sugeridos`, `/asignar-vehiculo`) |
+| **Ruta óptima + sugerencia de vehículo** | dentro de `/despachos/[id]` | "Calcular ruta óptima" previsualiza con una síntesis local (client-side); "Confirmar ruta" persiste la ruta **real**, calculada contra el servicio SuperMap iServer si `NETWORK_ANALYST_URL` está configurado (`POST /despachos/{id}/ruta`, guarda `RutaPunto`) — con fallback automático a la síntesis mock si el servicio no responde. Sugerencia de vehículo y "Asignar" reales (`GET`/`POST /despachos/{id}/vehiculos-sugeridos`, `/asignar-vehiculo`) |
 | **Flota** | `/flota`, `/flota/[id]` | "Agregar vehículo" (`POST /vehiculos`) y cambio de estado (`PATCH /vehiculos/{id}/estado`) persisten |
 | **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con despachos `APROBADO`/`EN_TRANSITO` (aprobados listos para salir + en camino), línea de tiempo desde `RutaPunto` |
 | **Despachador** | `/despachador`, `/despachador/[id]` | Vista dedicada para el chofer: sus despachos `APROBADO`/`EN_TRANSITO`, mapa grande con la ruta real, botones "Salí del almacén" (`POST /despachos/{id}/iniciar`) y "Marcar como entregado" (`POST /despachos/{id}/entregar`) |
@@ -146,6 +146,20 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
     brecha resultante (solicitado − despachado) es la señal para decidir en
     qué productos vale la pena invertir más inventario. Ver
     [`docs/MODELO_DATOS.md`](./MODELO_DATOS.md#decisiones-confirmadas).
+19. **Ruta real vía SuperMap iServer** — `POST /despachos/{id}/ruta` ya no
+    calcula solo una síntesis: si `NETWORK_ANALYST_URL` está configurado
+    (`.env`), llama al servicio real de Transportation Analyst (FindPath)
+    para obtener la geometría real (sigue calles/carreteras, no líneas
+    rectas que cruzan lagos o montañas) y el tiempo estimado real
+    (`weightFieldName=time`). El proxy del servidor solo acepta `GET`, así
+    que los parámetros van serializados como JSON en la query string en vez
+    de un body `POST` (mismo contrato REST que usa el SDK iClient JS de
+    `network_analysis/page_1`, adaptado a `GET`). Si el servicio no está
+    configurado, no responde, o no encuentra camino, cae automáticamente a
+    la síntesis mock (misma lógica de antes) — la demo nunca se rompe por
+    esto. La distancia real se calcula sumando Haversine entre los puntos
+    reales de la ruta (el dataset solo expone el peso `time`, no `length`).
+    Ver `backend/app/services/route_analysis.py`.
 
 ## Modelo de datos
 
@@ -157,9 +171,6 @@ Fuente técnica de la API: [`backend/README.md`](../backend/README.md).
 
 - Autenticación/login real y control de permisos por rol — las acciones usan
   el usuario mock fijo del topbar (`usuarioActual`).
-- Conexión real a un SuperMap iServer para el cálculo de rutas (sigue siendo
-  una síntesis mock en `backend/app/services/route_analysis.py`, aunque ya
-  persiste de verdad).
 - Análisis TSP multi-parada (roadmap, no descartado).
 - Migrar la Postgres local a un servidor en la nube.
 - UI para registrar/aprobar pagos de factura (los campos existen en el

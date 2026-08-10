@@ -20,7 +20,7 @@ backend/
       db.py             # get_connection() — psycopg + DATABASE_URL
       numero.py         # siguiente numero secuencial (V-0001, D-0001)
     services/
-      route_analysis.py    # port de src/lib/route-analysis/find-path.ts (mock)
+      route_analysis.py    # ruta real via SuperMap iServer, con fallback mock
       suggest_vehiculo.py  # port de la heuristica de sugerencia de vehiculo
     api/
       tasa_cambio.py  productos.py  almacenes.py  clientes.py
@@ -98,12 +98,22 @@ huérfano (pasa a veces en Windows con `multiprocessing`), cae de respaldo a
 cerrar los procesos `python`/`node` restantes. Ver
 [`scripts/stop-dev.ps1`](../scripts/stop-dev.ps1).
 
+## Análisis de rutas (SuperMap iServer)
+
+`services/route_analysis.py` calcula la ruta real contra el servicio de
+Transportation Analyst (FindPath) de SuperMap iServer si `NETWORK_ANALYST_URL`
+está configurado en `.env` (ver `.env.example`). El proxy de ese servicio solo
+acepta `GET`, así que los parámetros (`nodes`, `parameter`) van serializados
+como JSON en la query string en vez de un body `POST` — no es el contrato
+"estándar" de la API REST de iServer, es una adaptación a esta instancia en
+particular. Si el servicio no está configurado, no responde, o no encuentra
+un camino entre los puntos, cae automáticamente a una síntesis mock (línea
+recta con un factor de vialidad) para que la demo nunca se rompa por esto.
+
 ## Fuera de alcance (todavía)
 
 - Autenticación/RBAC — no hay login; las acciones usan el usuario mock fijo
   del topbar (`usuarioActual`).
-- Conexión real a SuperMap iServer para el cálculo de rutas (sigue siendo
-  una síntesis mock, ver `services/route_analysis.py`).
 - Análisis TSP multi-parada.
 - Despliegue en la nube — Postgres sigue local.
 - Regenerar `seed_data.json` — el script que lo generaba
