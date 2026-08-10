@@ -24,11 +24,16 @@ export function RevisionActions({
   ventaNumero,
   clienteNombre,
   usuarioId,
+  size = "default",
+  stopPropagation = false,
 }: {
   ventaId: string;
   ventaNumero: string;
   clienteNombre: string;
   usuarioId: string;
+  size?: "default" | "sm";
+  /** Util cuando el componente vive dentro de una fila clickeable de una tabla. */
+  stopPropagation?: boolean;
 }) {
   const router = useRouter();
   const [comentario, setComentario] = useState("");
@@ -66,10 +71,10 @@ export function RevisionActions({
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2" onClick={stopPropagation ? (e) => e.stopPropagation() : undefined}>
       <Dialog open={open === "rechazar"} onOpenChange={(v) => setOpen(v ? "rechazar" : null)}>
         <DialogTrigger asChild>
-          <Button variant="destructive">
+          <Button variant="destructive" size={size}>
             <XIcon />
             Rechazar
           </Button>
@@ -103,7 +108,7 @@ export function RevisionActions({
 
       <Dialog open={open === "aprobar"} onOpenChange={(v) => setOpen(v ? "aprobar" : null)}>
         <DialogTrigger asChild>
-          <Button>
+          <Button size={size}>
             <CheckIcon />
             Aprobar
           </Button>

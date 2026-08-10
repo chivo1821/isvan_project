@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
+import { RevisionActions } from "@/components/modules/ventas/revision-actions";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   Card,
@@ -13,11 +14,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { convertirUsdABs, formatBsAmount, formatBs, formatCurrency, formatDate } from "@/lib/constants";
-import { getFacturasPendientesByCliente, getVentasEnRevision } from "@/lib/mock-data";
+import { ESTADO_FACTURA_META, convertirUsdABs, formatBsAmount, formatBs, formatCurrency, formatDate } from "@/lib/constants";
+import { getFacturasPendientesByCliente, getUsuarioActualRaw, getVentasEnRevision } from "@/lib/mock-data";
 
 export default async function RevisionVentasPage() {
-  const ventasSinFacturas = await getVentasEnRevision();
+  const [ventasSinFacturas, usuarioActual] = await Promise.all([getVentasEnRevision(), getUsuarioActualRaw()]);
   const ventas = await Promise.all(
     ventasSinFacturas.map(async (venta) => ({
       venta,
@@ -45,9 +46,10 @@ export default async function RevisionVentasPage() {
                   <TableHead>N° Venta</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Fecha</TableHead>
-                  <TableHead>Facturas pendientes</TableHead>
+                  <TableHead>Razón (facturas del cliente)</TableHead>
                   <TableHead>Monto adeudado</TableHead>
                   <TableHead className="text-right">Total de la venta</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -69,7 +71,14 @@ export default async function RevisionVentasPage() {
                       </TableCell>
                       <TableCell>{formatDate(venta.fecha)}</TableCell>
                       <TableCell>
-                        <StatusBadge tone="warning" label={`${facturas.length} factura(s)`} />
+                        <div className="space-y-1">
+                          {facturas.map((f) => (
+                            <div key={f.id} className="flex items-center gap-1.5">
+                              <StatusBadge {...ESTADO_FACTURA_META[f.estado]} />
+                              <span className="text-xs text-muted-foreground">{f.numero}</span>
+                            </div>
+                          ))}
+                        </div>
                       </TableCell>
                       <TableCell className="leading-tight">
                         <p>{formatCurrency(montoAdeudado)}</p>
@@ -78,6 +87,18 @@ export default async function RevisionVentasPage() {
                       <TableCell className="text-right font-medium leading-tight">
                         <p>{formatCurrency(venta.total)}</p>
                         <p className="text-xs font-normal text-muted-foreground">{formatBs(venta.total, venta.tasaBcv)}</p>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end">
+                          <RevisionActions
+                            ventaId={venta.id}
+                            ventaNumero={venta.numero}
+                            clienteNombre={venta.cliente.nombre}
+                            usuarioId={usuarioActual.id}
+                            size="sm"
+                            stopPropagation
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
