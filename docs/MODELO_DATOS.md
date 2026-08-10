@@ -11,42 +11,42 @@ conectado a una base de datos real — se usa para tipar los datos mock en
 
 ```mermaid
 erDiagram
-    USUARIO ||--o{ VENTA : "vende"
-    USUARIO ||--o{ DESPACHO : "crea"
-    USUARIO ||--o{ DESPACHO_APROBACION : "aprueba/rechaza"
-    USUARIO ||--o{ VENTA_REVISION : "aprueba/rechaza"
+    USUARIO ||--o{ VENTA : vende
+    USUARIO ||--o{ DESPACHO : crea
+    USUARIO ||--o{ DESPACHO_APROBACION : audita
+    USUARIO ||--o{ VENTA_REVISION : audita
 
-    CLIENTE ||--o{ FACTURA : "tiene"
-    CLIENTE ||--o{ VENTA : "compra"
-    CLIENTE ||--o{ DESPACHO : "recibe"
+    CLIENTE ||--o{ FACTURA : tiene
+    CLIENTE ||--o{ VENTA : compra
+    CLIENTE ||--o{ DESPACHO : recibe
 
-    PRODUCTO ||--o{ STOCK_ALMACEN : "se guarda como"
-    PRODUCTO ||--o{ VENTA_ITEM : "aparece en"
-    PRODUCTO ||--o{ DESPACHO_ITEM : "aparece en"
+    PRODUCTO ||--o{ STOCK_ALMACEN : registra
+    PRODUCTO ||--o{ VENTA_ITEM : aparece_en
+    PRODUCTO ||--o{ DESPACHO_ITEM : aparece_en
 
-    ALMACEN ||--o{ STOCK_ALMACEN : "guarda"
-    ALMACEN ||--o{ VEHICULO : "es base de"
-    ALMACEN ||--o{ DESPACHO : "origina"
+    ALMACEN ||--o{ STOCK_ALMACEN : guarda
+    ALMACEN ||--o{ VEHICULO : es_base_de
+    ALMACEN ||--o{ DESPACHO : origina
 
-    VENTA ||--o{ VENTA_ITEM : "contiene"
-    VENTA ||--o{ VENTA_REVISION : "tiene"
-    VENTA ||--o| DESPACHO : "genera"
+    VENTA ||--o{ VENTA_ITEM : contiene
+    VENTA ||--o{ VENTA_REVISION : tiene
+    VENTA ||--o{ DESPACHO : genera
 
-    VEHICULO ||--o{ DESPACHO : "transporta"
+    VEHICULO ||--o{ DESPACHO : transporta
 
-    DESPACHO ||--o{ DESPACHO_ITEM : "contiene"
-    DESPACHO ||--o{ DESPACHO_APROBACION : "tiene"
-    DESPACHO ||--o{ RUTA_PUNTO : "recorre"
+    DESPACHO ||--o{ DESPACHO_ITEM : contiene
+    DESPACHO ||--o{ DESPACHO_APROBACION : tiene
+    DESPACHO ||--o{ RUTA_PUNTO : recorre
 
     USUARIO {
         string id PK
         string nombre
         string email UK
-        enum rol
+        string rol
         boolean activo
     }
     CLIENTE {
-        string codigo PK "ej. CLI-0001, es la llave primaria"
+        string codigo PK
         string nombre
         string tipo
         string direccion
@@ -57,29 +57,29 @@ erDiagram
     TASA_CAMBIO {
         string id PK
         date fecha UK
-        decimal tasa "Bs por 1 USD"
+        decimal tasa
     }
     FACTURA {
         string id PK
         string numero UK
         string clienteId FK
-        decimal monto "en USD"
-        decimal tasaBcv "congelada a fechaEmision"
+        decimal monto
+        decimal tasaBcv
         date fechaEmision
         date fechaVencimiento
-        enum estado "PENDIENTE | PAGADA | VENCIDA"
-        date fechaPago "opcional"
-        decimal montoPagado "opcional"
-        string metodoPago "opcional"
+        string estado
+        date fechaPago
+        decimal montoPagado
+        string metodoPago
         boolean pagoAprobado
     }
     PRODUCTO {
         string id PK
         string sku UK
         string nombre
-        enum categoria "HELADO | PIZZA"
+        string categoria
         boolean requiereCadenaFrio
-        decimal precioUnitario "en USD"
+        decimal precioUnitario
     }
     ALMACEN {
         string id PK
@@ -100,42 +100,42 @@ erDiagram
         string numero UK
         string clienteId FK
         string vendedorId FK
-        enum estado "PENDIENTE|EN_REVISION|APROBADA|RECHAZADA|DESPACHADA|ANULADA"
-        decimal total "en USD, valor canonico"
-        decimal tasaBcv "congelada al registrar la venta"
+        string estado
+        decimal total
+        decimal tasaBcv
     }
     VENTA_ITEM {
         string id PK
         string ventaId FK
         string productoId FK
         int cantidad
-        decimal precioUnitario "copia al momento de vender"
+        decimal precioUnitario
         decimal subtotal
     }
     VENTA_REVISION {
         string id PK
         string ventaId FK
         string usuarioId FK
-        enum accion "APROBADA | RECHAZADA"
+        string accion
         string comentario
     }
     VEHICULO {
         string id PK
         string placa UK
-        enum tipo "CAMION_REFRIGERADO|CAMIONETA|MOTO"
+        string tipo
         float capacidadKg
         boolean tieneRefrigeracion
-        enum estado "FUNCIONAL|EN_MANTENIMIENTO|FUERA_DE_SERVICIO"
+        string estado
         string almacenBaseId FK
     }
     DESPACHO {
         string id PK
         string numero UK
-        string ventaId FK "opcional"
+        string ventaId FK
         string origenId FK
         string destinoClienteId FK
-        string vehiculoId FK "opcional"
-        enum estado "BORRADOR..ENTREGADO|CANCELADO"
+        string vehiculoId FK
+        string estado
         float distanciaEstimadaKm
         int tiempoEstimadoMin
     }
@@ -149,7 +149,7 @@ erDiagram
         string id PK
         string despachoId FK
         string usuarioId FK
-        enum accion "APROBADA | RECHAZADA"
+        string accion
         string comentario
     }
     RUTA_PUNTO {
@@ -158,7 +158,7 @@ erDiagram
         int orden
         float lat
         float lng
-        string estado "salida|en_ruta|parada|entregado"
+        string estado
         datetime timestamp
     }
 ```
