@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DespachoItemCantidad } from "@/components/modules/despachos/despacho-item-cantidad";
 import { RouteOptimizerSection } from "@/components/modules/despachos/route-optimizer-section";
 import { VehiculoSugeridoSection } from "@/components/modules/despachos/vehiculo-sugerido-section";
 import { ESTADO_DESPACHO_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
@@ -20,6 +21,8 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
   const { id } = await params;
   const despacho = await getDespachoConDetalle(id);
   if (!despacho) notFound();
+
+  const cantidadEditable = despacho.estado === "PENDIENTE_APROBACION" || despacho.estado === "APROBADO";
 
   return (
     <div className="space-y-6">
@@ -69,7 +72,8 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
             <TableHeader>
               <TableRow>
                 <TableHead>Producto</TableHead>
-                <TableHead className="text-right">Cantidad</TableHead>
+                <TableHead className="text-right">Solicitado</TableHead>
+                <TableHead className="text-right">A despachar</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -80,11 +84,26 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
                       {item.producto.nombre}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right">{item.cantidad}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{item.cantidadSolicitada}</TableCell>
+                  <TableCell className="text-right">
+                    <DespachoItemCantidad
+                      despachoId={despacho.id}
+                      itemId={item.id}
+                      cantidad={item.cantidad}
+                      cantidadSolicitada={item.cantidadSolicitada}
+                      editable={cantidadEditable}
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          {cantidadEditable && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              La cantidad a despachar se sugiere según el stock disponible; puedes ajustarla mientras el despacho no
+              haya salido del almacén.
+            </p>
+          )}
         </CardContent>
       </Card>
 

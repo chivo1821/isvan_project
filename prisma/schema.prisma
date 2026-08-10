@@ -304,7 +304,14 @@ model DespachoItem {
   despacho   Despacho @relation(fields: [despachoId], references: [id])
   productoId String
   producto   Producto @relation(fields: [productoId], references: [id])
-  cantidad   Int
+  // Lo que el cliente pidio originalmente en la venta (se copia y se congela
+  // al generar el despacho). "cantidad" es lo que realmente se va a
+  // despachar: arranca sugerido como min(cantidadSolicitada, stock
+  // disponible) pero el coordinador puede ajustarlo a mano antes de que el
+  // despacho salga del almacen. La diferencia entre ambos es la demanda que
+  // el inventario actual no alcanza a cubrir.
+  cantidadSolicitada Int
+  cantidad           Int
 }
 
 // Auditoria de la aprobacion/rechazo del DESPACHO (independiente de VentaRevision).

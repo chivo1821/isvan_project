@@ -60,7 +60,10 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
             {despacho.itemsConProducto.map((item) => (
               <li key={item.id} className="flex items-center justify-between">
                 <span>{item.producto.nombre}</span>
-                <span className="text-muted-foreground">{item.cantidad}</span>
+                <span className="text-muted-foreground">
+                  {item.cantidad}
+                  {item.cantidadSolicitada !== item.cantidad && ` de ${item.cantidadSolicitada} pedidos`}
+                </span>
               </li>
             ))}
           </ul>

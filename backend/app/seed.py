@@ -170,6 +170,9 @@ def seed(data: dict) -> None:
                     _insert(cur, "DespachoItem", {
                         "id": item["id"], "despachoId": d["id"],
                         "productoId": item["productoId"], "cantidad": item["cantidad"],
+                        # Sin dato historico de demanda para los despachos de ejemplo:
+                        # se asume que lo solicitado coincidia con lo despachado.
+                        "cantidadSolicitada": item["cantidad"],
                     })
 
             for ap in data["despachoAprobaciones"]:

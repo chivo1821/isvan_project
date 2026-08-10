@@ -47,7 +47,7 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 | **Dashboard** | `/` | KPIs, ventas recientes, mini-mapa de despachos en tránsito — todo desde Postgres |
 | **Ventas** | `/ventas`, `/ventas/nueva`, `/ventas/[id]`, `/ventas/revision`, `/ventas/revision/[id]` | Crear venta real (`POST /ventas`): si el cliente tiene facturas `PENDIENTE`/`VENCIDA` en la base → `EN_REVISION`, si no → `APROBADA` automática, con la tasa BCV real del día. Aprobar/rechazar en revisión persiste (`POST /ventas/{id}/revision`) |
 | **Inventario** | `/inventario`, `/inventario/categorias`, `/inventario/[id]` | Catálogo y stock reales, precios en USD y Bs |
-| **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | `POST /despachos` genera un despacho real desde una venta aprobada; aprobar/rechazar (`POST /despachos/{id}/aprobacion`) independiente de la revisión de venta |
+| **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | `POST /despachos` genera un despacho real desde una venta aprobada, sugiriendo por producto `cantidad = min(solicitado, stock disponible)`; el coordinador puede ajustarla a mano (`PATCH /despachos/{id}/items/{itemId}`) antes de que salga del almacén. Aprobar/rechazar (`POST /despachos/{id}/aprobacion`) independiente de la revisión de venta |
 | **Ruta óptima + sugerencia de vehículo** | dentro de `/despachos/[id]` | "Calcular ruta óptima" previsualiza con la lógica portada de `network_analysis/page_1`; "Confirmar ruta" persiste de verdad (`POST /despachos/{id}/ruta`, guarda `RutaPunto`). Sugerencia de vehículo y "Asignar" reales (`GET`/`POST /despachos/{id}/vehiculos-sugeridos`, `/asignar-vehiculo`) |
 | **Flota** | `/flota`, `/flota/[id]` | "Agregar vehículo" (`POST /vehiculos`) y cambio de estado (`PATCH /vehiculos/{id}/estado`) persisten |
 | **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con despachos `APROBADO`/`EN_TRANSITO` (aprobados listos para salir + en camino), línea de tiempo desde `RutaPunto` |
@@ -127,6 +127,25 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
     `RouteOptimizerSection` para restaurar la ruta ya persistida de un
     despacho (antes solo reconocía 2 despachos de ejemplo de Fase 1 via un
     diccionario mock).
+17. **Corrección de un error de hidratación global de React** — `useIsMobile`
+    (`src/hooks/use-mobile.ts`) evaluaba `window.innerWidth` en el render
+    inicial, que nunca coincide entre servidor y cliente; como
+    `SidebarProvider` lo usa en el layout compartido, rompía la hidratación
+    en todas las páginas en producción. Se reemplazó por
+    `useSyncExternalStore`, el patrón que React recomienda para esto.
+18. **Ventas: no se bloquean por falta de stock, a propósito** — se detectó
+    que se podía vender más cantidad de la que hay en inventario. En vez de
+    bloquear (lo que ocultaría la demanda real del cliente), la venta sigue
+    registrando lo pedido tal cual, y el modelo ahora distingue "lo
+    solicitado" de "lo realmente despachable": `DespachoItem` guarda
+    `cantidadSolicitada` (congelado desde la venta) y `cantidad` (sugerida
+    como `min(solicitado, stock)` al generar el despacho, ajustable a mano
+    por el coordinador hasta que sale del almacén). El stock se descuenta de
+    verdad recién en `POST /despachos/{id}/iniciar`. `Nueva venta` muestra el
+    stock disponible por producto y un aviso no bloqueante si se supera. La
+    brecha resultante (solicitado − despachado) es la señal para decidir en
+    qué productos vale la pena invertir más inventario. Ver
+    [`docs/MODELO_DATOS.md`](./MODELO_DATOS.md#decisiones-confirmadas).
 
 ## Modelo de datos
 

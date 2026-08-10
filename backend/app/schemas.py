@@ -202,6 +202,7 @@ class DespachoItem(BaseModel):
     id: str
     productoId: str
     cantidad: int
+    cantidadSolicitada: int
 
 
 class Despacho(BaseModel):
@@ -260,3 +261,7 @@ class RutaCalculada(BaseModel):
 
 class AsignarVehiculoRequest(BaseModel):
     vehiculoId: str
+
+
+class ActualizarCantidadDespachoItemRequest(BaseModel):
+    cantidad: int

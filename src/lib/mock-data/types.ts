@@ -138,7 +138,10 @@ export type Venta = {
 export type DespachoItem = {
   id: string;
   productoId: string;
+  /** Lo que realmente se va a despachar (ajustable hasta que el despacho sale del almacén). */
   cantidad: number;
+  /** Lo que el cliente pidió originalmente en la venta. */
+  cantidadSolicitada: number;
 };
 
 export type DespachoAprobacion = {

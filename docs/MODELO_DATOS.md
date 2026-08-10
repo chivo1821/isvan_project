@@ -145,6 +145,7 @@ erDiagram
         string despachoId FK
         string productoId FK
         int cantidad
+        int cantidadSolicitada
     }
     DESPACHO_APROBACION {
         string id PK
@@ -186,6 +187,11 @@ schema — sigue siendo una tabla de N almacenes por si se necesita escalar.
 ### StockAlmacen
 Cantidad de un producto en un almacén, con su mínimo para disparar el
 indicador de "stock bajo". Es una tabla intermedia Producto↔Almacén.
+
+Se descuenta de verdad cuando un despacho sale del almacén
+(`POST /despachos/{id}/iniciar`, ver "Despacho" y "DespachoItem" abajo) — no
+es solo un valor informativo. `Venta` nunca lo valida ni lo bloquea, para no
+perder la señal de demanda real (ver "DespachoItem").
 
 ### Cliente
 Tiendas, distribuidores o consumidores finales. **El `codigo` es la llave
@@ -266,8 +272,16 @@ también se cierra el ciclo de la `Venta` de origen (ver arriba). Los estados
 flujo actual los usa todavía.
 
 ### DespachoItem
-Línea de producto dentro de un despacho (copiada de los items de la venta
-cuando el despacho se genera desde una venta).
+Línea de producto dentro de un despacho, con **dos cantidades**:
+`cantidadSolicitada` es lo que el cliente pidió en la venta (se copia y se
+congela al generar el despacho, nunca cambia); `cantidad` es lo que
+realmente se va a despachar. Al crear el despacho, `cantidad` arranca
+sugerida como `min(cantidadSolicitada, stock disponible)`, pero el
+coordinador puede ajustarla a mano (`PATCH /despachos/{id}/items/{itemId}`,
+entre 0 y `cantidadSolicitada`) mientras el despacho no haya salido del
+almacén. La diferencia entre ambas es la demanda que el inventario actual no
+alcanza a cubrir — la señal que permite decidir si vale la pena invertir más
+en un producto.
 
 ### DespachoAprobacion
 Auditoría de aprobación/rechazo del despacho (independiente de la revisión de
@@ -305,3 +319,15 @@ en el mapa.
   operativamente (si ese pago ya fue validado o no).
 - **Sin devoluciones/notas de crédito** — no es una funcionalidad necesaria
   por ahora; se puede agregar más adelante si surge la necesidad.
+- **La venta nunca se bloquea por falta de stock** — se puede vender más de
+  lo que hay en almacén, a propósito: la venta registra la demanda real del
+  cliente (`VentaItem.cantidad`), y es recién al generar el despacho que se
+  compara contra el stock disponible (`DespachoItem.cantidadSolicitada` vs
+  `cantidad`). Bloquear la venta perdería esa señal de demanda insatisfecha,
+  que es justo lo que se quiere medir para decidir en qué productos invertir
+  más inventario. `Nueva venta` sí muestra el stock disponible y un aviso no
+  bloqueante si se supera.
+- **El stock se descuenta al salir del almacén, no antes** — recién en
+  `POST /despachos/{id}/iniciar` (cuando el despachador marca "Salí del
+  almacén"), no al crear ni al aprobar el despacho, porque es el momento en
+  que el producto físicamente deja de estar disponible.

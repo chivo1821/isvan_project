@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.db import get_connection
 from app.core.numero import siguiente_numero
 from app.schemas import (
+    ActualizarCantidadDespachoItemRequest,
     AsignarVehiculoRequest,
     Despacho,
     DespachoAprobacionCreate,
@@ -22,8 +23,20 @@ ALMACEN_BASE_ID = "alm-catia"
 
 
 def _con_items(cur, despacho_row: dict) -> dict:
-    cur.execute('SELECT "id", "productoId", "cantidad" FROM "DespachoItem" WHERE "despachoId" = %s', (despacho_row["id"],))
+    cur.execute(
+        'SELECT "id", "productoId", "cantidad", "cantidadSolicitada" FROM "DespachoItem" WHERE "despachoId" = %s',
+        (despacho_row["id"],),
+    )
     return {**despacho_row, "items": cur.fetchall()}
+
+
+def _stock_disponible(cur, producto_id: str, almacen_id: str) -> int:
+    cur.execute(
+        'SELECT "cantidad" FROM "StockAlmacen" WHERE "productoId" = %s AND "almacenId" = %s',
+        (producto_id, almacen_id),
+    )
+    row = cur.fetchone()
+    return row["cantidad"] if row else 0
 
 
 @router.get("", response_model=list[Despacho])
@@ -83,11 +96,22 @@ def crear_despacho(data: DespachoCreate):
         items = []
         for item in venta_items:
             item_id = f"di-{uuid.uuid4().hex[:10]}"
+            cantidad_solicitada = item["cantidad"]
+            # Sugerencia inicial: lo maximo que el stock actual permite, sin
+            # superar lo pedido. El coordinador puede ajustarla a mano
+            # despues (ver PATCH /despachos/{id}/items/{item_id}) mientras el
+            # despacho no haya salido del almacen.
+            disponible = _stock_disponible(cur, item["productoId"], ALMACEN_BASE_ID)
+            cantidad_sugerida = max(0, min(cantidad_solicitada, disponible))
             cur.execute(
-                'INSERT INTO "DespachoItem" ("id", "despachoId", "productoId", "cantidad") VALUES (%s, %s, %s, %s)',
-                (item_id, despacho_id, item["productoId"], item["cantidad"]),
+                'INSERT INTO "DespachoItem" ("id", "despachoId", "productoId", "cantidad", "cantidadSolicitada") '
+                "VALUES (%s, %s, %s, %s, %s)",
+                (item_id, despacho_id, item["productoId"], cantidad_sugerida, cantidad_solicitada),
             )
-            items.append({"id": item_id, "productoId": item["productoId"], "cantidad": item["cantidad"]})
+            items.append({
+                "id": item_id, "productoId": item["productoId"],
+                "cantidad": cantidad_sugerida, "cantidadSolicitada": cantidad_solicitada,
+            })
 
         conn.commit()
         return {**despacho_row, "items": items}
@@ -189,6 +213,38 @@ def asignar_vehiculo(despacho_id: str, data: AsignarVehiculoRequest):
         return _con_items(cur, row)
 
 
+@router.patch("/{despacho_id}/items/{item_id}", response_model=Despacho)
+def ajustar_cantidad_item(despacho_id: str, item_id: str, data: ActualizarCantidadDespachoItemRequest):
+    """El coordinador ajusta a mano cuanto se va a despachar de un producto,
+    mientras el despacho no haya salido del almacen."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(404, "Despacho no encontrado")
+        if despacho["estado"] not in ("PENDIENTE_APROBACION", "APROBADO"):
+            raise HTTPException(400, "Ya no se puede ajustar la cantidad de este despacho")
+
+        cur.execute(
+            'SELECT * FROM "DespachoItem" WHERE "id" = %s AND "despachoId" = %s',
+            (item_id, despacho_id),
+        )
+        item = cur.fetchone()
+        if not item:
+            raise HTTPException(404, "Item de despacho no encontrado")
+        if data.cantidad < 0 or data.cantidad > item["cantidadSolicitada"]:
+            raise HTTPException(
+                400,
+                f'La cantidad debe estar entre 0 y lo solicitado ({item["cantidadSolicitada"]})',
+            )
+
+        cur.execute('UPDATE "DespachoItem" SET "cantidad" = %s WHERE "id" = %s', (data.cantidad, item_id))
+        conn.commit()
+
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        return _con_items(cur, cur.fetchone())
+
+
 @router.post("/{despacho_id}/iniciar", response_model=Despacho)
 def iniciar_ruta(despacho_id: str):
     """El despachador marca que salio del almacen con el despacho."""
@@ -207,6 +263,22 @@ def iniciar_ruta(despacho_id: str):
             (despacho_id,),
         )
         row = cur.fetchone()
+
+        # Aca es cuando el producto realmente sale del almacen: se descuenta
+        # el stock de verdad. Se re-topa contra el disponible actual por si
+        # cambio algo desde que se ajusto la cantidad (nunca deja stock
+        # negativo).
+        cur.execute(
+            'SELECT "productoId", "cantidad" FROM "DespachoItem" WHERE "despachoId" = %s',
+            (despacho_id,),
+        )
+        for item in cur.fetchall():
+            cur.execute(
+                'UPDATE "StockAlmacen" SET "cantidad" = GREATEST("cantidad" - %s, 0) '
+                'WHERE "productoId" = %s AND "almacenId" = %s',
+                (item["cantidad"], item["productoId"], row["origenId"]),
+            )
+
         conn.commit()
         return _con_items(cur, row)
 

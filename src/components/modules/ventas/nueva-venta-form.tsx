@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatBs, formatCurrency, formatDualCurrency } from "@/lib/constants";
-import type { Cliente, Factura, Producto, Venta } from "@/lib/mock-data";
+import type { Cliente, Factura, Producto, StockAlmacen, Venta } from "@/lib/mock-data";
 
 const ventaSchema = z.object({
   clienteId: z.string().min(1, "Selecciona un cliente"),
@@ -40,11 +40,13 @@ export function NuevaVentaForm({
   clientes,
   productos,
   facturas,
+  stock,
   vendedorId,
 }: {
   clientes: Cliente[];
   productos: Producto[];
   facturas: Factura[];
+  stock: StockAlmacen[];
   vendedorId: string;
 }) {
   const router = useRouter();
@@ -66,6 +68,12 @@ export function NuevaVentaForm({
   const facturasPendientesCliente = clienteId
     ? facturas.filter((f) => f.clienteId === clienteId && (f.estado === "PENDIENTE" || f.estado === "VENCIDA"))
     : [];
+
+  function stockDisponible(productoId: string) {
+    return stock
+      .filter((s) => s.productoId === productoId)
+      .reduce((sum, s) => sum + s.cantidad, 0);
+  }
 
   const total = items.reduce((sum, item) => {
     const producto = productos.find((p) => p.id === item.productoId);
@@ -151,6 +159,8 @@ export function NuevaVentaForm({
             const productoId = items[index]?.productoId;
             const producto = productos.find((p) => p.id === productoId);
             const cantidad = Number(items[index]?.cantidad) || 0;
+            const disponible = productoId ? stockDisponible(productoId) : null;
+            const superaStock = disponible !== null && cantidad > disponible;
             return (
               <div key={field.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-end">
                 <div className="flex-1 space-y-1.5">
@@ -173,6 +183,11 @@ export function NuevaVentaForm({
                       </Select>
                     )}
                   />
+                  {disponible !== null && (
+                    <p className={`text-xs ${superaStock ? "text-warning" : "text-muted-foreground"}`}>
+                      Disponible en almacén: {disponible}
+                    </p>
+                  )}
                 </div>
                 <div className="w-full space-y-1.5 sm:w-28">
                   <Label>Cantidad</Label>
@@ -201,6 +216,12 @@ export function NuevaVentaForm({
                 >
                   <Trash2Icon />
                 </Button>
+                {superaStock && (
+                  <p className="w-full text-xs text-warning sm:order-last">
+                    ⚠ Pide {cantidad - disponible} más de lo que hay en almacén — la venta se registra igual; el
+                    despacho se ajustará a lo disponible.
+                  </p>
+                )}
               </div>
             );
           })}

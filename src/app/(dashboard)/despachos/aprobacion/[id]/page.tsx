@@ -51,7 +51,12 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
                   <TableCell>
                     <StatusBadge {...CATEGORIA_PRODUCTO_META[item.producto.categoria]} />
                   </TableCell>
-                  <TableCell className="text-right">{item.cantidad}</TableCell>
+                  <TableCell className="text-right">
+                    {item.cantidad}
+                    {item.cantidadSolicitada !== item.cantidad && (
+                      <span className="ml-1 text-xs text-warning">(de {item.cantidadSolicitada} pedidos)</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {item.producto.requiereCadenaFrio ? (
                       <StatusBadge tone="info" label="Requerida" />
