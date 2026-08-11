@@ -43,7 +43,10 @@ pip install -r requirements.txt
 
 En la raíz del proyecto, copia `.env.example` a `.env` y completa
 `DATABASE_URL` (revisa el puerto real de tu Postgres local — no siempre es
-el 5432 por defecto).
+el 5432 por defecto) y `ALLOWED_ORIGINS` (el/los dominio(s) del frontend
+permitidos por CORS — por defecto solo `http://localhost:3000`; en
+producción debe incluir la URL real donde quede desplegado el frontend, o
+las acciones que llaman la API desde el navegador van a fallar por CORS).
 
 Crear la base y las tablas (desde la raíz del proyecto):
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,10 +28,16 @@ from app.api import (
 app = FastAPI(title="Gestion Logistica API")
 
 # Los formularios/acciones del frontend (Client Components) llaman la API
-# directo desde el navegador -> hace falta CORS. Solo localhost:3000 (dev).
+# directo desde el navegador -> hace falta CORS. ALLOWED_ORIGINS (.env) es una
+# lista separada por comas de los origenes del frontend permitidos (ej. la
+# URL de produccion en Vercel); si no esta definida, solo se permite
+# localhost:3000 (dev local).
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()] or ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
