@@ -140,29 +140,57 @@ def aprobar_o_rechazar_despacho(despacho_id: str, data: DespachoAprobacionCreate
         return _con_items(cur, despacho_row)
 
 
+def _origen_destino_despacho(cur, despacho_id: str) -> tuple[LatLng, LatLng]:
+    cur.execute(
+        'SELECT a."lat" AS "origenLat", a."lng" AS "origenLng", '
+        'c."lat" AS "destinoLat", c."lng" AS "destinoLng" '
+        'FROM "Despacho" d '
+        'JOIN "Almacen" a ON a."id" = d."origenId" '
+        'JOIN "Cliente" c ON c."codigo" = d."destinoClienteId" '
+        'WHERE d."id" = %s',
+        (despacho_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Despacho no encontrado")
+    if row["destinoLat"] is None or row["destinoLng"] is None:
+        raise HTTPException(400, "El cliente destino no tiene coordenadas registradas")
+    return (
+        LatLng(lat=row["origenLat"], lng=row["origenLng"]),
+        LatLng(lat=row["destinoLat"], lng=row["destinoLng"]),
+    )
+
+
+@router.post("/{despacho_id}/ruta/preview", response_model=RutaCalculada)
+def previsualizar_ruta(despacho_id: str):
+    """Igual que calcular_mejor_ruta pero sin persistir nada -- para el boton
+    "Calcular ruta optima" (antes de "Confirmar ruta"). Usa el mismo servicio
+    real (o el mismo fallback) que la version que si persiste, para que la
+    vista previa no muestre algo distinto de lo que se termina guardando."""
+    with get_connection() as conn, conn.cursor() as cur:
+        origen, destino = _origen_destino_despacho(cur, despacho_id)
+        resultado = calcular_mejor_ruta(despacho_id, origen, destino)
+
+        ahora = datetime.now()
+        n = len(resultado.geometry)
+        puntos = []
+        for i, (lng, lat) in enumerate(resultado.geometry):
+            estado_punto = "salida" if i == 0 else "en_ruta"
+            offset_min = resultado.tiempo_min * (i / (n - 1)) if n > 1 else 0
+            puntos.append({
+                "id": f"preview-{i}", "despachoId": despacho_id, "orden": i + 1,
+                "lat": lat, "lng": lng, "estado": estado_punto,
+                "timestamp": ahora + timedelta(minutes=offset_min), "descripcion": None,
+            })
+
+        return {"distanciaEstimadaKm": resultado.distancia_km, "tiempoEstimadoMin": resultado.tiempo_min, "ruta": puntos}
+
+
 @router.post("/{despacho_id}/ruta", response_model=RutaCalculada)
 def calcular_y_confirmar_ruta(despacho_id: str):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            'SELECT d.*, a."lat" AS "origenLat", a."lng" AS "origenLng", '
-            'c."lat" AS "destinoLat", c."lng" AS "destinoLng" '
-            'FROM "Despacho" d '
-            'JOIN "Almacen" a ON a."id" = d."origenId" '
-            'JOIN "Cliente" c ON c."codigo" = d."destinoClienteId" '
-            'WHERE d."id" = %s',
-            (despacho_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Despacho no encontrado")
-        if row["destinoLat"] is None or row["destinoLng"] is None:
-            raise HTTPException(400, "El cliente destino no tiene coordenadas registradas")
-
-        resultado = calcular_mejor_ruta(
-            despacho_id,
-            LatLng(lat=row["origenLat"], lng=row["origenLng"]),
-            LatLng(lat=row["destinoLat"], lng=row["destinoLng"]),
-        )
+        origen, destino = _origen_destino_despacho(cur, despacho_id)
+        resultado = calcular_mejor_ruta(despacho_id, origen, destino)
 
         cur.execute(
             'UPDATE "Despacho" SET "distanciaEstimadaKm" = %s, "tiempoEstimadoMin" = %s, "rutaCalculada" = true '

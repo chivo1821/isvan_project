@@ -8,7 +8,6 @@ import { getDespachoAprobacionesRaw, getDespachosRaw } from "./despachos";
 import { getFacturasRaw } from "./facturas";
 import { getProductosRaw } from "./productos";
 import { getRutaPuntosRaw } from "./ruta-puntos";
-import { rutasOptimizadas } from "./rutas-optimizadas";
 import { getStockRaw } from "./stock";
 import type {
   Almacen,
@@ -45,7 +44,6 @@ export {
   getVehiculosRaw,
   getVentaRevisionesRaw,
   getVentasRaw,
-  rutasOptimizadas,
 };
 
 // Trae todo lo necesario en paralelo, una sola vez por selector — el

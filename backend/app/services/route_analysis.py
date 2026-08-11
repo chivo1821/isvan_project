@@ -11,6 +11,7 @@ que el servicio externo este disponible.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env")
+
+logger = logging.getLogger("route_analysis")
 
 EARTH_RADIUS_KM = 6371
 FACTOR_VIALIDAD = 1.3
@@ -104,6 +107,7 @@ def _consultar_iserver(origen: LatLng, destino: LatLng) -> RutaResultado | None:
     que por GET en vez de POST.
     """
     if not NETWORK_ANALYST_URL:
+        logger.info("NETWORK_ANALYST_URL no configurado, usando ruta mock")
         return None
 
     nodes = [
@@ -127,25 +131,47 @@ def _consultar_iserver(origen: LatLng, destino: LatLng) -> RutaResultado | None:
         "nodes": json.dumps(nodes),
         "parameter": json.dumps(parameter),
         "isAnalyzeById": "false",
-        "hasLeastEdgeCount": "false",
+        # Coincide con network_analysis/page_1/public/js/analyses/findPath.js:
+        # entre rutas con el mismo peso, prefiere la de menos tramos/cruces.
+        "hasLeastEdgeCount": "true",
         "returnContent": "true",
     }
 
+    url = f"{NETWORK_ANALYST_URL}/path.json"
+    logger.info("Consultando iServer: %s nodes=%s", url, nodes)
+
     try:
-        resp = httpx.get(f"{NETWORK_ANALYST_URL}/path.json", params=params, timeout=NETWORK_ANALYST_TIMEOUT_S)
-        resp.raise_for_status()
+        resp = httpx.get(url, params=params, timeout=NETWORK_ANALYST_TIMEOUT_S)
+    except httpx.HTTPError as e:
+        logger.warning("iServer no respondio (%s): %s -- usando fallback", type(e).__name__, e)
+        return None
+
+    if resp.status_code != 200:
+        logger.warning(
+            "iServer devolvio HTTP %s -- usando fallback. Cuerpo: %s",
+            resp.status_code, resp.text[:500],
+        )
+        return None
+
+    try:
         data = resp.json()
-    except (httpx.HTTPError, ValueError):
+    except ValueError:
+        logger.warning("iServer no devolvio JSON valido -- usando fallback. Cuerpo: %s", resp.text[:500])
         return None
 
     path_list = data.get("pathList") or []
     if not path_list:
+        logger.warning("iServer no encontro ningun camino entre los puntos -- usando fallback. Respuesta: %s", data)
         return None
     path = path_list[0]
     points = ((path.get("route") or {}).get("line") or {}).get("points")
     if not points:
+        logger.warning(
+            "iServer encontro un camino pero sin geometria dibujable -- usando fallback. path=%s", path
+        )
         return None
 
+    logger.info("iServer devolvio %d puntos, weight=%s", len(points), path.get("weight"))
     geometry = [(p["x"], p["y"]) for p in points]
     distancia_km = sum(
         haversine_km(LatLng(lat=a["y"], lng=a["x"]), LatLng(lat=b["y"], lng=b["x"]))

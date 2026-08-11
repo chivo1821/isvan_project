@@ -7,14 +7,31 @@ import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { geoJsonToLatLngPath } from "@/lib/route-analysis/common";
-import { calcularMejorRuta, type RutaResultado } from "@/lib/route-analysis/find-path";
+import { geoJsonToLatLngPath, type GeoJsonLineString } from "@/lib/route-analysis/common";
 import type { DespachoConDetalle } from "@/lib/mock-data";
 
-// Reconstruye el resultado (misma forma que calcularMejorRuta) a partir de
-// los RutaPunto ya persistidos, en vez de un mock local de 2 despachos de
-// ejemplo — asi cualquier despacho con ruta confirmada la restaura al
-// recargar la pagina, no solo los de Fase 1.
+type RutaResultado = {
+  geometry: GeoJsonLineString;
+  distanciaKm: number;
+  tiempoMin: number;
+};
+
+type RutaCalculadaApi = {
+  distanciaEstimadaKm: number;
+  tiempoEstimadoMin: number;
+  ruta: { lat: number; lng: number }[];
+};
+
+function rutaDesdeApi(resultado: RutaCalculadaApi): RutaResultado {
+  return {
+    geometry: resultado.ruta.map((p) => [p.lng, p.lat]),
+    distanciaKm: resultado.distanciaEstimadaKm,
+    tiempoMin: resultado.tiempoEstimadoMin,
+  };
+}
+
+// Reconstruye el resultado a partir de los RutaPunto ya persistidos, para
+// que un despacho con ruta confirmada la restaure al recargar la pagina.
 function rutaDesdeDespachoPersistido(despacho: DespachoConDetalle): RutaResultado | null {
   if (!despacho.rutaCalculada || despacho.ruta.length === 0) return null;
   return {
@@ -23,12 +40,6 @@ function rutaDesdeDespachoPersistido(despacho: DespachoConDetalle): RutaResultad
     tiempoMin: despacho.tiempoEstimadoMin ?? 0,
   };
 }
-
-type RutaCalculadaApi = {
-  distanciaEstimadaKm: number;
-  tiempoEstimadoMin: number;
-  ruta: { lat: number; lng: number }[];
-};
 
 const LeafletMap = dynamic(() => import("@/components/map/leaflet-map").then((m) => m.LeafletMap), {
   ssr: false,
@@ -50,25 +61,26 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
   const destino = despacho.destinoCliente;
   const tieneCoordenadas = destino.lat != null && destino.lng != null;
 
-  function calcular() {
+  async function calcular() {
     if (!tieneCoordenadas) return;
     setCalculando(true);
-    // Simula la latencia de una llamada real a un servicio de analisis de redes.
-    setTimeout(() => {
-      const resultado = calcularMejorRuta(
-        despacho.id,
-        { lat: despacho.origen.lat, lng: despacho.origen.lng },
-        { lat: destino.lat!, lng: destino.lng! }
-      );
-      setRuta(resultado);
+    try {
+      const resultado = await apiPost<RutaCalculadaApi>(`/despachos/${despacho.id}/ruta/preview`);
+      setRuta(rutaDesdeApi(resultado));
+    } catch (err) {
+      toast.error("No se pudo calcular la ruta", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
       setCalculando(false);
-    }, 600);
+    }
   }
 
   async function confirmar() {
     setConfirmando(true);
     try {
       const resultado = await apiPost<RutaCalculadaApi>(`/despachos/${despacho.id}/ruta`);
+      setRuta(rutaDesdeApi(resultado));
       setConfirmada(true);
       toast.success("Ruta confirmada", {
         description: `Distancia estimada: ${resultado.distanciaEstimadaKm} km · Tiempo estimado: ${resultado.tiempoEstimadoMin} min.`,
@@ -126,8 +138,7 @@ export function RouteOptimizerSection({ despacho }: { despacho: DespachoConDetal
             </LeafletMap>
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                Vista previa aproximada — al confirmar se calcula la ruta real contra el servicio de análisis de
-                redes.
+                Ruta calculada contra el servicio de análisis de redes (con respaldo automático si no responde).
               </p>
               {!confirmada ? (
                 <Button size="sm" onClick={confirmar} disabled={confirmando}>
