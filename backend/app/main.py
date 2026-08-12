@@ -42,15 +42,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(tasa_cambio.router)
-app.include_router(productos.router)
-app.include_router(almacenes.router)
-app.include_router(clientes.router)
-app.include_router(usuarios.router)
-app.include_router(vehiculos.router)
-app.include_router(ventas.router)
-app.include_router(despachos.router)
-app.include_router(historial.router)
+ROUTERS = [
+    tasa_cambio.router,
+    productos.router,
+    almacenes.router,
+    clientes.router,
+    usuarios.router,
+    vehiculos.router,
+    ventas.router,
+    despachos.router,
+    historial.router,
+]
+
+# En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:
+# services + rewrites), con /api/backend/* -> este servicio. No hay forma de
+# confirmar sin desplegar si Vercel reenvia la ruta completa
+# (/api/backend/despachos) o la recorta antes de reenviarla (/despachos), asi
+# que cada router queda registrado en ambas variantes -- funciona sin
+# importar cual de las dos use, y no rompe el desarrollo local (donde el
+# frontend llama directo a localhost:8000 sin prefijo).
+for _router in ROUTERS:
+    app.include_router(_router)
+    app.include_router(_router, prefix="/api/backend")
 
 
 @app.get("/")

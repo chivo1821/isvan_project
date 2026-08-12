@@ -101,6 +101,27 @@ huérfano (pasa a veces en Windows con `multiprocessing`), cae de respaldo a
 cerrar los procesos `python`/`node` restantes. Ver
 [`scripts/stop-dev.ps1`](../scripts/stop-dev.ps1).
 
+## Despliegue en Vercel (un solo dominio, dos servicios)
+
+[`vercel.json`](../vercel.json) en la raíz del repo define dos servicios
+(`frontend` en `.`, `backend` en `backend/`) que quedan bajo el mismo
+dominio: `/api/backend/*` se enruta al backend, todo lo demás al frontend.
+Como no hay forma de confirmar sin desplegar si Vercel reenvía la ruta
+completa (`/api/backend/despachos`) o la recorta antes de reenviarla
+(`/despachos`), `main.py` registra cada router en **ambas** variantes — así
+funciona sin importar cuál use Vercel, y no rompe el desarrollo local (donde
+el frontend le pega directo a `localhost:8000` sin prefijo).
+
+Variables de entorno a configurar en el proyecto de Vercel:
+- `DATABASE_URL` — Postgres en la nube (ej. Neon), no `localhost`.
+- `NEXT_PUBLIC_API_URL` — como front y back comparten dominio, algo como
+  `https://<tu-dominio>.vercel.app/api/backend` (URL absoluta: las lecturas
+  del lado servidor de Next.js necesitan una URL absoluta, una ruta relativa
+  no funciona ahí aunque sí funcionaría desde el navegador).
+- `ALLOWED_ORIGINS` — con un solo dominio no hace falta en producción (mismo
+  origen = sin problema de CORS), pero no está de más dejarlo con la misma
+  URL por si acaso.
+
 ## Análisis de rutas (SuperMap iServer)
 
 `services/route_analysis.py` calcula la ruta real contra el servicio de
