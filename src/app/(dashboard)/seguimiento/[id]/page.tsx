@@ -1,11 +1,12 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckIcon, MapPinIcon, PauseIcon, TruckIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ESTADO_DESPACHO_META, formatDateTime } from "@/lib/constants";
-import { getDespachoConDetalle } from "@/lib/mock-data";
+import { ESTADO_RUTA_META, formatDateTime } from "@/lib/constants";
+import { getRutaConDetalle } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 const ICONO_POR_ESTADO = {
@@ -17,25 +18,27 @@ const ICONO_POR_ESTADO = {
 
 export default async function SeguimientoDetallePage({ params }: PageProps<"/seguimiento/[id]">) {
   const { id } = await params;
-  const despacho = await getDespachoConDetalle(id);
-  if (!despacho) notFound();
+  const ruta = await getRutaConDetalle(id);
+  if (!ruta) notFound();
+
+  const despachoPorId = new Map(ruta.despachos.map((d) => [d.id, d]));
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Seguimiento — ${despacho.numero}`}
-        subtitle={`${despacho.origen.nombre} → ${despacho.destinoCliente.nombre}`}
-        actions={<StatusBadge {...ESTADO_DESPACHO_META[despacho.estado]} />}
+        title={`Seguimiento — ${ruta.numero}`}
+        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} · ${ruta.despachos.length} parada(s)`}
+        actions={<StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          {despacho.ruta.length > 0 ? (
-            <SeguimientoDetalleMap ruta={despacho.ruta} />
+          {ruta.puntos.length > 0 ? (
+            <SeguimientoDetalleMap ruta={ruta.puntos} />
           ) : (
             <Card>
               <CardContent className="flex h-[26rem] items-center justify-center text-sm text-muted-foreground">
-                Este despacho todavía no tiene puntos de ruta registrados.
+                Esta ruta todavía no tiene puntos de trazado registrados.
               </CardContent>
             </Card>
           )}
@@ -46,13 +49,14 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
             <CardTitle>Línea de tiempo</CardTitle>
           </CardHeader>
           <CardContent>
-            {despacho.ruta.length === 0 ? (
+            {ruta.puntos.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin eventos registrados todavía.</p>
             ) : (
               <ol className="space-y-4">
-                {despacho.ruta.map((punto, index) => {
+                {ruta.puntos.map((punto, index) => {
                   const Icono = ICONO_POR_ESTADO[punto.estado];
-                  const esUltimo = index === despacho.ruta.length - 1;
+                  const esUltimo = index === ruta.puntos.length - 1;
+                  const despachoParada = punto.paradaDespachoId ? despachoPorId.get(punto.paradaDespachoId) : undefined;
                   return (
                     <li key={punto.id} className="relative flex gap-3 pb-1">
                       {!esUltimo && (
@@ -68,6 +72,11 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
                       </span>
                       <div className="text-sm">
                         <p className="font-medium capitalize text-foreground">{punto.estado.replace("_", " ")}</p>
+                        {despachoParada && (
+                          <Link href={`/despachos/${despachoParada.id}`} className="text-primary hover:underline">
+                            {despachoParada.numero} — {despachoParada.destinoCliente.nombre}
+                          </Link>
+                        )}
                         {punto.descripcion && <p className="text-muted-foreground">{punto.descripcion}</p>}
                         <p className="text-xs text-muted-foreground">{formatDateTime(punto.timestamp)}</p>
                       </div>

@@ -4,39 +4,47 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { DespachosTable } from "@/components/modules/despachos/despachos-table";
 import { getDespachosConDetalle, getDespachosPendientesAprobacion } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
 
 export default async function DespachosPage() {
-  const [despachosSinOrdenar, pendientesLista] = await Promise.all([
+  const [despachosSinOrdenar, pendientesLista, usuarioActual] = await Promise.all([
     getDespachosConDetalle(),
     getDespachosPendientesAprobacion(),
+    getUsuarioActual(),
   ]);
   const despachos = despachosSinOrdenar.sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
   const pendientes = pendientesLista.length;
+  const puedeCrear = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
+  const puedeAprobar = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "APROBADOR";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Despachos"
-        subtitle="Todos los despachos, generados a partir de ventas aprobadas"
+        subtitle="Todos los despachos, creados por Excel o carga manual"
         actions={
           <>
-            <Button variant="outline" asChild>
-              <Link href="/despachos/aprobacion">
-                <ClipboardCheckIcon />
-                Aprobación de despachos
-                {pendientes > 0 && (
-                  <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning">
-                    {pendientes}
-                  </span>
-                )}
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/despachos/nuevo">
-                <PlusIcon />
-                Nuevo despacho
-              </Link>
-            </Button>
+            {puedeAprobar && (
+              <Button variant="outline" asChild>
+                <Link href="/despachos/aprobacion">
+                  <ClipboardCheckIcon />
+                  Aprobación de despachos
+                  {pendientes > 0 && (
+                    <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning">
+                      {pendientes}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            )}
+            {puedeCrear && (
+              <Button asChild>
+                <Link href="/despachos/nuevo">
+                  <PlusIcon />
+                  Nuevo despacho
+                </Link>
+              </Button>
+            )}
           </>
         }
       />

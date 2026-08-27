@@ -12,9 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DespachoItemCantidad } from "@/components/modules/despachos/despacho-item-cantidad";
-import { RouteOptimizerSection } from "@/components/modules/despachos/route-optimizer-section";
-import { VehiculoSugeridoSection } from "@/components/modules/despachos/vehiculo-sugerido-section";
-import { ESTADO_DESPACHO_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { ESTADO_DESPACHO_META, ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
 import { getDespachoConDetalle } from "@/lib/mock-data";
 
 export default async function DespachoDetallePage({ params }: PageProps<"/despachos/[id]">) {
@@ -28,9 +26,7 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
     <div className="space-y-6">
       <PageHeader
         title={despacho.numero}
-        subtitle={`Creado el ${formatDateTime(despacho.fechaCreacion)} por ${despacho.creadoPor.nombre}${
-          despacho.venta ? ` · desde la venta ${despacho.venta.numero}` : " · despacho manual"
-        }`}
+        subtitle={`Documento ${despacho.numeroDocumento} · creado el ${formatDateTime(despacho.fechaCreacion)} por ${despacho.creadoPor.nombre}`}
         actions={<StatusBadge {...ESTADO_DESPACHO_META[despacho.estado]} />}
       />
 
@@ -54,7 +50,7 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
           <CardContent className="space-y-1 text-sm">
             <p className="font-medium text-foreground">{despacho.destinoCliente.nombre}</p>
             <p className="text-muted-foreground">
-              {despacho.destinoCliente.codigo} · {despacho.destinoCliente.tipo}
+              [{despacho.destinoCliente.empresa}] {despacho.destinoCliente.codigo} · {despacho.destinoCliente.tipo}
             </p>
             <p className="text-muted-foreground">
               {despacho.destinoCliente.direccion}, {despacho.destinoCliente.ciudad}
@@ -65,24 +61,25 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
 
       <Card>
         <CardHeader>
-          <CardTitle>Productos</CardTitle>
+          <CardTitle>Ítems</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Producto</TableHead>
+                <TableHead>Descripción</TableHead>
                 <TableHead className="text-right">Solicitado</TableHead>
                 <TableHead className="text-right">A despachar</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {despacho.itemsConProducto.map((item) => (
+              {despacho.items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <Link href={`/inventario/${item.producto.id}`} className="hover:underline">
-                      {item.producto.nombre}
-                    </Link>
+                    <p>{item.descripcion}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.pesoUnitarioKg} kg/u {item.requiereFrio && "· cadena de frío"}
+                    </p>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">{item.cantidadSolicitada}</TableCell>
                   <TableCell className="text-right">
@@ -100,8 +97,7 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
           </Table>
           {cantidadEditable && (
             <p className="mt-3 text-xs text-muted-foreground">
-              La cantidad a despachar se sugiere según el stock disponible; puedes ajustarla mientras el despacho no
-              haya salido del almacén.
+              Puedes ajustar la cantidad a despachar mientras el despacho no haya salido del almacén.
             </p>
           )}
         </CardContent>
@@ -109,31 +105,40 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
 
       <Card>
         <CardHeader>
-          <CardTitle>Vehículo asignado</CardTitle>
+          <CardTitle>Ruta</CardTitle>
         </CardHeader>
         <CardContent>
-          {despacho.vehiculo ? (
-            <div className="flex items-center justify-between text-sm">
-              <div>
-                <p className="font-medium text-foreground">
-                  {despacho.vehiculo.placa} — {TIPO_VEHICULO_META[despacho.vehiculo.tipo].label}
+          {despacho.ruta ? (
+            <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+              <div className="text-sm">
+                <p className="font-medium text-foreground">{despacho.ruta.numero}</p>
+                <p className="text-muted-foreground">
+                  {despacho.ruta.vehiculo.placa} — {TIPO_VEHICULO_META[despacho.ruta.vehiculo.tipo].label}
+                  {despacho.ruta.distanciaTotalKm != null &&
+                    ` · ${despacho.ruta.distanciaTotalKm.toLocaleString("es-VE")} km`}
                 </p>
-                <p className="text-muted-foreground">{despacho.vehiculo.conductorNombre ?? "Sin conductor asignado"}</p>
               </div>
               <div className="flex items-center gap-2">
-                <StatusBadge {...ESTADO_VEHICULO_META[despacho.vehiculo.estado]} />
-                <Link href={`/flota/${despacho.vehiculo.id}`} className="text-sm text-primary hover:underline">
-                  Ver vehículo
+                <StatusBadge {...ESTADO_RUTA_META[despacho.ruta.estado]} />
+                <Link href={`/rutas/${despacho.ruta.id}`} className="text-sm text-primary hover:underline">
+                  Ver ruta
                 </Link>
               </div>
             </div>
+          ) : despacho.estado === "APROBADO" ? (
+            <p className="text-sm text-muted-foreground">
+              Este despacho ya está aprobado y listo para agregarse a una ruta.{" "}
+              <Link href="/rutas/nueva" className="text-primary hover:underline">
+                Armar una ruta →
+              </Link>
+            </p>
           ) : (
-            <VehiculoSugeridoSection despachoId={despacho.id} />
+            <p className="text-sm text-muted-foreground">
+              Este despacho todavía no tiene ruta — primero debe aprobarse.
+            </p>
           )}
         </CardContent>
       </Card>
-
-      <RouteOptimizerSection despacho={despacho} />
 
       {despacho.aprobaciones.length > 0 && (
         <Card>

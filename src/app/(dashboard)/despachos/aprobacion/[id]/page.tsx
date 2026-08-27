@@ -12,15 +12,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CATEGORIA_PRODUCTO_META, ESTADO_DESPACHO_META } from "@/lib/constants";
-import { getDespachoConDetalle, getUsuarioActualRaw } from "@/lib/mock-data";
+import { ESTADO_DESPACHO_META } from "@/lib/constants";
+import { getDespachoConDetalle } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
+import { redirect } from "next/navigation";
 
 export default async function AprobacionDespachoDetallePage({ params }: PageProps<"/despachos/aprobacion/[id]">) {
   const { id } = await params;
-  const [despacho, usuarioActual] = await Promise.all([getDespachoConDetalle(id), getUsuarioActualRaw()]);
+  const [despacho, usuarioActual] = await Promise.all([getDespachoConDetalle(id), getUsuarioActual()]);
   if (!despacho) notFound();
+  if (!usuarioActual) redirect("/login");
 
-  const requiereCadenaFrio = despacho.itemsConProducto.some((item) => item.producto.requiereCadenaFrio);
+  const requiereCadenaFrio = despacho.items.some((item) => item.requiereFrio);
 
   return (
     <div className="space-y-6">
@@ -38,27 +41,27 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Producto</TableHead>
-                <TableHead>Categoría</TableHead>
+                <TableHead>Descripción</TableHead>
                 <TableHead className="text-right">Cantidad</TableHead>
+                <TableHead className="text-right">Peso</TableHead>
                 <TableHead>Cadena de frío</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {despacho.itemsConProducto.map((item) => (
+              {despacho.items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.producto.nombre}</TableCell>
-                  <TableCell>
-                    <StatusBadge {...CATEGORIA_PRODUCTO_META[item.producto.categoria]} />
-                  </TableCell>
+                  <TableCell>{item.descripcion}</TableCell>
                   <TableCell className="text-right">
                     {item.cantidad}
                     {item.cantidadSolicitada !== item.cantidad && (
                       <span className="ml-1 text-xs text-warning">(de {item.cantidadSolicitada} pedidos)</span>
                     )}
                   </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {(item.cantidad * item.pesoUnitarioKg).toLocaleString("es-VE")} kg
+                  </TableCell>
                   <TableCell>
-                    {item.producto.requiereCadenaFrio ? (
+                    {item.requiereFrio ? (
                       <StatusBadge tone="info" label="Requerida" />
                     ) : (
                       <StatusBadge tone="neutral" label="No requerida" />

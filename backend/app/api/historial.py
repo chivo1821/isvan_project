@@ -1,21 +1,14 @@
 """Listas completas (sin filtrar) de tablas de auditoria/tracking — el
-frontend ya sabe filtrarlas por ventaId/despachoId (misma logica que hoy
-tiene sobre los arrays mock, ver src/lib/mock-data/index.ts).
+frontend ya sabe filtrarlas por despachoId/rutaId (misma logica que hoy
+tiene sobre los arrays, ver src/lib/mock-data/index.ts).
 """
 
 from fastapi import APIRouter
 
 from app.core.db import get_connection
-from app.schemas import DespachoAprobacion, RutaPunto, VentaRevision
+from app.schemas import DespachoAprobacion, RutaPunto
 
 router = APIRouter(tags=["historial"])
-
-
-@router.get("/venta-revisiones", response_model=list[VentaRevision])
-def listar_venta_revisiones():
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "VentaRevision"')
-        return cur.fetchall()
 
 
 @router.get("/despacho-aprobaciones", response_model=list[DespachoAprobacion])
@@ -28,5 +21,5 @@ def listar_despacho_aprobaciones():
 @router.get("/ruta-puntos", response_model=list[RutaPunto])
 def listar_ruta_puntos():
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "RutaPunto" ORDER BY "despachoId", "orden"')
+        cur.execute('SELECT * FROM "RutaPunto" ORDER BY "rutaId", "orden"')
         return cur.fetchall()

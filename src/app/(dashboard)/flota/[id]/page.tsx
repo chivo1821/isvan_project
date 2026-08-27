@@ -11,8 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ESTADO_DESPACHO_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, formatDate } from "@/lib/constants";
-import { getAlmacenById, getDespachosByVehiculoId, getVehiculoById } from "@/lib/mock-data";
+import { ESTADO_RUTA_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, formatDate } from "@/lib/constants";
+import { getAlmacenById, getRutasByVehiculoId, getVehiculoById } from "@/lib/mock-data";
 
 export default async function VehiculoDetallePage({ params }: PageProps<"/flota/[id]">) {
   const { id } = await params;
@@ -21,7 +21,7 @@ export default async function VehiculoDetallePage({ params }: PageProps<"/flota/
 
   const [almacenBase, historialSinOrdenar] = await Promise.all([
     getAlmacenById(vehiculo.almacenBaseId),
-    getDespachosByVehiculoId(vehiculo.id),
+    getRutasByVehiculoId(vehiculo.id),
   ]);
   const historial = historialSinOrdenar.sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
 
@@ -52,33 +52,33 @@ export default async function VehiculoDetallePage({ params }: PageProps<"/flota/
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Historial de despachos asignados</CardTitle>
+            <CardTitle>Historial de rutas asignadas</CardTitle>
           </CardHeader>
           <CardContent>
             {historial.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Este vehículo no tiene despachos asignados todavía.</p>
+              <p className="text-sm text-muted-foreground">Este vehículo no tiene rutas asignadas todavía.</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>N° Despacho</TableHead>
-                    <TableHead>Destino</TableHead>
+                    <TableHead>N° Ruta</TableHead>
+                    <TableHead>Paradas</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {historial.map((d) => (
-                    <TableRow key={d.id}>
+                  {historial.map((r) => (
+                    <TableRow key={r.id}>
                       <TableCell className="font-medium">
-                        <Link href={`/despachos/${d.id}`} className="hover:underline">
-                          {d.numero}
+                        <Link href={`/rutas/${r.id}`} className="hover:underline">
+                          {r.numero}
                         </Link>
                       </TableCell>
-                      <TableCell>{d.destinoCliente.nombre}</TableCell>
-                      <TableCell>{formatDate(d.fechaCreacion)}</TableCell>
+                      <TableCell>{r.despachos.length}</TableCell>
+                      <TableCell>{formatDate(r.fechaCreacion)}</TableCell>
                       <TableCell>
-                        <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
+                        <StatusBadge {...ESTADO_RUTA_META[r.estado]} />
                       </TableCell>
                     </TableRow>
                   ))}

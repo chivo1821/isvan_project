@@ -1,21 +1,25 @@
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { NuevoDespachoWizard } from "@/components/modules/despachos/nuevo-despacho-wizard";
-import { getAlmacenesRaw, getUsuarioActualRaw, getVentasAprobadasSinDespacho } from "@/lib/mock-data";
+import { getAlmacenesRaw, getClientesRaw } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
 
 export default async function NuevoDespachoPage() {
-  const [ventasElegibles, almacenes, usuarioActual] = await Promise.all([
-    getVentasAprobadasSinDespacho(),
+  const [clientes, almacenes, usuarioActual] = await Promise.all([
+    getClientesRaw(),
     getAlmacenesRaw(),
-    getUsuarioActualRaw(),
+    getUsuarioActual(),
   ]);
+  if (!usuarioActual) redirect("/login");
+  const origen = almacenes[0];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Nuevo despacho"
-        subtitle="Genera un despacho a partir de una venta aprobada: el destino y los productos se toman de la venta"
+        subtitle="Importa el Excel del día (ISVAN o TRALOG) o carga un pedido suelto a mano"
       />
-      <NuevoDespachoWizard ventasElegibles={ventasElegibles} origen={almacenes[0]} creadoPorId={usuarioActual.id} />
+      <NuevoDespachoWizard clientes={clientes} origen={origen} creadoPorId={usuarioActual.id} />
     </div>
   );
 }

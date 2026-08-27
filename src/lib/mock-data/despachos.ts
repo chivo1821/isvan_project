@@ -7,6 +7,12 @@ export async function getDespachosRaw(): Promise<Despacho[]> {
   return apiGet<Despacho[]>("/despachos");
 }
 
+// Despachos ya aprobados y sin ruta asignada todavía — el set del que se
+// arma una nueva ruta multi-parada (ver /rutas/nueva).
+export async function getDespachosDisponiblesParaRutaRaw(): Promise<Despacho[]> {
+  return apiGet<Despacho[]>("/despachos/disponibles-para-ruta");
+}
+
 export async function getDespachoAprobacionesRaw(): Promise<DespachoAprobacion[]> {
   return apiGet<DespachoAprobacion[]>("/despacho-aprobaciones");
 }

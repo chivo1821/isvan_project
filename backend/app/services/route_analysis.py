@@ -1,11 +1,17 @@
-"""Port de src/lib/route-analysis/{common,find-path}.ts.
+"""Calculo de rutas contra el servicio de Transportation Analyst de SuperMap
+iServer, con dos analisis:
 
-Si NETWORK_ANALYST_URL esta configurado, calcula la ruta real contra el
-servicio de Transportation Analyst (FindPath) de SuperMap iServer — ver
-_consultar_iserver(). Si no esta configurado, o si la llamada falla o no
-encuentra un camino, cae de vuelta a una ruta "de ejemplo" precalculada o
-sintetica (mismo comportamiento que antes), para que la demo no dependa de
-que el servicio externo este disponible.
+- Tramo simple (origen -> destino): _consultar_iserver() / calcular_mejor_ruta()
+  — endpoint .../path.json (FindPath). Port original de
+  src/lib/route-analysis/{common,find-path}.ts.
+- Multi-parada (origen -> N clientes, orden optimizado): _consultar_iserver_tsp()
+  / calcular_mejor_ruta_multi() — endpoint .../tsppath.json (FindTSPPaths).
+
+Si NETWORK_ANALYST_URL no esta configurado, o si una llamada falla o no
+encuentra camino, cada uno cae de vuelta a un fallback (ruta "de ejemplo"
+precalculada/sintetica para el tramo simple; heuristica de vecino mas
+cercano + tramos encadenados para multi-parada), para que la app no dependa
+de que el servicio externo este disponible.
 """
 
 from __future__ import annotations
@@ -191,3 +197,200 @@ def calcular_mejor_ruta(despacho_id: str, origen: LatLng, destino: LatLng) -> Ru
     if precalculada:
         return precalculada
     return _generar_ruta_sintetica(origen, destino)
+
+
+# ---------- Rutas multi-parada (TSP) ----------
+
+
+@dataclass
+class RutaMultiResultado:
+    geometry: list[tuple[float, float]]  # [(lng, lat), ...] trazado completo
+    distancia_km: float
+    tiempo_min: int
+
+
+def _orden_vecino_mas_cercano(origen: LatLng, paradas: list[LatLng]) -> list[int]:
+    """Heuristica de vecino mas cercano (Haversine): partiendo de `origen`,
+    en cada paso elige la parada no visitada mas cercana a la posicion
+    actual. Solo se usa como fallback si el servicio TSP real no responde —
+    ver calcular_mejor_ruta_multi()."""
+    restantes = list(range(len(paradas)))
+    orden: list[int] = []
+    actual = origen
+    while restantes:
+        siguiente = min(restantes, key=lambda i: haversine_km(actual, paradas[i]))
+        orden.append(siguiente)
+        actual = paradas[siguiente]
+        restantes.remove(siguiente)
+    return orden
+
+
+def _indice_geometria_mas_cercano(geometry: list[tuple[float, float]], punto: LatLng) -> int:
+    """Punto de la geometria (lng, lat) mas cercano a `punto` — usado para
+    ubicar donde, dentro del trazado combinado que devuelve el TSP real,
+    esta la llegada a cada parada (el servicio no da limites explicitos
+    entre tramos, solo la geometria completa)."""
+    return min(
+        range(len(geometry)),
+        key=lambda i: haversine_km(LatLng(lat=geometry[i][1], lng=geometry[i][0]), punto),
+    )
+
+
+def _consultar_iserver_tsp(origen: LatLng, paradas: list[LatLng]) -> tuple[RutaMultiResultado, list[int]] | None:
+    """Llama al servicio real de SuperMap iServer (Transportation Analyst ->
+    FindTSPPaths, endpoint .../tsppath.json). Devuelve (resultado, orden) o
+    None si no esta configurado, si falla, o si la respuesta no trae la
+    forma esperada, para que el llamador use el fallback.
+
+    `orden` son indices dentro de `paradas` en el orden real de visita,
+    tomados de "stopIndexes" en la respuesta -- documentado en
+    TransportationAnalystResult.StopIndexes (help.supermap.com /
+    support.supermap.com): para FindTSPPath, stopIndexes[0] es siempre un
+    array de un solo elemento con la secuencia optimizada como indices
+    0-based sobre el `nodes` de entrada (ej. si se piden los nodos [1,3,5] y
+    el resultado visita [3,5,1], stopIndexes da [1,2,0]). Se pide
+    explicitamente con "isStopIndexesReturn" (propiedad de
+    TransportationAnalystParameter) para no depender de que el default del
+    servidor lo incluya. Confirmado ademas contra el servicio real de este
+    proyecto (iserver.stargis.net): con endNodeAssigned=false, stopIndexes
+    siempre trae el nodo 0 (nuestro origen) primero y reordena el resto por
+    costo real de red, no por distancia recta -- prueba real: nodes en
+    orden [origen, lejano, cercano, medio] -> stopIndexes [0, 2, 3, 1], es
+    decir SI optimiza el orden (no solo devuelve el orden de entrada).
+    """
+    if not NETWORK_ANALYST_URL or not paradas:
+        return None
+
+    nodos = [origen, *paradas]
+    nodes = [{"x": n.lng, "y": n.lat} for n in nodos]
+    parameter = {
+        "weightFieldName": NETWORK_ANALYST_WEIGHT_FIELD,
+        "isStopIndexesReturn": True,
+        "resultSetting": {
+            "returnEdgeFeatures": False,
+            "returnEdgeGeometry": True,
+            "returnEdgeIDs": False,
+            "returnNodeFeatures": False,
+            "returnNodeGeometry": False,
+            "returnNodeIDs": False,
+            "returnPathGuides": False,
+            "returnRoutes": True,
+        },
+    }
+    params = {
+        "nodes": json.dumps(nodes),
+        "parameter": json.dumps(parameter),
+        "isAnalyzeById": "false",
+        # El primer nodo (origen) queda fijo como partida de todos modos;
+        # esto solo controla si el ULTIMO nodo tambien queda fijo como
+        # destino -- no es el caso aca, se optimiza el resto libremente.
+        "endNodeAssigned": "false",
+        "returnContent": "true",
+    }
+
+    url = f"{NETWORK_ANALYST_URL}/tsppath.json"
+    logger.info("Consultando iServer (TSP): %s nodes=%s", url, nodes)
+
+    try:
+        resp = httpx.get(url, params=params, timeout=NETWORK_ANALYST_TIMEOUT_S)
+    except httpx.HTTPError as e:
+        logger.warning("iServer (TSP) no respondio (%s): %s -- usando fallback", type(e).__name__, e)
+        return None
+
+    if resp.status_code != 200:
+        logger.warning(
+            "iServer (TSP) devolvio HTTP %s -- usando fallback. Cuerpo: %s",
+            resp.status_code, resp.text[:500],
+        )
+        return None
+
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.warning("iServer (TSP) no devolvio JSON valido -- usando fallback. Cuerpo: %s", resp.text[:500])
+        return None
+
+    tsp_path_list = data.get("tspPathList") or []
+    if not tsp_path_list:
+        logger.warning("iServer (TSP) no encontro ninguna ruta -- usando fallback. Respuesta: %s", data)
+        return None
+
+    path = tsp_path_list[0]
+    points = ((path.get("route") or {}).get("line") or {}).get("points")
+    # La doc del modelo (.NET/Desktop) describe StopIndexes como int[][]
+    # (para soportar FindMTSPPath, con una fila por centro de distribucion),
+    # pero la serializacion REST de tsppath.json ya trae un solo array
+    # plano (confirmado en pruebas reales) ya que FindTSPPath solo tiene
+    # una fila.
+    stop_indexes = path.get("stopIndexes") or []
+    if not points or len(stop_indexes) != len(nodos) or stop_indexes[0] != 0:
+        logger.warning(
+            "iServer (TSP) devolvio una respuesta con forma inesperada -- usando fallback. "
+            "puntos=%s stopIndexes=%s",
+            len(points) if points else 0, stop_indexes,
+        )
+        return None
+
+    logger.info("iServer (TSP) devolvio %d puntos, weight=%s, stopIndexes=%s", len(points), path.get("weight"), stop_indexes)
+    geometry = [(p["x"], p["y"]) for p in points]
+    distancia_km = sum(
+        haversine_km(LatLng(lat=a["y"], lng=a["x"]), LatLng(lat=b["y"], lng=b["x"]))
+        for a, b in zip(points, points[1:])
+    )
+    tiempo_min = max(1, round(path.get("weight") or 0))
+    orden = [i - 1 for i in stop_indexes[1:]]  # indices dentro de `paradas` (nodos[1:])
+
+    resultado = RutaMultiResultado(geometry=geometry, distancia_km=round(distancia_km, 1), tiempo_min=tiempo_min)
+    return resultado, orden
+
+
+def _ruta_multi_encadenada(
+    origen: LatLng, paradas: list[LatLng]
+) -> tuple[RutaMultiResultado, list[int], list[int]]:
+    """Fallback cuando el TSP real no esta disponible: decide el orden con
+    la heuristica de vecino mas cercano y encadena tramos de dos puntos
+    (calcular_mejor_ruta, con su propio fallback sintetico si tampoco hay
+    NETWORK_ANALYST_URL). Aca si se conocen los limites exactos entre
+    tramos, asi que indices_parada se arma directo (sin necesidad de buscar
+    el punto mas cercano)."""
+    orden = _orden_vecino_mas_cercano(origen, paradas)
+
+    geometry: list[tuple[float, float]] = [(origen.lng, origen.lat)]
+    distancia_km = 0.0
+    tiempo_min = 0
+    indices_parada: list[int] = []
+    anterior = origen
+    for indice in orden:
+        parada = paradas[indice]
+        tramo = calcular_mejor_ruta(None, anterior, parada)
+        geometry.extend(tramo.geometry[1:])  # evita duplicar el punto de union
+        indices_parada.append(len(geometry) - 1)  # posicion de llegada a esta parada
+        distancia_km += tramo.distancia_km
+        tiempo_min += tramo.tiempo_min
+        anterior = parada
+
+    resultado = RutaMultiResultado(geometry=geometry, distancia_km=round(distancia_km, 1), tiempo_min=tiempo_min)
+    return resultado, orden, indices_parada
+
+
+def calcular_mejor_ruta_multi(
+    origen: LatLng, paradas: list[LatLng]
+) -> tuple[RutaMultiResultado, list[int], list[int]]:
+    """Calcula el trazado de una Ruta multi-parada (Almacen Catia -> N
+    clientes), el orden de visita, y en que posicion de la geometria queda
+    cada parada (para marcar RutaPunto.paradaDespachoId).
+
+    Primero intenta el servicio TSP real de iServer (orden optimizado por
+    costo real de red); si no esta configurado o falla, cae a una
+    heuristica propia (vecino mas cercano) encadenando tramos de dos puntos.
+    """
+    real = _consultar_iserver_tsp(origen, paradas)
+    if real:
+        resultado, orden = real
+        # El TSP real devuelve un solo trazado combinado sin limites
+        # explicitos entre tramos -- se ubica cada parada por el punto de
+        # la geometria mas cercano a sus coordenadas reales.
+        indices_parada = [_indice_geometria_mas_cercano(resultado.geometry, paradas[i]) for i in orden]
+        return resultado, orden, indices_parada
+
+    return _ruta_multi_encadenada(origen, paradas)

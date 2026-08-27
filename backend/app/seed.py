@@ -1,16 +1,14 @@
-"""Siembra Postgres con los mismos datos de ejemplo que hoy ve el frontend
-en Fase 1 (src/lib/mock-data/*.ts), para la demo. Lee
-backend/app/seed_data.json (generado por scripts/export-mock-data.ts — no
-se edita a mano).
+"""Siembra Postgres con datos de ejemplo para la demo (rutas/despachos/
+clientes/vehiculos/usuarios — Ventas e Inventario ya no existen). Lee
+backend/app/seed_data.json.
 
 Uso:
-  python -m app.seed           # trunca todo (menos TasaCambio) y siembra
-  python -m app.seed --reset   # solo trunca, no siembra nada (para despues de la demo)
+  python -m app.seed           # trunca todo y siembra
+  python -m app.seed --reset   # solo trunca, no siembra nada
 
-TasaCambio es la unica tabla que NO se trunca: ya tiene datos reales del
-sync diario (ver app/jobs/sync_tasa_bcv.py) y no queremos perderlos. Las
-filas mock de tasasCambio se agregan con ON CONFLICT (fecha) DO NOTHING, asi
-que nunca pisan una tasa real ya sincronizada.
+Todos los usuarios sembrados comparten la misma contraseña temporal
+("CambiarClave123!", ver seed_data.json) — deben cambiarla en su primer
+login via PATCH /usuarios/{id}/password.
 """
 
 from __future__ import annotations
@@ -18,7 +16,6 @@ from __future__ import annotations
 import json
 import sys
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -26,32 +23,23 @@ from app.core.db import get_connection
 
 SEED_FILE = Path(__file__).resolve().parent / "seed_data.json"
 
-# Todas menos TasaCambio (ver docstring). Un solo TRUNCATE con CASCADE
-# resuelve el orden de dependencias entre ellas.
+# Un solo TRUNCATE con CASCADE resuelve el orden de dependencias entre ellas.
 TABLES_TO_TRUNCATE = [
+    "Sesion",
     "Usuario",
-    "Producto",
     "Almacen",
-    "StockAlmacen",
     "Cliente",
-    "Factura",
     "Vehiculo",
-    "Venta",
-    "VentaItem",
-    "VentaRevision",
     "Despacho",
     "DespachoItem",
     "DespachoAprobacion",
+    "Ruta",
     "RutaPunto",
 ]
 
 
 def _dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
-
-
-def _dec(value: Any) -> Decimal | None:
-    return Decimal(str(value)) if value is not None else None
 
 
 def _insert(cur, table: str, row: dict[str, Any]) -> None:
@@ -64,6 +52,12 @@ def _insert(cur, table: str, row: dict[str, Any]) -> None:
     )
 
 
+# Contraseña temporal compartida por todos los usuarios sembrados
+# ("CambiarClave123!"), documentada fuera del repo para el equipo — deben
+# cambiarla en su primer login.
+SEED_PASSWORD_HASH = "$2b$12$UE9P6G65fsnB5Gt9PZRH7.SjbNitv6tqiaSIW8wMeKwatMIdLlbhu"
+
+
 def seed(data: dict) -> None:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -73,6 +67,7 @@ def seed(data: dict) -> None:
             for u in data["usuarios"]:
                 _insert(cur, "Usuario", {
                     "id": u["id"], "nombre": u["nombre"], "email": u["email"],
+                    "passwordHash": SEED_PASSWORD_HASH,
                     "rol": u["rol"], "avatarUrl": u.get("avatarUrl"),
                     "activo": u["activo"],
                 })
@@ -85,41 +80,13 @@ def seed(data: dict) -> None:
                     "esFrigorifico": a["esFrigorifico"],
                 })
 
-            for p in data["productos"]:
-                _insert(cur, "Producto", {
-                    "id": p["id"], "sku": p["sku"], "nombre": p["nombre"],
-                    "categoria": p["categoria"], "subcategoria": p.get("subcategoria"),
-                    "unidadMedida": p["unidadMedida"],
-                    "requiereCadenaFrio": p["requiereCadenaFrio"],
-                    "temperaturaMinC": p.get("temperaturaMinC"),
-                    "temperaturaMaxC": p.get("temperaturaMaxC"),
-                    "precioUnitario": _dec(p["precioUnitario"]),
-                    "imagenUrl": p.get("imagenUrl"), "activo": p["activo"],
-                })
-
-            for s in data["stock"]:
-                _insert(cur, "StockAlmacen", {
-                    "id": s["id"], "productoId": s["productoId"],
-                    "almacenId": s["almacenId"], "cantidad": s["cantidad"],
-                    "stockMinimo": s["stockMinimo"],
-                })
-
             for c in data["clientes"]:
                 _insert(cur, "Cliente", {
-                    "codigo": c["codigo"], "nombre": c["nombre"], "tipo": c["tipo"],
+                    "id": c["id"], "empresa": c["empresa"], "codigo": c["codigo"],
+                    "nombre": c["nombre"], "tipo": c["tipo"],
                     "direccion": c["direccion"], "ciudad": c["ciudad"],
                     "lat": c.get("lat"), "lng": c.get("lng"),
                     "telefono": c.get("telefono"), "email": c.get("email"),
-                })
-
-            for f in data["facturas"]:
-                _insert(cur, "Factura", {
-                    "id": f["id"], "numero": f["numero"], "clienteId": f["clienteId"],
-                    "monto": _dec(f["monto"]), "fechaEmision": _dt(f["fechaEmision"]),
-                    "fechaVencimiento": _dt(f["fechaVencimiento"]), "estado": f["estado"],
-                    "tasaBcv": _dec(f["tasaBcv"]), "fechaPago": _dt(f.get("fechaPago")),
-                    "montoPagado": _dec(f.get("montoPagado")),
-                    "metodoPago": f.get("metodoPago"), "pagoAprobado": f["pagoAprobado"],
                 })
 
             for v in data["vehiculos"]:
@@ -132,47 +99,34 @@ def seed(data: dict) -> None:
                     "ultimaRevision": _dt(v.get("ultimaRevision")),
                 })
 
-            for venta in data["ventas"]:
-                _insert(cur, "Venta", {
-                    "id": venta["id"], "numero": venta["numero"],
-                    "clienteId": venta["clienteId"], "vendedorId": venta["vendedorId"],
-                    "fecha": _dt(venta["fecha"]), "estado": venta["estado"],
-                    "total": _dec(venta["total"]), "tasaBcv": _dec(venta["tasaBcv"]),
-                })
-                for item in venta["items"]:
-                    _insert(cur, "VentaItem", {
-                        "id": item["id"], "ventaId": venta["id"],
-                        "productoId": item["productoId"], "cantidad": item["cantidad"],
-                        "precioUnitario": _dec(item["precioUnitario"]),
-                        "subtotal": _dec(item["subtotal"]),
-                    })
-
-            for r in data["ventaRevisiones"]:
-                _insert(cur, "VentaRevision", {
-                    "id": r["id"], "ventaId": r["ventaId"], "usuarioId": r["usuarioId"],
-                    "accion": r["accion"], "comentario": r.get("comentario"),
-                    "fecha": _dt(r["fecha"]),
+            for r in data["rutas"]:
+                _insert(cur, "Ruta", {
+                    "id": r["id"], "numero": r["numero"], "vehiculoId": r["vehiculoId"],
+                    "origenId": r["origenId"], "creadoPorId": r["creadoPorId"],
+                    "estado": r["estado"], "fechaCreacion": _dt(r["fechaCreacion"]),
+                    "distanciaTotalKm": r.get("distanciaTotalKm"),
+                    "tiempoTotalMin": r.get("tiempoTotalMin"),
                 })
 
             for d in data["despachos"]:
                 _insert(cur, "Despacho", {
-                    "id": d["id"], "numero": d["numero"], "ventaId": d.get("ventaId"),
+                    "id": d["id"], "numero": d["numero"],
+                    "numeroDocumento": d["numeroDocumento"],
                     "origenId": d["origenId"], "destinoClienteId": d["destinoClienteId"],
                     "creadoPorId": d["creadoPorId"], "estado": d["estado"],
                     "fechaCreacion": _dt(d["fechaCreacion"]),
                     "fechaEstimadaEntrega": _dt(d.get("fechaEstimadaEntrega")),
-                    "vehiculoId": d.get("vehiculoId"),
-                    "distanciaEstimadaKm": d.get("distanciaEstimadaKm"),
-                    "tiempoEstimadoMin": d.get("tiempoEstimadoMin"),
-                    "rutaCalculada": d["rutaCalculada"],
+                    "rutaId": d.get("rutaId"), "ordenEnRuta": d.get("ordenEnRuta"),
                 })
                 for item in d["items"]:
                     _insert(cur, "DespachoItem", {
                         "id": item["id"], "despachoId": d["id"],
-                        "productoId": item["productoId"], "cantidad": item["cantidad"],
+                        "descripcion": item["descripcion"], "cantidad": item["cantidad"],
                         # Sin dato historico de demanda para los despachos de ejemplo:
                         # se asume que lo solicitado coincidia con lo despachado.
                         "cantidadSolicitada": item["cantidad"],
+                        "pesoUnitarioKg": item["pesoUnitarioKg"],
+                        "requiereFrio": item["requiereFrio"],
                     })
 
             for ap in data["despachoAprobaciones"]:
@@ -184,19 +138,11 @@ def seed(data: dict) -> None:
 
             for rp in data["rutaPuntos"]:
                 _insert(cur, "RutaPunto", {
-                    "id": rp["id"], "despachoId": rp["despachoId"], "orden": rp["orden"],
+                    "id": rp["id"], "rutaId": rp["rutaId"], "orden": rp["orden"],
                     "lat": rp["lat"], "lng": rp["lng"], "estado": rp["estado"],
                     "timestamp": _dt(rp["timestamp"]), "descripcion": rp.get("descripcion"),
+                    "paradaDespachoId": rp.get("paradaDespachoId"),
                 })
-
-            # TasaCambio: nunca se trunca (ver docstring). Se agregan las
-            # filas mock que falten, sin pisar una tasa real ya sincronizada.
-            for t in data["tasasCambio"]:
-                cur.execute(
-                    'INSERT INTO "TasaCambio" ("id", "fecha", "tasa") VALUES (%s, %s, %s) '
-                    'ON CONFLICT ("fecha") DO NOTHING',
-                    (t["id"], _dt(t["fecha"]), _dec(t["tasa"])),
-                )
 
         conn.commit()
 
@@ -207,7 +153,7 @@ def reset() -> None:
             tables_sql = ", ".join(f'"{t}"' for t in TABLES_TO_TRUNCATE)
             cur.execute(f"TRUNCATE TABLE {tables_sql} CASCADE")
         conn.commit()
-    print("Tablas vaciadas (TasaCambio no se toca).")
+    print("Tablas vaciadas.")
 
 
 def main() -> int:
@@ -216,12 +162,13 @@ def main() -> int:
         return 0
 
     if not SEED_FILE.exists():
-        print(f"No existe {SEED_FILE} — corre primero: npx tsx scripts/export-mock-data.ts", file=sys.stderr)
+        print(f"No existe {SEED_FILE}", file=sys.stderr)
         return 1
 
     data = json.loads(SEED_FILE.read_text(encoding="utf-8"))
     seed(data)
     print("Listo: datos de ejemplo sembrados en Postgres.")
+    print('Contraseña temporal de todos los usuarios sembrados: "CambiarClave123!" (cambiar en el primer login).')
     return 0
 
 

@@ -25,14 +25,16 @@ function iniciales(nombre: string) {
     .toUpperCase();
 }
 
-export function UsuariosTable({ usuarios }: { usuarios: Usuario[] }) {
+export function UsuariosTable({ usuarios, puedeCrear }: { usuarios: Usuario[]; puedeCrear: boolean }) {
   const [lista, setLista] = useState<Usuario[]>(usuarios);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <NuevoUsuarioDialog onAdd={(usuario) => setLista((prev) => [usuario, ...prev])} />
-      </div>
+      {puedeCrear && (
+        <div className="flex justify-end">
+          <NuevoUsuarioDialog onAdd={(usuario) => setLista((prev) => [usuario, ...prev])} />
+        </div>
+      )}
       <Card>
         <CardContent>
           <Table>

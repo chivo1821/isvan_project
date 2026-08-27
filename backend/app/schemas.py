@@ -1,28 +1,22 @@
-"""Modelos Pydantic — reflejan 1:1 los tipos TS en src/lib/mock-data/types.ts
+"""Modelos Pydantic — reflejan 1:1 las tablas que crea prisma/schema.prisma
 (mismos nombres de campo en camelCase, ya que las columnas de Postgres
 tambien son camelCase — Prisma no aplica snake_case). Filas planas por
-tabla, salvo Venta/Despacho que anidan sus items (asi ya vienen los arrays
-crudos del mock, ver ventas.ts/despachos.ts) para no romper la forma que ya
-espera el frontend.
+tabla, salvo Despacho/Ruta que anidan sus items/despachos para no romper la
+forma que ya espera el frontend.
+
+Nota: los modelos de respuesta (Usuario, etc.) nunca declaran passwordHash —
+aunque los SELECT * de los routers devuelvan esa columna, Pydantic solo
+serializa los campos declarados en el modelo, asi que nunca sale en el JSON.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
-from typing import Annotated, Literal, Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, PlainSerializer
+from pydantic import BaseModel
 
-# Postgres/psycopg entrega estos campos como Decimal; Pydantic por defecto
-# los serializa a JSON como *string* (para no perder precision), pero el
-# frontend TS los tipa como "number" — sin este serializer, sumar/formatear
-# esos valores en JS hace concatenacion de texto en vez de aritmetica
-# (ej. "USD NaN"). Se serializan como float: para montos de esta demo no hay
-# perdida de precision relevante.
-Money = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float, when_used="json")]
-
-# ---------- Catalogo ----------
+# ---------- Usuarios / autenticacion ----------
 
 
 class Usuario(BaseModel):
@@ -38,21 +32,24 @@ class UsuarioCreate(BaseModel):
     nombre: str
     email: str
     rol: str
+    password: str
 
 
-class Producto(BaseModel):
-    id: str
-    sku: str
-    nombre: str
-    categoria: str
-    subcategoria: Optional[str] = None
-    unidadMedida: str
-    requiereCadenaFrio: bool
-    temperaturaMinC: Optional[int] = None
-    temperaturaMaxC: Optional[int] = None
-    precioUnitario: Money
-    imagenUrl: Optional[str] = None
-    activo: bool
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class CambiarPasswordRequest(BaseModel):
+    passwordActual: str
+    passwordNueva: str
+
+
+class ResetPasswordRequest(BaseModel):
+    passwordNueva: str
+
+
+# ---------- Almacen / flota ----------
 
 
 class Almacen(BaseModel):
@@ -64,56 +61,6 @@ class Almacen(BaseModel):
     lat: float
     lng: float
     esFrigorifico: bool
-
-
-class StockAlmacen(BaseModel):
-    id: str
-    productoId: str
-    almacenId: str
-    cantidad: int
-    stockMinimo: int
-
-
-# ---------- Clientes / Facturas ----------
-
-
-class Cliente(BaseModel):
-    codigo: str
-    nombre: str
-    tipo: str
-    direccion: str
-    ciudad: str
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    telefono: Optional[str] = None
-    email: Optional[str] = None
-
-
-class Factura(BaseModel):
-    id: str
-    numero: str
-    clienteId: str
-    monto: Money
-    tasaBcv: Money
-    fechaEmision: datetime
-    fechaVencimiento: datetime
-    estado: str
-    fechaPago: Optional[datetime] = None
-    montoPagado: Optional[Money] = None
-    metodoPago: Optional[str] = None
-    pagoAprobado: bool
-
-
-# ---------- Tasa de cambio ----------
-
-
-class TasaCambio(BaseModel):
-    id: str
-    fecha: datetime
-    tasa: Money
-
-
-# ---------- Flota ----------
 
 
 class Vehiculo(BaseModel):
@@ -146,53 +93,40 @@ class SugerenciaVehiculo(BaseModel):
     motivos: list[str]
 
 
-# ---------- Ventas ----------
+class SugerenciaVehiculoRequest(BaseModel):
+    despachoIds: list[str]
 
 
-class VentaItem(BaseModel):
+# ---------- Clientes ----------
+
+Empresa = Literal["ISVAN", "TRALOG"]
+
+
+class Cliente(BaseModel):
     id: str
-    productoId: str
-    cantidad: int
-    precioUnitario: Money
-    subtotal: Money
+    empresa: Empresa
+    codigo: str
+    nombre: str
+    tipo: str
+    direccion: str
+    ciudad: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    telefono: str
+    email: Optional[str] = None
 
 
-class VentaItemCreate(BaseModel):
-    productoId: str
-    cantidad: int
-
-
-class Venta(BaseModel):
-    id: str
-    numero: str
-    clienteId: str
-    vendedorId: str
-    fecha: datetime
-    estado: str
-    total: Money
-    tasaBcv: Money
-    items: list[VentaItem] = []
-
-
-class VentaCreate(BaseModel):
-    clienteId: str
-    vendedorId: str
-    items: list[VentaItemCreate]
-
-
-class VentaRevision(BaseModel):
-    id: str
-    ventaId: str
-    usuarioId: str
-    accion: str
-    comentario: Optional[str] = None
-    fecha: datetime
-
-
-class VentaRevisionCreate(BaseModel):
-    usuarioId: str
-    accion: Literal["APROBADA", "RECHAZADA"]
-    comentario: Optional[str] = None
+class ClienteCreate(BaseModel):
+    empresa: Empresa
+    codigo: str
+    nombre: str
+    tipo: str
+    direccion: str
+    ciudad: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    telefono: str
+    email: Optional[str] = None
 
 
 # ---------- Despachos ----------
@@ -200,31 +134,40 @@ class VentaRevisionCreate(BaseModel):
 
 class DespachoItem(BaseModel):
     id: str
-    productoId: str
+    descripcion: str
     cantidad: int
     cantidadSolicitada: int
+    pesoUnitarioKg: float
+    requiereFrio: bool
+
+
+class DespachoItemCreate(BaseModel):
+    descripcion: str
+    cantidad: int
+    pesoUnitarioKg: float
+    requiereFrio: bool = True
 
 
 class Despacho(BaseModel):
     id: str
     numero: str
-    ventaId: Optional[str] = None
+    numeroDocumento: str
     origenId: str
     destinoClienteId: str
     creadoPorId: str
     estado: str
     fechaCreacion: datetime
     fechaEstimadaEntrega: Optional[datetime] = None
-    vehiculoId: Optional[str] = None
-    distanciaEstimadaKm: Optional[float] = None
-    tiempoEstimadoMin: Optional[int] = None
-    rutaCalculada: bool
+    rutaId: Optional[str] = None
+    ordenEnRuta: Optional[int] = None
     items: list[DespachoItem] = []
 
 
 class DespachoCreate(BaseModel):
-    ventaId: str
+    destinoClienteId: str
+    numeroDocumento: str
     creadoPorId: str
+    items: list[DespachoItemCreate]
 
 
 class DespachoAprobacion(BaseModel):
@@ -242,26 +185,83 @@ class DespachoAprobacionCreate(BaseModel):
     comentario: Optional[str] = None
 
 
+class ActualizarCantidadDespachoItemRequest(BaseModel):
+    cantidad: int
+
+
+# ---------- Importacion de Excel ----------
+
+
+class ImportarExcelFilaError(BaseModel):
+    fila: int
+    columna: Optional[str] = None
+    motivo: str
+
+
+class ImportarExcelItemPreview(BaseModel):
+    descripcion: str
+    cantidad: int
+    pesoUnitarioKg: float
+    requiereFrio: bool
+
+
+class ImportarExcelGrupoPreview(BaseModel):
+    numeroDocumento: str
+    clienteId: str
+    clienteCodigo: str
+    clienteNombre: str
+    items: list[ImportarExcelItemPreview]
+
+
+class ImportarExcelPreviewResponse(BaseModel):
+    grupos: list[ImportarExcelGrupoPreview]
+    errores: list[ImportarExcelFilaError]
+
+
+class ImportarExcelConfirmarRequest(BaseModel):
+    creadoPorId: str
+    grupos: list[ImportarExcelGrupoPreview]
+
+
+class ImportarClientesPreviewResponse(BaseModel):
+    clientes: list[ClienteCreate]
+    errores: list[ImportarExcelFilaError]
+
+
+class ImportarClientesConfirmarRequest(BaseModel):
+    clientes: list[ClienteCreate]
+
+
+# ---------- Rutas (multi-parada) ----------
+
+
 class RutaPunto(BaseModel):
     id: str
-    despachoId: str
+    rutaId: str
     orden: int
     lat: float
     lng: float
     estado: str
     timestamp: datetime
     descripcion: Optional[str] = None
+    paradaDespachoId: Optional[str] = None
 
 
-class RutaCalculada(BaseModel):
-    distanciaEstimadaKm: float
-    tiempoEstimadoMin: int
-    ruta: list[RutaPunto]
-
-
-class AsignarVehiculoRequest(BaseModel):
+class Ruta(BaseModel):
+    id: str
+    numero: str
     vehiculoId: str
+    origenId: str
+    creadoPorId: str
+    estado: str
+    fechaCreacion: datetime
+    distanciaTotalKm: Optional[float] = None
+    tiempoTotalMin: Optional[int] = None
+    despachos: list[Despacho] = []
+    puntos: list[RutaPunto] = []
 
 
-class ActualizarCantidadDespachoItemRequest(BaseModel):
-    cantidad: int
+class RutaCreate(BaseModel):
+    despachoIds: list[str]
+    vehiculoId: str
+    creadoPorId: str

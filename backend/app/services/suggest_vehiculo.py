@@ -1,44 +1,41 @@
-"""Port de src/lib/fleet/suggest-vehiculo.ts — misma heuristica mock:
-ranking de vehiculos disponibles por mejor ajuste de capacidad (el que sobra
-menos sin quedar corto), filtrando por refrigeracion si el despacho la
-requiere. Un solo almacen -> la cercania ya no es un criterio.
+"""Ranking de vehiculos disponibles por mejor ajuste de capacidad (el que
+sobra menos sin quedar corto) para el conjunto de despachos que se quieren
+agrupar en una misma Ruta — filtra por refrigeracion si algun item la
+requiere. El peso ya viene en cada DespachoItem (pesoUnitarioKg, cargado
+desde el Excel o la carga manual — ya no hay catalogo de Producto del que
+derivarlo). Un solo almacen -> la cercania ya no es un criterio.
 """
 
 from __future__ import annotations
 
 from app.core.db import get_connection
 
-PESO_PROMEDIO_KG = {"HELADO": 0.4, "PIZZA": 0.6}
-
-# Mismo criterio que getVehiculosDisponibles() en src/lib/mock-data/index.ts.
-ESTADOS_DESPACHO_ACTIVOS = ("PENDIENTE_APROBACION", "APROBADO", "EN_PREPARACION", "EN_TRANSITO")
+# Un vehiculo esta ocupado si ya esta asignado a una Ruta todavia activa.
+RUTAS_ACTIVAS = ("PLANIFICADA", "EN_TRANSITO")
 
 
-def _estimar_peso_kg(items: list[dict]) -> float:
-    return sum(item["cantidad"] * PESO_PROMEDIO_KG.get(item["categoria"], 0.5) for item in items)
+def sugerir_vehiculos(despacho_ids: list[str]) -> list[dict]:
+    if not despacho_ids:
+        return []
 
-
-def sugerir_vehiculos(despacho_id: str) -> list[dict]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT di."cantidad", p."categoria", p."requiereCadenaFrio" '
-            'FROM "DespachoItem" di JOIN "Producto" p ON p."id" = di."productoId" '
-            'WHERE di."despachoId" = %s',
-            (despacho_id,),
+            'SELECT "cantidad", "pesoUnitarioKg", "requiereFrio" FROM "DespachoItem" '
+            'WHERE "despachoId" = ANY(%s)',
+            (despacho_ids,),
         )
         items = cur.fetchall()
         if not items:
             return []
 
-        peso_estimado_kg = round(_estimar_peso_kg(items))
-        requiere_cadena_frio = any(item["requiereCadenaFrio"] for item in items)
+        peso_estimado_kg = round(sum(item["cantidad"] * item["pesoUnitarioKg"] for item in items))
+        requiere_cadena_frio = any(item["requiereFrio"] for item in items)
 
         cur.execute(
             'SELECT v.* FROM "Vehiculo" v WHERE v."estado" = \'FUNCIONAL\' AND v."id" NOT IN ('
-            '  SELECT d."vehiculoId" FROM "Despacho" d'
-            '  WHERE d."estado" = ANY(%s) AND d."vehiculoId" IS NOT NULL'
-            ')',
-            (list(ESTADOS_DESPACHO_ACTIVOS),),
+            '  SELECT r."vehiculoId" FROM "Ruta" r WHERE r."estado" = ANY(%s)'
+            ")",
+            (list(RUTAS_ACTIVAS),),
         )
         candidatos = [
             v for v in cur.fetchall()

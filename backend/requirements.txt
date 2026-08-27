@@ -9,3 +9,6 @@ psycopg[binary]
 httpx
 pydantic
 python-dotenv
+bcrypt
+python-multipart
+openpyxl
