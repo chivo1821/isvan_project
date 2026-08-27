@@ -1,5 +1,23 @@
+import { Suspense } from "react";
 import { IceCreamConeIcon } from "lucide-react";
 import { LoginForm } from "@/components/modules/auth/login-form";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// LoginForm usa useSearchParams() (para volver a "?from=" tras iniciar
+// sesion) — en el build de produccion, Next.js exige que cualquier
+// componente que lo use este envuelto en Suspense, o falla el prerender
+// estatico de la pagina (ver https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout).
+function LoginFormSkeleton() {
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-6">
+      <Skeleton className="h-5 w-32" />
+      <Skeleton className="h-4 w-48" />
+      <Skeleton className="mt-3 h-9 w-full" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-9 w-full" />
+    </div>
+  );
+}
 
 export default function LoginPage() {
   return (
@@ -14,7 +32,9 @@ export default function LoginPage() {
             <p className="text-sm text-muted-foreground">Helados &amp; Pizzas — ISVAN / TRALOG</p>
           </div>
         </div>
-        <LoginForm />
+        <Suspense fallback={<LoginFormSkeleton />}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );
