@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangleIcon, CheckCircle2Icon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost, apiPostForm } from "@/lib/api-client";
+import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -169,19 +170,7 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
               </div>
             )}
 
-            {resultado.errores.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium text-foreground">Filas con error (no se importan):</p>
-                <ul className="space-y-1 text-xs text-muted-foreground">
-                  {resultado.errores.map((e, i) => (
-                    <li key={i}>
-                      Fila {e.fila}
-                      {e.columna ? ` (${e.columna})` : ""}: {e.motivo}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <ErroresFilaList errores={resultado.errores} />
 
             <div className="flex items-center gap-2">
               <Button onClick={confirmar} disabled={resultado.grupos.length === 0 || confirmando}>

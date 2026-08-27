@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AprobacionDespachoActions } from "@/components/modules/despachos/aprobacion-actions";
+import { DetalleDespachoDialog } from "@/components/modules/despachos/detalle-despacho-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -49,9 +49,7 @@ export default async function AprobacionDespachosPage() {
                 {despachos.map((d) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">
-                      <Link href={`/despachos/aprobacion/${d.id}`} className="hover:underline">
-                        {d.numero}
-                      </Link>
+                      <DetalleDespachoDialog despacho={d} usuarioId={usuarioActual.id} />
                     </TableCell>
                     <TableCell>{d.origen.nombre}</TableCell>
                     <TableCell>{d.destinoCliente.nombre}</TableCell>

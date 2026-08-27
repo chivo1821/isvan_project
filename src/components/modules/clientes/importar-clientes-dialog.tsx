@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { AlertTriangleIcon, CheckCircle2Icon, DownloadIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { API_URL, apiPost, apiPostForm } from "@/lib/api-client";
+import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -207,19 +208,7 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
                 </div>
               )}
 
-              {resultado.errores.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-sm font-medium text-foreground">Filas con error (no se importan):</p>
-                  <ul className="space-y-1 text-xs text-muted-foreground">
-                    {resultado.errores.map((e, i) => (
-                      <li key={i}>
-                        Fila {e.fila}
-                        {e.columna ? ` (${e.columna})` : ""}: {e.motivo}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <ErroresFilaList errores={resultado.errores} />
             </div>
           )}
         </div>
