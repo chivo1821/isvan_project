@@ -5,11 +5,11 @@ import { getUsuarioActual } from "@/lib/session";
 
 export default async function UsuariosPage() {
   const [usuarios, usuarioActual] = await Promise.all([getUsuariosRaw(), getUsuarioActual()]);
-  const puedeCrear = usuarioActual?.rol === "ADMIN";
+  const esAdmin = usuarioActual?.rol === "ADMIN";
   return (
     <div className="space-y-6">
       <PageHeader title="Usuarios" subtitle="Personas con acceso al sistema" />
-      <UsuariosTable usuarios={usuarios} puedeCrear={puedeCrear} />
+      <UsuariosTable usuarios={usuarios} esAdmin={esAdmin} />
     </div>
   );
 }

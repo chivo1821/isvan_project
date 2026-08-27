@@ -68,6 +68,9 @@ export function LoginForm() {
             <LogInIcon />
             {isSubmitting ? "Ingresando..." : "Ingresar"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            ¿Olvidaste tu contraseña? Pídele a un administrador que te la restablezca desde Usuarios.
+          </p>
         </form>
       </CardContent>
     </Card>
