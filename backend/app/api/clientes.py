@@ -141,6 +141,12 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
     codigos_en_archivo: dict[str, int] = {}
 
     with get_connection() as conn, conn.cursor() as cur:
+        # Los codigos ya existentes se traen de una sola vez, no una consulta
+        # por fila del Excel (un archivo real trae miles de filas -> miles de
+        # round-trips a la base, insoportable con Postgres en otra region).
+        cur.execute('SELECT "codigo" FROM "Cliente" WHERE "empresa" = %s', (empresa,))
+        codigos_existentes = {r["codigo"] for r in cur.fetchall()}
+
         for n, fila in enumerate(filas[1:], start=2):
             if fila is None or all(v is None for v in fila):
                 continue  # fila vacia, se ignora
@@ -185,10 +191,8 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
             if error is None and codigo in codigos_en_archivo:
                 error = ("codigo", f'El codigo "{codigo}" esta repetido en la fila {codigos_en_archivo[codigo]}')
 
-            if error is None:
-                cur.execute('SELECT 1 FROM "Cliente" WHERE "empresa" = %s AND "codigo" = %s', (empresa, codigo))
-                if cur.fetchone():
-                    error = ("codigo", f'El codigo "{codigo}" ya existe en {empresa}')
+            if error is None and codigo in codigos_existentes:
+                error = ("codigo", f'El codigo "{codigo}" ya existe en {empresa}')
 
             if error is not None:
                 columna, motivo = error
@@ -217,11 +221,20 @@ def importar_clientes_confirmar(data: ImportarClientesConfirmarRequest):
 
     with get_connection() as conn, conn.cursor() as cur:
         # Revalida unicidad por si cambio algo entre el preview y la
-        # confirmacion (ej. otra persona creo el mismo codigo mientras tanto).
-        for c in data.clientes:
-            cur.execute('SELECT 1 FROM "Cliente" WHERE "empresa" = %s AND "codigo" = %s', (c.empresa, c.codigo))
-            if cur.fetchone():
-                raise HTTPException(400, f'El codigo "{c.codigo}" ya existe en {c.empresa} (creado por otra carga)')
+        # confirmacion (ej. otra persona creo el mismo codigo mientras tanto)
+        # -- en una consulta por empresa, no una por cliente.
+        for empresa in {c.empresa for c in data.clientes}:
+            codigos = [c.codigo for c in data.clientes if c.empresa == empresa]
+            cur.execute(
+                'SELECT "codigo" FROM "Cliente" WHERE "empresa" = %s AND "codigo" = ANY(%s)',
+                (empresa, codigos),
+            )
+            ya_existentes = {r["codigo"] for r in cur.fetchall()}
+            if ya_existentes:
+                raise HTTPException(
+                    400,
+                    f'Estos codigos ya existen en {empresa} (creados por otra carga): {", ".join(sorted(ya_existentes))}',
+                )
 
         creados = [_crear_cliente_interno(cur, c) for c in data.clientes]
         conn.commit()
