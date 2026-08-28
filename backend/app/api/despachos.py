@@ -40,6 +40,26 @@ def _con_items(cur, despacho_row: dict) -> dict:
     return {**despacho_row, "items": cur.fetchall()}
 
 
+def _con_items_lote(cur, despachos: list[dict]) -> list[dict]:
+    """Version en lote de _con_items: una sola consulta para todos los
+    despachos (WHERE despachoId = ANY(...)) en vez de una por despacho —
+    evita N+1 round-trips, que con la base en otra region (Neon) se notan
+    mucho mas que en local."""
+    if not despachos:
+        return []
+    ids = [d["id"] for d in despachos]
+    cur.execute(
+        'SELECT "id", "despachoId", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio" '
+        'FROM "DespachoItem" WHERE "despachoId" = ANY(%s)',
+        (ids,),
+    )
+    items_por_despacho: dict[str, list[dict]] = {}
+    for item in cur.fetchall():
+        despacho_id = item.pop("despachoId")
+        items_por_despacho.setdefault(despacho_id, []).append(item)
+    return [{**d, "items": items_por_despacho.get(d["id"], [])} for d in despachos]
+
+
 def _crear_despacho_interno(cur, *, destino_cliente_id: str, numero_documento: str, creado_por_id: str, items) -> dict:
     numero = siguiente_numero(cur, "Despacho", "D", 4)
     despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
@@ -73,16 +93,14 @@ def _crear_despacho_interno(cur, *, destino_cliente_id: str, numero_documento: s
 def listar_despachos():
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" ORDER BY "fechaCreacion" DESC')
-        despachos = cur.fetchall()
-        return [_con_items(cur, d) for d in despachos]
+        return _con_items_lote(cur, cur.fetchall())
 
 
 @router.get("/aprobacion", response_model=list[Despacho])
 def listar_despachos_pendientes_aprobacion():
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "estado" = \'PENDIENTE_APROBACION\' ORDER BY "fechaCreacion"')
-        despachos = cur.fetchall()
-        return [_con_items(cur, d) for d in despachos]
+        return _con_items_lote(cur, cur.fetchall())
 
 
 @router.get("/disponibles-para-ruta", response_model=list[Despacho])
@@ -93,8 +111,7 @@ def listar_despachos_disponibles_para_ruta():
         cur.execute(
             'SELECT * FROM "Despacho" WHERE "estado" = \'APROBADO\' AND "rutaId" IS NULL ORDER BY "fechaCreacion"'
         )
-        despachos = cur.fetchall()
-        return [_con_items(cur, d) for d in despachos]
+        return _con_items_lote(cur, cur.fetchall())
 
 
 @router.get("/{despacho_id}", response_model=Despacho)
@@ -228,6 +245,15 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
     filas_validas: list[dict] = []
 
     with get_connection() as conn, conn.cursor() as cur:
+        # Se traen de una sola vez los clientes de la empresa y los numeros de
+        # documento ya importados, en vez de consultar por cada fila del Excel
+        # (un archivo real trae miles de filas -> miles de round-trips a la
+        # base, insoportable con Postgres en otra region).
+        cur.execute('SELECT * FROM "Cliente" WHERE "empresa" = %s', (empresa,))
+        clientes_por_codigo = {c["codigo"]: c for c in cur.fetchall()}
+        cur.execute('SELECT "numeroDocumento" FROM "Despacho"')
+        documentos_ya_importados = {r["numeroDocumento"] for r in cur.fetchall()}
+
         for n, fila in enumerate(filas[1:], start=2):
             if fila is None or all(v is None for v in fila):
                 continue  # fila vacia, se ignora
@@ -283,20 +309,14 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
 
             cliente = None
             if error is None:
-                cur.execute(
-                    'SELECT * FROM "Cliente" WHERE "empresa" = %s AND "codigo" = %s',
-                    (empresa, codigo_cliente),
-                )
-                cliente = cur.fetchone()
+                cliente = clientes_por_codigo.get(codigo_cliente)
                 if not cliente:
                     error = ("codigo_cliente", f'No existe el cliente "{codigo_cliente}" en {empresa}')
                 elif cliente["lat"] is None or cliente["lng"] is None:
                     error = ("codigo_cliente", f'El cliente "{codigo_cliente}" no tiene coordenadas registradas')
 
-            if error is None:
-                cur.execute('SELECT 1 FROM "Despacho" WHERE "numeroDocumento" = %s', (numero_documento,))
-                if cur.fetchone():
-                    error = ("numero_documento", f'El documento "{numero_documento}" ya fue importado antes')
+            if error is None and numero_documento in documentos_ya_importados:
+                error = ("numero_documento", f'El documento "{numero_documento}" ya fue importado antes')
 
             if error is not None:
                 columna, motivo = error
@@ -352,11 +372,15 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
     with get_connection() as conn, conn.cursor() as cur:
         # Revalida unicidad de numeroDocumento por si cambio algo entre el
         # preview y la confirmacion (ej. otra persona importo el mismo
-        # documento mientras tanto).
-        for grupo in data.grupos:
-            cur.execute('SELECT 1 FROM "Despacho" WHERE "numeroDocumento" = %s', (grupo.numeroDocumento,))
-            if cur.fetchone():
-                raise HTTPException(400, f'El documento "{grupo.numeroDocumento}" ya fue importado (por otra carga)')
+        # documento mientras tanto) -- en una sola consulta, no una por grupo.
+        numeros_documento = [grupo.numeroDocumento for grupo in data.grupos]
+        cur.execute('SELECT "numeroDocumento" FROM "Despacho" WHERE "numeroDocumento" = ANY(%s)', (numeros_documento,))
+        ya_existentes = {r["numeroDocumento"] for r in cur.fetchall()}
+        if ya_existentes:
+            raise HTTPException(
+                400,
+                f'Estos documentos ya fueron importados (por otra carga): {", ".join(sorted(ya_existentes))}',
+            )
 
         creados = [
             _crear_despacho_interno(

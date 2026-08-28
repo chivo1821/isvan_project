@@ -23,29 +23,55 @@ router = APIRouter(prefix="/rutas", tags=["rutas"])
 ALMACEN_BASE_ID = "alm-catia"
 
 
-def _con_detalle(cur, ruta_row: dict) -> dict:
-    cur.execute('SELECT * FROM "Despacho" WHERE "rutaId" = %s ORDER BY "ordenEnRuta"', (ruta_row["id"],))
+def _con_detalle_lote(cur, rutas: list[dict]) -> list[dict]:
+    """Version en lote: sin importar cuantas rutas ni cuantos despachos por
+    ruta, siempre son 3 consultas totales (despachos, items, puntos), en vez
+    de una por despacho anidada dentro de una por ruta (N+1). Con la base en
+    otra region (Neon) cada round-trip pesa mucho mas que en local."""
+    if not rutas:
+        return []
+    ruta_ids = [r["id"] for r in rutas]
+
+    cur.execute('SELECT * FROM "Despacho" WHERE "rutaId" = ANY(%s) ORDER BY "ordenEnRuta"', (ruta_ids,))
     despachos = cur.fetchall()
-    for d in despachos:
+
+    despacho_ids = [d["id"] for d in despachos]
+    items_por_despacho: dict[str, list[dict]] = {}
+    if despacho_ids:
         cur.execute(
-            'SELECT "id", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio" '
-            'FROM "DespachoItem" WHERE "despachoId" = %s',
-            (d["id"],),
+            'SELECT "id", "despachoId", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio" '
+            'FROM "DespachoItem" WHERE "despachoId" = ANY(%s)',
+            (despacho_ids,),
         )
-        d["items"] = cur.fetchall()
+        for item in cur.fetchall():
+            despacho_id = item.pop("despachoId")
+            items_por_despacho.setdefault(despacho_id, []).append(item)
 
-    cur.execute('SELECT * FROM "RutaPunto" WHERE "rutaId" = %s ORDER BY "orden"', (ruta_row["id"],))
-    puntos = cur.fetchall()
+    despachos_por_ruta: dict[str, list[dict]] = {}
+    for d in despachos:
+        d["items"] = items_por_despacho.get(d["id"], [])
+        despachos_por_ruta.setdefault(d["rutaId"], []).append(d)
 
-    return {**ruta_row, "despachos": despachos, "puntos": puntos}
+    cur.execute('SELECT * FROM "RutaPunto" WHERE "rutaId" = ANY(%s) ORDER BY "orden"', (ruta_ids,))
+    puntos_por_ruta: dict[str, list[dict]] = {}
+    for p in cur.fetchall():
+        puntos_por_ruta.setdefault(p["rutaId"], []).append(p)
+
+    return [
+        {**r, "despachos": despachos_por_ruta.get(r["id"], []), "puntos": puntos_por_ruta.get(r["id"], [])}
+        for r in rutas
+    ]
+
+
+def _con_detalle(cur, ruta_row: dict) -> dict:
+    return _con_detalle_lote(cur, [ruta_row])[0]
 
 
 @router.get("", response_model=list[Ruta])
 def listar_rutas():
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
-        rutas = cur.fetchall()
-        return [_con_detalle(cur, r) for r in rutas]
+        return _con_detalle_lote(cur, cur.fetchall())
 
 
 @router.get("/{ruta_id}", response_model=Ruta)
