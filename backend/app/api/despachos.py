@@ -32,6 +32,20 @@ router = APIRouter(prefix="/despachos", tags=["despachos"])
 ALMACEN_BASE_ID = "alm-catia"
 
 
+def _verificar_almacen_base(cur) -> None:
+    """Todo despacho nace en el almacen base. Si esa fila no existe (base
+    recien creada a la que solo se le cargo el usuario admin), el INSERT
+    reventaba con un ForeignKeyViolation sin capturar -> 500 opaco. Mejor
+    decir exactamente que falta y como resolverlo."""
+    cur.execute('SELECT 1 FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
+    if not cur.fetchone():
+        raise HTTPException(
+            400,
+            f'No existe el almacen de origen "{ALMACEN_BASE_ID}" en la base de datos. '
+            "Hay que crearlo antes de poder registrar despachos (ver README, seccion de datos iniciales).",
+        )
+
+
 def _con_items(cur, despacho_row: dict) -> dict:
     cur.execute(
         'SELECT "id", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio" '
@@ -134,6 +148,7 @@ def crear_despacho(data: DespachoCreate):
         raise HTTPException(400, "El despacho debe tener al menos un item")
 
     with get_connection() as conn, conn.cursor() as cur:
+        _verificar_almacen_base(cur)
         cur.execute('SELECT 1 FROM "Cliente" WHERE "id" = %s', (data.destinoClienteId,))
         if not cur.fetchone():
             raise HTTPException(404, "Cliente no encontrado")
@@ -371,6 +386,8 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
         raise HTTPException(400, "No hay documentos validos para importar")
 
     with get_connection() as conn, conn.cursor() as cur:
+        _verificar_almacen_base(cur)
+
         # Revalida unicidad de numeroDocumento por si cambio algo entre el
         # preview y la confirmacion (ej. otra persona importo el mismo
         # documento mientras tanto) -- en una sola consulta, no una por grupo.

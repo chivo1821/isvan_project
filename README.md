@@ -73,8 +73,21 @@ npx prisma generate         # ya corre solo con "npm install", pero por si acaso
 > `backend/app/seed.py` (`python -m app.seed`), pero no es parte del flujo
 > normal de trabajo.
 
-Con la base vacía, hace falta al menos un usuario ADMIN para poder entrar
-(no hay registro público) — créalo con un INSERT directo:
+#### Datos iniciales obligatorios
+
+Una base recién migrada queda vacía, pero hay **dos filas que el sistema
+necesita sí o sí** para funcionar (no son datos de demo):
+
+**1. El almacén de origen.** Todo despacho y toda ruta parten del Almacén
+Catia; su `id` está fijo como `alm-catia` en el backend. Sin esta fila, crear
+un despacho falla:
+
+```sql
+INSERT INTO "Almacen" ("id", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "esFrigorifico")
+VALUES ('alm-catia', 'Almacén Catia', 'Centro de Distribución', 'Catia', 'Caracas', 10.512937, -66.944611, true);
+```
+
+**2. Un usuario ADMIN** para poder entrar (no hay registro público):
 
 ```sql
 INSERT INTO "Usuario" ("id", "nombre", "email", "passwordHash", "rol", "activo")
@@ -84,6 +97,9 @@ VALUES ('usr-admin', 'Tu Nombre', 'tu@correo.com', '<hash-bcrypt>', 'ADMIN', tru
 El hash se genera con Python: `python -c "import bcrypt; print(bcrypt.hashpw(b'tu-clave-temporal', bcrypt.gensalt()).decode())"`.
 Una vez adentro, cualquier ADMIN puede crear más usuarios desde **Usuarios**
 o restablecerles la contraseña — no hace falta repetir este paso a mano.
+
+Los vehículos y clientes sí se cargan desde la app (Flota, y Clientes con su
+carga masiva por Excel).
 
 ### 4. Correr todo
 
