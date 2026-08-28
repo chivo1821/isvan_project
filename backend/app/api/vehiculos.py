@@ -1,7 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.schemas import Vehiculo, VehiculoCreate, VehiculoEstadoUpdate
 
@@ -28,7 +29,7 @@ def obtener_vehiculo(vehiculo_id: str):
     return row
 
 
-@router.post("", response_model=Vehiculo, status_code=201)
+@router.post("", response_model=Vehiculo, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
 def crear_vehiculo(data: VehiculoCreate):
     with get_connection() as conn, conn.cursor() as cur:
         vehiculo_id = f"veh-{uuid.uuid4().hex[:10]}"
@@ -51,7 +52,11 @@ def crear_vehiculo(data: VehiculoCreate):
         return row
 
 
-@router.patch("/{vehiculo_id}/estado", response_model=Vehiculo)
+@router.patch(
+    "/{vehiculo_id}/estado",
+    response_model=Vehiculo,
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
 def cambiar_estado_vehiculo(vehiculo_id: str, data: VehiculoEstadoUpdate):
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

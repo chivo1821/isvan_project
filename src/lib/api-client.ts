@@ -1,10 +1,24 @@
 // Cliente HTTP hacia la API FastAPI real (ver backend/app/main.py). Se usa
 // desde Server Components (fetch server->server) y desde Client Components
 // (fetch del navegador, por eso FastAPI tiene CORS habilitado para
-// localhost:3000). "cache: no-store" porque es una demo — siempre datos
-// frescos, sin preocuparse por invalidacion de cache.
+// localhost:3000). "cache: no-store" porque siempre hace falta el dato mas
+// fresco (sesion, estados de despacho/ruta cambian todo el tiempo).
+//
+// Sesion (ver backend/app/core/auth.py): la cookie httpOnly la maneja el
+// navegador solo en Client Components (de ahi "credentials: include", para
+// que viaje en la llamada cross-origin :3000 -> :8000). Los Server
+// Components corren en Node y no tienen acceso al "cookie jar" del
+// navegador -- hay que leer la cookie de la request entrante (next/headers)
+// y reenviarla a mano como header Cookie.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+async function cookieHeader(): Promise<HeadersInit> {
+  if (typeof window !== "undefined") return {};
+  const { cookies } = await import("next/headers");
+  const header = (await cookies()).toString();
+  return header ? { Cookie: header } : {};
+}
 
 async function handle<T>(res: Response, path: string): Promise<T> {
   if (!res.ok) {
@@ -17,19 +31,38 @@ async function handle<T>(res: Response, path: string): Promise<T> {
     }
     throw new Error(`${res.status} en ${path}${detalle ? `: ${detalle}` : ""}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  const res = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: await cookieHeader(),
+  });
   return handle<T>(res, path);
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(await cookieHeader()) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  return handle<T>(res, path);
+}
+
+// Para multipart/form-data (ej. carga de Excel) — sin Content-Type manual,
+// el navegador/runtime le agrega el boundary correcto solo.
+export async function apiPostForm<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: await cookieHeader(),
+    body: formData,
     cache: "no-store",
   });
   return handle<T>(res, path);
@@ -38,7 +71,8 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(await cookieHeader()) },
     body: JSON.stringify(body),
     cache: "no-store",
   });

@@ -1,6 +1,7 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AprobacionDespachoActions } from "@/components/modules/despachos/aprobacion-actions";
+import { DetalleDespachoDialog } from "@/components/modules/despachos/detalle-despacho-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -11,17 +12,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/constants";
-import { getDespachosPendientesAprobacion, getUsuarioActualRaw } from "@/lib/mock-data";
+import { getDespachosPendientesAprobacion } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
 
 export default async function AprobacionDespachosPage() {
-  const [despachos, usuarioActual] = await Promise.all([getDespachosPendientesAprobacion(), getUsuarioActualRaw()]);
+  const [despachos, usuarioActual] = await Promise.all([getDespachosPendientesAprobacion(), getUsuarioActual()]);
+  if (!usuarioActual) redirect("/login");
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Aprobación de despachos"
-        subtitle="Despachos pendientes de aprobación (independiente de la revisión de ventas)"
-        helpText="Un despacho puede haberse generado automáticamente desde una venta aprobada, o haberse creado manualmente. En ambos casos pasa por esta cola antes de prepararse."
+        subtitle="Despachos pendientes de aprobación, creados por Excel o carga manual"
+        helpText="Todo despacho (venga de una importación de Excel o de una carga manual) pasa por esta cola antes de poder agregarse a una ruta."
       />
       <Card>
         <CardContent>
@@ -36,7 +39,7 @@ export default async function AprobacionDespachosPage() {
                   <TableHead>N° Despacho</TableHead>
                   <TableHead>Origen</TableHead>
                   <TableHead>Destino</TableHead>
-                  <TableHead># Productos</TableHead>
+                  <TableHead># Ítems</TableHead>
                   <TableHead>Creado por</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -46,13 +49,11 @@ export default async function AprobacionDespachosPage() {
                 {despachos.map((d) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">
-                      <Link href={`/despachos/aprobacion/${d.id}`} className="hover:underline">
-                        {d.numero}
-                      </Link>
+                      <DetalleDespachoDialog despacho={d} usuarioId={usuarioActual.id} />
                     </TableCell>
                     <TableCell>{d.origen.nombre}</TableCell>
                     <TableCell>{d.destinoCliente.nombre}</TableCell>
-                    <TableCell>{d.itemsConProducto.length}</TableCell>
+                    <TableCell>{d.items.length}</TableCell>
                     <TableCell>{d.creadoPor.nombre}</TableCell>
                     <TableCell>{formatDate(d.fechaCreacion)}</TableCell>
                     <TableCell className="text-right">

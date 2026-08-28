@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Building2Icon,
   ClipboardCheckIcon,
   IceCreamConeIcon,
   LayoutDashboardIcon,
   MapPinnedIcon,
   NavigationIcon,
-  PackageIcon,
-  ShoppingCartIcon,
+  RouteIcon,
   TruckIcon,
   UsersIcon,
 } from "lucide-react";
@@ -27,33 +27,21 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import type { RolUsuario } from "@/lib/mock-data";
 
-type NavLeaf = { label: string; href: string };
-type NavItem = { label: string; href: string; icon: React.ComponentType<{ className?: string }>; children?: NavLeaf[] };
+type NavLeaf = { label: string; href: string; roles?: RolUsuario[] };
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children?: NavLeaf[];
+  roles?: RolUsuario[];
+};
 type NavGroup = { label: string; items: NavItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Ventas",
-    items: [
-      {
-        label: "Ventas",
-        href: "/ventas",
-        icon: ShoppingCartIcon,
-        children: [
-          { label: "Todas las ventas", href: "/ventas" },
-          { label: "Nueva venta", href: "/ventas/nueva" },
-          { label: "Revisión de ventas", href: "/ventas/revision" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Inventario",
-    items: [{ label: "Inventario", href: "/inventario", icon: PackageIcon }],
-  },
-  {
-    label: "Despachos",
+    label: "Rutas y despachos",
     items: [
       {
         label: "Despachos",
@@ -61,26 +49,38 @@ const NAV_GROUPS: NavGroup[] = [
         icon: TruckIcon,
         children: [
           { label: "Todos los despachos", href: "/despachos" },
-          { label: "Nuevo despacho", href: "/despachos/nuevo" },
-          { label: "Aprobación de despachos", href: "/despachos/aprobacion" },
+          { label: "Nuevo despacho", href: "/despachos/nuevo", roles: ["ADMIN", "DESPACHOS"] },
+          { label: "Aprobación de despachos", href: "/despachos/aprobacion", roles: ["ADMIN", "APROBADOR"] },
+        ],
+      },
+      {
+        label: "Rutas",
+        href: "/rutas",
+        icon: RouteIcon,
+        children: [
+          { label: "Todas las rutas", href: "/rutas" },
+          { label: "Nueva ruta", href: "/rutas/nueva", roles: ["ADMIN", "DESPACHOS"] },
         ],
       },
     ],
   },
   {
-    label: "Flota",
-    items: [{ label: "Vehículos", href: "/flota", icon: ClipboardCheckIcon }],
+    label: "Clientes y flota",
+    items: [
+      { label: "Clientes", href: "/clientes", icon: Building2Icon },
+      { label: "Vehículos", href: "/flota", icon: ClipboardCheckIcon },
+    ],
   },
   {
     label: "Seguimiento",
     items: [
       { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon },
-      { label: "Despachador", href: "/despachador", icon: NavigationIcon },
+      { label: "Despachador", href: "/despachador", icon: NavigationIcon, roles: ["ADMIN", "REPARTIDOR"] },
     ],
   },
   {
     label: "Administración",
-    items: [{ label: "Usuarios", href: "/usuarios", icon: UsersIcon }],
+    items: [{ label: "Usuarios", href: "/usuarios", icon: UsersIcon, roles: ["ADMIN"] }],
   },
 ];
 
@@ -89,8 +89,22 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppSidebar() {
+function puedeVer(roles: RolUsuario[] | undefined, rol: RolUsuario) {
+  return !roles || roles.includes(rol);
+}
+
+export function AppSidebar({ rol }: { rol: RolUsuario }) {
   const pathname = usePathname();
+
+  const grupos = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items
+      .filter((item) => puedeVer(item.roles, rol))
+      .map((item) => ({
+        ...item,
+        children: item.children?.filter((child) => puedeVer(child.roles, rol)),
+      })),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <Sidebar collapsible="icon">
@@ -127,7 +141,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {NAV_GROUPS.map((group) => (
+        {grupos.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label.toUpperCase()}</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -142,7 +156,7 @@ export function AppSidebar() {
                           <span>{item.label}</span>
                         </Link>
                       </SidebarMenuButton>
-                      {item.children && (
+                      {item.children && item.children.length > 0 && (
                         <SidebarMenuSub>
                           {item.children.map((child) => (
                             <SidebarMenuSubItem key={child.href}>

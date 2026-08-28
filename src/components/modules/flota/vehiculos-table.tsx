@@ -30,9 +30,11 @@ const ESTADOS: EstadoVehiculo[] = ["FUNCIONAL", "EN_MANTENIMIENTO", "FUERA_DE_SE
 export function VehiculosTable({
   vehiculos,
   almacenes,
+  puedeEditar,
 }: {
   vehiculos: Vehiculo[];
   almacenes: Almacen[];
+  puedeEditar: boolean;
 }) {
   const [lista, setLista] = useState<Vehiculo[]>(vehiculos);
   const [estados, setEstados] = useState<Record<string, EstadoVehiculo>>(() =>
@@ -63,9 +65,11 @@ export function VehiculosTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <NuevoVehiculoDialog almacenBaseNombre={almacenBase?.nombre ?? ""} onAdd={agregarVehiculo} />
-      </div>
+      {puedeEditar && (
+        <div className="flex justify-end">
+          <NuevoVehiculoDialog almacenBaseNombre={almacenBase?.nombre ?? ""} onAdd={agregarVehiculo} />
+        </div>
+      )}
       <div className="overflow-hidden rounded-lg border border-border">
         <Table>
           <TableHeader>
@@ -102,20 +106,24 @@ export function VehiculosTable({
                   <TableCell>{almacen?.nombre ?? "—"}</TableCell>
                   <TableCell>{vehiculo.conductorNombre ?? "—"}</TableCell>
                   <TableCell>
-                    <Select value={estado} onValueChange={(v) => cambiarEstado(vehiculo, v as EstadoVehiculo)}>
-                      <SelectTrigger size="sm" className="w-44">
-                        <SelectValue>
-                          <StatusBadge {...ESTADO_VEHICULO_META[estado]} />
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ESTADOS.map((e) => (
-                          <SelectItem key={e} value={e}>
-                            {ESTADO_VEHICULO_META[e].label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {puedeEditar ? (
+                      <Select value={estado} onValueChange={(v) => cambiarEstado(vehiculo, v as EstadoVehiculo)}>
+                        <SelectTrigger size="sm" className="w-44">
+                          <SelectValue>
+                            <StatusBadge {...ESTADO_VEHICULO_META[estado]} />
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESTADOS.map((e) => (
+                            <SelectItem key={e} value={e}>
+                              {ESTADO_VEHICULO_META[e].label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <StatusBadge {...ESTADO_VEHICULO_META[estado]} />
+                    )}
                   </TableCell>
                 </TableRow>
               );

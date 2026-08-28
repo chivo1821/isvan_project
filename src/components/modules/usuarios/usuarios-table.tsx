@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
+import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,14 +26,16 @@ function iniciales(nombre: string) {
     .toUpperCase();
 }
 
-export function UsuariosTable({ usuarios }: { usuarios: Usuario[] }) {
+export function UsuariosTable({ usuarios, esAdmin }: { usuarios: Usuario[]; esAdmin: boolean }) {
   const [lista, setLista] = useState<Usuario[]>(usuarios);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <NuevoUsuarioDialog onAdd={(usuario) => setLista((prev) => [usuario, ...prev])} />
-      </div>
+      {esAdmin && (
+        <div className="flex justify-end">
+          <NuevoUsuarioDialog onAdd={(usuario) => setLista((prev) => [usuario, ...prev])} />
+        </div>
+      )}
       <Card>
         <CardContent>
           <Table>
@@ -42,6 +45,7 @@ export function UsuariosTable({ usuarios }: { usuarios: Usuario[] }) {
                 <TableHead>Email</TableHead>
                 <TableHead>Rol</TableHead>
                 <TableHead>Estado</TableHead>
+                {esAdmin && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -66,6 +70,11 @@ export function UsuariosTable({ usuarios }: { usuarios: Usuario[] }) {
                       <StatusBadge tone="neutral" label="Inactivo" />
                     )}
                   </TableCell>
+                  {esAdmin && (
+                    <TableCell>
+                      <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

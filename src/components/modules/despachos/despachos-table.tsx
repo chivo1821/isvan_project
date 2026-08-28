@@ -21,6 +21,7 @@ export function DespachosTable({ despachos }: { despachos: DespachoConDetalle[] 
         </Link>
       ),
     },
+    { accessorKey: "numeroDocumento", header: "Documento" },
     { id: "origen", header: "Origen", accessorFn: (row) => row.origen.nombre },
     {
       id: "destino",

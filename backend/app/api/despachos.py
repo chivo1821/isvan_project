@@ -1,21 +1,30 @@
+"""Despachos: creacion (manual o via importacion de Excel), aprobacion, y
+ajuste de cantidades. La asignacion de vehiculo, el calculo de ruta
+multi-parada y el inicio/entrega del viaje viven en app/api/rutas.py — un
+despacho por si solo ya no calcula ni guarda su propia ruta (ver Ruta).
+"""
+
+from __future__ import annotations
+
+import io
+import re
 import uuid
-from datetime import datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+import openpyxl
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from app.core.auth import requiere_rol
 from app.core.db import get_connection
+from app.core.excel_utils import mapear_columnas, valor_a_texto
 from app.core.numero import siguiente_numero
 from app.schemas import (
     ActualizarCantidadDespachoItemRequest,
-    AsignarVehiculoRequest,
     Despacho,
     DespachoAprobacionCreate,
     DespachoCreate,
-    RutaCalculada,
-    SugerenciaVehiculo,
+    ImportarExcelConfirmarRequest,
+    ImportarExcelPreviewResponse,
 )
-from app.services.route_analysis import LatLng, calcular_mejor_ruta
-from app.services.suggest_vehiculo import sugerir_vehiculos
 
 router = APIRouter(prefix="/despachos", tags=["despachos"])
 
@@ -24,19 +33,40 @@ ALMACEN_BASE_ID = "alm-catia"
 
 def _con_items(cur, despacho_row: dict) -> dict:
     cur.execute(
-        'SELECT "id", "productoId", "cantidad", "cantidadSolicitada" FROM "DespachoItem" WHERE "despachoId" = %s',
+        'SELECT "id", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio" '
+        'FROM "DespachoItem" WHERE "despachoId" = %s',
         (despacho_row["id"],),
     )
     return {**despacho_row, "items": cur.fetchall()}
 
 
-def _stock_disponible(cur, producto_id: str, almacen_id: str) -> int:
+def _crear_despacho_interno(cur, *, destino_cliente_id: str, numero_documento: str, creado_por_id: str, items) -> dict:
+    numero = siguiente_numero(cur, "Despacho", "D", 4)
+    despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
     cur.execute(
-        'SELECT "cantidad" FROM "StockAlmacen" WHERE "productoId" = %s AND "almacenId" = %s',
-        (producto_id, almacen_id),
+        'INSERT INTO "Despacho" '
+        '("id", "numero", "numeroDocumento", "origenId", "destinoClienteId", "creadoPorId", "estado") '
+        "VALUES (%s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION') RETURNING *",
+        (despacho_id, numero, numero_documento, ALMACEN_BASE_ID, destino_cliente_id, creado_por_id),
     )
-    row = cur.fetchone()
-    return row["cantidad"] if row else 0
+    despacho_row = cur.fetchone()
+
+    filas_items = []
+    for item in items:
+        item_id = f"di-{uuid.uuid4().hex[:10]}"
+        cur.execute(
+            'INSERT INTO "DespachoItem" '
+            '("id", "despachoId", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio") '
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (item_id, despacho_id, item.descripcion, item.cantidad, item.cantidad, item.pesoUnitarioKg, item.requiereFrio),
+        )
+        filas_items.append({
+            "id": item_id, "descripcion": item.descripcion, "cantidad": item.cantidad,
+            "cantidadSolicitada": item.cantidad, "pesoUnitarioKg": item.pesoUnitarioKg,
+            "requiereFrio": item.requiereFrio,
+        })
+
+    return {**despacho_row, "items": filas_items}
 
 
 @router.get("", response_model=list[Despacho])
@@ -55,6 +85,18 @@ def listar_despachos_pendientes_aprobacion():
         return [_con_items(cur, d) for d in despachos]
 
 
+@router.get("/disponibles-para-ruta", response_model=list[Despacho])
+def listar_despachos_disponibles_para_ruta():
+    """Despachos ya aprobados y que todavia no forman parte de ninguna Ruta —
+    el set del que se arma una nueva ruta multi-parada (ver POST /rutas)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT * FROM "Despacho" WHERE "estado" = \'APROBADO\' AND "rutaId" IS NULL ORDER BY "fechaCreacion"'
+        )
+        despachos = cur.fetchall()
+        return [_con_items(cur, d) for d in despachos]
+
+
 @router.get("/{despacho_id}", response_model=Despacho)
 def obtener_despacho(despacho_id: str):
     with get_connection() as conn, conn.cursor() as cur:
@@ -65,59 +107,276 @@ def obtener_despacho(despacho_id: str):
         return _con_items(cur, row)
 
 
-@router.post("", response_model=Despacho, status_code=201)
+@router.post("", response_model=Despacho, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
 def crear_despacho(data: DespachoCreate):
+    """Carga manual de un despacho (un cliente, ítems escritos a mano) — el
+    mismo camino de creación que usa la importación de Excel confirmada
+    (ver _crear_despacho_interno), útil para un pedido suelto sin planilla."""
+    if not data.items:
+        raise HTTPException(400, "El despacho debe tener al menos un item")
+
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Venta" WHERE "id" = %s', (data.ventaId,))
-        venta = cur.fetchone()
-        if not venta:
-            raise HTTPException(404, "Venta no encontrada")
-        if venta["estado"] != "APROBADA":
-            raise HTTPException(400, "Solo se puede despachar una venta aprobada")
+        cur.execute('SELECT 1 FROM "Cliente" WHERE "id" = %s', (data.destinoClienteId,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Cliente no encontrado")
 
-        cur.execute('SELECT 1 FROM "Despacho" WHERE "ventaId" = %s LIMIT 1', (data.ventaId,))
+        cur.execute('SELECT 1 FROM "Despacho" WHERE "numeroDocumento" = %s', (data.numeroDocumento,))
         if cur.fetchone():
-            raise HTTPException(400, "Esta venta ya tiene un despacho generado")
+            raise HTTPException(400, f'El documento "{data.numeroDocumento}" ya tiene un despacho generado')
 
-        cur.execute('SELECT "id", "productoId", "cantidad" FROM "VentaItem" WHERE "ventaId" = %s', (data.ventaId,))
-        venta_items = cur.fetchall()
-
-        numero = siguiente_numero(cur, "Despacho", "D", 4)
-        despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
-
-        cur.execute(
-            'INSERT INTO "Despacho" '
-            '("id", "numero", "ventaId", "origenId", "destinoClienteId", "creadoPorId", "estado", "rutaCalculada") '
-            "VALUES (%s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION', false) RETURNING *",
-            (despacho_id, numero, data.ventaId, ALMACEN_BASE_ID, venta["clienteId"], data.creadoPorId),
+        despacho_row = _crear_despacho_interno(
+            cur,
+            destino_cliente_id=data.destinoClienteId,
+            numero_documento=data.numeroDocumento,
+            creado_por_id=data.creadoPorId,
+            items=data.items,
         )
-        despacho_row = cur.fetchone()
+        conn.commit()
+        return despacho_row
 
-        items = []
-        for item in venta_items:
-            item_id = f"di-{uuid.uuid4().hex[:10]}"
-            cantidad_solicitada = item["cantidad"]
-            # Sugerencia inicial: lo maximo que el stock actual permite, sin
-            # superar lo pedido. El coordinador puede ajustarla a mano
-            # despues (ver PATCH /despachos/{id}/items/{item_id}) mientras el
-            # despacho no haya salido del almacen.
-            disponible = _stock_disponible(cur, item["productoId"], ALMACEN_BASE_ID)
-            cantidad_sugerida = max(0, min(cantidad_solicitada, disponible))
-            cur.execute(
-                'INSERT INTO "DespachoItem" ("id", "despachoId", "productoId", "cantidad", "cantidadSolicitada") '
-                "VALUES (%s, %s, %s, %s, %s)",
-                (item_id, despacho_id, item["productoId"], cantidad_sugerida, cantidad_solicitada),
-            )
-            items.append({
-                "id": item_id, "productoId": item["productoId"],
-                "cantidad": cantidad_sugerida, "cantidadSolicitada": cantidad_solicitada,
+
+# ---------- Importacion de Excel ----------
+#
+# Formato real confirmado con el cliente: es el extracto crudo de ventas tal
+# como sale del sistema de ISVAN/TRALOG (no una plantilla armada a mano para
+# despacho), con columnas como "codigo cliente", "num docum", "producto",
+# "unidades", "litros", etc. Reglas de negocio confirmadas sobre ese
+# extracto:
+#
+# - Una fila = un producto. El "num docum" agrupa filas en un despacho por
+#   cliente (no el codigo de cliente, que se repite entre documentos).
+# - Filas con "unidades" <= 0 son devoluciones/notas de credito — se ignoran
+#   en silencio (no son un error, simplemente no generan despacho).
+# - No hay columna de peso: se calcula por prioridad — (1) columna de peso
+#   directa si el archivo la trae (plantillas futuras); (2) el tamano de
+#   presentacion en la propia descripcion del producto (ej. "1X550GRS" en
+#   una pizza da 0.55 kg exactos, sin aproximar); (3) "litros" (litros
+#   totales de la fila) con un factor de densidad promedio de helado, solo
+#   para productos liquidos sin peso explicito en la descripcion.
+# - No hay columna de cadena de frio: todo el catalogo de ISVAN/TRALOG la
+#   requiere, se marca siempre True.
+
+ALIAS_COLUMNAS: dict[str, list[str]] = {
+    "codigo_cliente": ["codigo_cliente", "codigo_de_cliente", "cod_cliente", "codigo"],
+    "numero_documento": ["numero_documento", "nro_documento", "n_documento", "documento", "num_docum", "factura", "nota_de_entrega"],
+    "descripcion_item": ["descripcion_item", "descripcion", "producto", "item", "articulo"],
+    "cantidad": ["cantidad", "cant", "unidades"],
+    "peso_unitario_kg": ["peso_unitario_kg", "peso_unitario", "peso_kg", "peso"],
+    "litros": ["litros"],
+}
+CAMPOS_REQUERIDOS = ["codigo_cliente", "numero_documento", "descripcion_item", "cantidad"]
+
+# Densidad promedio de helado (kg por litro) — solo se usa como ultimo
+# recurso, cuando ni la descripcion ni una columna de peso directa traen el
+# dato (ver _peso_unitario_desde_descripcion). Ajustable si el negocio da un
+# factor mas preciso.
+FACTOR_LITROS_A_KG = 0.55
+
+# La descripcion del producto en el extracto de ventas trae el tamano de
+# presentacion en el patron "<unidades_por_caja>X<tamano><unidad>", ej.
+# "36X135ML" (helado, se mide por volumen) o "1X550GRS" (pizza, se mide por
+# peso real). Cuando la unidad ya es de peso (GR/KG) se usa tal cual — mucho
+# mas preciso que aproximar por densidad, que solo tiene sentido para
+# liquidos/helado. Si no hay match, se cae al calculo por litros.
+_PATRON_TAMANO_PRESENTACION = re.compile(
+    r"(?<!\d)\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(GRS?|KGS?|MLS?|LTS?|L)\b"
+)
+
+
+def _peso_unitario_desde_descripcion(descripcion: str) -> float | None:
+    match = _PATRON_TAMANO_PRESENTACION.search(descripcion.upper())
+    if not match:
+        return None
+    cantidad_str, unidad = match.groups()
+    cantidad = float(cantidad_str.replace(",", "."))
+    if unidad.startswith("GR"):
+        return round(cantidad / 1000, 4)
+    if unidad.startswith("KG"):
+        return round(cantidad, 4)
+    if unidad.startswith("ML"):
+        return round((cantidad / 1000) * FACTOR_LITROS_A_KG, 4)
+    return round(cantidad * FACTOR_LITROS_A_KG, 4)  # LT/LTS/L
+
+
+def _mapear_columnas(fila_encabezados: tuple) -> dict[str, int]:
+    mapa = mapear_columnas(fila_encabezados, ALIAS_COLUMNAS, CAMPOS_REQUERIDOS)
+    if "peso_unitario_kg" not in mapa and "litros" not in mapa:
+        raise HTTPException(400, "Faltan columnas obligatorias en el Excel: peso_unitario_kg o litros")
+    return mapa
+
+
+@router.post(
+    "/importar/preview",
+    response_model=ImportarExcelPreviewResponse,
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
+def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(...)):
+    if empresa not in ("ISVAN", "TRALOG"):
+        raise HTTPException(400, "empresa debe ser ISVAN o TRALOG")
+
+    try:
+        libro = openpyxl.load_workbook(io.BytesIO(archivo.file.read()), read_only=True, data_only=True)
+        filas = list(libro.active.iter_rows(values_only=True))
+    except Exception:
+        raise HTTPException(400, "No se pudo leer el archivo — verifica que sea un Excel (.xlsx) valido")
+
+    if not filas:
+        raise HTTPException(400, "El archivo esta vacio")
+
+    mapa = _mapear_columnas(filas[0])
+    errores: list[dict] = []
+    filas_validas: list[dict] = []
+
+    with get_connection() as conn, conn.cursor() as cur:
+        for n, fila in enumerate(filas[1:], start=2):
+            if fila is None or all(v is None for v in fila):
+                continue  # fila vacia, se ignora
+
+            def val(campo: str):
+                idx = mapa.get(campo)
+                return fila[idx] if idx is not None and idx < len(fila) else None
+
+            codigo_cliente = valor_a_texto(val("codigo_cliente"))
+            numero_documento = valor_a_texto(val("numero_documento"))
+            descripcion = str(val("descripcion_item") or "").strip()
+            cantidad_raw = val("cantidad")
+
+            # Filas con cantidad <= 0 son devoluciones/notas de credito del
+            # extracto de ventas -- se ignoran en silencio, no es un error.
+            try:
+                cantidad_parseada: int | None = int(float(cantidad_raw))
+            except (TypeError, ValueError):
+                cantidad_parseada = None
+            if cantidad_parseada is not None and cantidad_parseada <= 0:
+                continue
+
+            error: tuple[str, str] | None = None
+            if not codigo_cliente:
+                error = ("codigo_cliente", "Falta el codigo de cliente")
+            elif not numero_documento:
+                error = ("numero_documento", "Falta el numero de documento")
+            elif not descripcion:
+                error = ("descripcion_item", "Falta la descripcion del item")
+            elif cantidad_parseada is None:
+                error = ("cantidad", "La cantidad debe ser un numero")
+
+            cantidad = cantidad_parseada
+
+            peso = None
+            if error is None:
+                peso_directo = val("peso_unitario_kg")
+                if peso_directo is not None:
+                    try:
+                        peso = float(peso_directo)
+                        if peso < 0:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        error = ("peso_unitario_kg", "El peso debe ser un numero mayor o igual a 0")
+                else:
+                    peso = _peso_unitario_desde_descripcion(descripcion)
+                    if peso is None:
+                        try:
+                            litros = abs(float(val("litros")))
+                            peso = round((litros / cantidad) * FACTOR_LITROS_A_KG, 4)
+                        except (TypeError, ValueError):
+                            error = ("litros", "No se pudo calcular el peso del item (ni desde la descripcion ni desde litros)")
+
+            cliente = None
+            if error is None:
+                cur.execute(
+                    'SELECT * FROM "Cliente" WHERE "empresa" = %s AND "codigo" = %s',
+                    (empresa, codigo_cliente),
+                )
+                cliente = cur.fetchone()
+                if not cliente:
+                    error = ("codigo_cliente", f'No existe el cliente "{codigo_cliente}" en {empresa}')
+                elif cliente["lat"] is None or cliente["lng"] is None:
+                    error = ("codigo_cliente", f'El cliente "{codigo_cliente}" no tiene coordenadas registradas')
+
+            if error is None:
+                cur.execute('SELECT 1 FROM "Despacho" WHERE "numeroDocumento" = %s', (numero_documento,))
+                if cur.fetchone():
+                    error = ("numero_documento", f'El documento "{numero_documento}" ya fue importado antes')
+
+            if error is not None:
+                columna, motivo = error
+                errores.append({"fila": n, "columna": columna, "motivo": motivo})
+                continue
+
+            filas_validas.append({
+                "fila": n, "numeroDocumento": numero_documento, "clienteId": cliente["id"],
+                "clienteCodigo": cliente["codigo"], "clienteNombre": cliente["nombre"],
+                "descripcion": descripcion, "cantidad": cantidad, "pesoUnitarioKg": peso,
+                "requiereFrio": True,
             })
 
+    # Agrupa por numero de documento (llave real del despacho, no el codigo
+    # de cliente — un documento debe pertenecer a un solo cliente).
+    grupos_raw: dict[str, list[dict]] = {}
+    for f in filas_validas:
+        grupos_raw.setdefault(f["numeroDocumento"], []).append(f)
+
+    grupos: list[dict] = []
+    for doc, filas_doc in grupos_raw.items():
+        clientes_distintos = {f["clienteId"] for f in filas_doc}
+        if len(clientes_distintos) > 1:
+            for f in filas_doc:
+                errores.append({
+                    "fila": f["fila"], "columna": "numero_documento",
+                    "motivo": f'El documento "{doc}" aparece con mas de un cliente distinto',
+                })
+            continue
+        primero = filas_doc[0]
+        grupos.append({
+            "numeroDocumento": doc, "clienteId": primero["clienteId"],
+            "clienteCodigo": primero["clienteCodigo"], "clienteNombre": primero["clienteNombre"],
+            "items": [{
+                "descripcion": f["descripcion"], "cantidad": f["cantidad"],
+                "pesoUnitarioKg": f["pesoUnitarioKg"], "requiereFrio": f["requiereFrio"],
+            } for f in filas_doc],
+        })
+
+    errores.sort(key=lambda e: e["fila"])
+    return {"grupos": grupos, "errores": errores}
+
+
+@router.post(
+    "/importar/confirmar",
+    response_model=list[Despacho],
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
+def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
+    if not data.grupos:
+        raise HTTPException(400, "No hay documentos validos para importar")
+
+    with get_connection() as conn, conn.cursor() as cur:
+        # Revalida unicidad de numeroDocumento por si cambio algo entre el
+        # preview y la confirmacion (ej. otra persona importo el mismo
+        # documento mientras tanto).
+        for grupo in data.grupos:
+            cur.execute('SELECT 1 FROM "Despacho" WHERE "numeroDocumento" = %s', (grupo.numeroDocumento,))
+            if cur.fetchone():
+                raise HTTPException(400, f'El documento "{grupo.numeroDocumento}" ya fue importado (por otra carga)')
+
+        creados = [
+            _crear_despacho_interno(
+                cur,
+                destino_cliente_id=grupo.clienteId,
+                numero_documento=grupo.numeroDocumento,
+                creado_por_id=data.creadoPorId,
+                items=grupo.items,
+            )
+            for grupo in data.grupos
+        ]
         conn.commit()
-        return {**despacho_row, "items": items}
+        return creados
 
 
-@router.post("/{despacho_id}/aprobacion", response_model=Despacho)
+@router.post(
+    "/{despacho_id}/aprobacion",
+    response_model=Despacho,
+    dependencies=[Depends(requiere_rol("APROBADOR"))],
+)
 def aprobar_o_rechazar_despacho(despacho_id: str, data: DespachoAprobacionCreate):
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
@@ -140,110 +399,13 @@ def aprobar_o_rechazar_despacho(despacho_id: str, data: DespachoAprobacionCreate
         return _con_items(cur, despacho_row)
 
 
-def _origen_destino_despacho(cur, despacho_id: str) -> tuple[LatLng, LatLng]:
-    cur.execute(
-        'SELECT a."lat" AS "origenLat", a."lng" AS "origenLng", '
-        'c."lat" AS "destinoLat", c."lng" AS "destinoLng" '
-        'FROM "Despacho" d '
-        'JOIN "Almacen" a ON a."id" = d."origenId" '
-        'JOIN "Cliente" c ON c."codigo" = d."destinoClienteId" '
-        'WHERE d."id" = %s',
-        (despacho_id,),
-    )
-    row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Despacho no encontrado")
-    if row["destinoLat"] is None or row["destinoLng"] is None:
-        raise HTTPException(400, "El cliente destino no tiene coordenadas registradas")
-    return (
-        LatLng(lat=row["origenLat"], lng=row["origenLng"]),
-        LatLng(lat=row["destinoLat"], lng=row["destinoLng"]),
-    )
-
-
-@router.post("/{despacho_id}/ruta/preview", response_model=RutaCalculada)
-def previsualizar_ruta(despacho_id: str):
-    """Igual que calcular_mejor_ruta pero sin persistir nada -- para el boton
-    "Calcular ruta optima" (antes de "Confirmar ruta"). Usa el mismo servicio
-    real (o el mismo fallback) que la version que si persiste, para que la
-    vista previa no muestre algo distinto de lo que se termina guardando."""
-    with get_connection() as conn, conn.cursor() as cur:
-        origen, destino = _origen_destino_despacho(cur, despacho_id)
-        resultado = calcular_mejor_ruta(despacho_id, origen, destino)
-
-        ahora = datetime.now()
-        n = len(resultado.geometry)
-        puntos = []
-        for i, (lng, lat) in enumerate(resultado.geometry):
-            estado_punto = "salida" if i == 0 else "en_ruta"
-            offset_min = resultado.tiempo_min * (i / (n - 1)) if n > 1 else 0
-            puntos.append({
-                "id": f"preview-{i}", "despachoId": despacho_id, "orden": i + 1,
-                "lat": lat, "lng": lng, "estado": estado_punto,
-                "timestamp": ahora + timedelta(minutes=offset_min), "descripcion": None,
-            })
-
-        return {"distanciaEstimadaKm": resultado.distancia_km, "tiempoEstimadoMin": resultado.tiempo_min, "ruta": puntos}
-
-
-@router.post("/{despacho_id}/ruta", response_model=RutaCalculada)
-def calcular_y_confirmar_ruta(despacho_id: str):
-    with get_connection() as conn, conn.cursor() as cur:
-        origen, destino = _origen_destino_despacho(cur, despacho_id)
-        resultado = calcular_mejor_ruta(despacho_id, origen, destino)
-
-        cur.execute(
-            'UPDATE "Despacho" SET "distanciaEstimadaKm" = %s, "tiempoEstimadoMin" = %s, "rutaCalculada" = true '
-            'WHERE "id" = %s',
-            (resultado.distancia_km, resultado.tiempo_min, despacho_id),
-        )
-
-        cur.execute('DELETE FROM "RutaPunto" WHERE "despachoId" = %s', (despacho_id,))
-        ahora = datetime.now()
-        n = len(resultado.geometry)
-        puntos = []
-        for i, (lng, lat) in enumerate(resultado.geometry):
-            estado_punto = "salida" if i == 0 else "en_ruta"
-            offset_min = resultado.tiempo_min * (i / (n - 1)) if n > 1 else 0
-            punto_id = f"rp-{uuid.uuid4().hex[:10]}"
-            timestamp = ahora + timedelta(minutes=offset_min)
-            cur.execute(
-                'INSERT INTO "RutaPunto" ("id", "despachoId", "orden", "lat", "lng", "estado", "timestamp") '
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (punto_id, despacho_id, i + 1, lat, lng, estado_punto, timestamp),
-            )
-            puntos.append({
-                "id": punto_id, "despachoId": despacho_id, "orden": i + 1,
-                "lat": lat, "lng": lng, "estado": estado_punto,
-                "timestamp": timestamp, "descripcion": None,
-            })
-
-        conn.commit()
-        return {"distanciaEstimadaKm": resultado.distancia_km, "tiempoEstimadoMin": resultado.tiempo_min, "ruta": puntos}
-
-
-@router.get("/{despacho_id}/vehiculos-sugeridos", response_model=list[SugerenciaVehiculo])
-def obtener_vehiculos_sugeridos(despacho_id: str):
-    return sugerir_vehiculos(despacho_id)
-
-
-@router.post("/{despacho_id}/asignar-vehiculo", response_model=Despacho)
-def asignar_vehiculo(despacho_id: str, data: AsignarVehiculoRequest):
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            'UPDATE "Despacho" SET "vehiculoId" = %s WHERE "id" = %s RETURNING *',
-            (data.vehiculoId, despacho_id),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Despacho no encontrado")
-        conn.commit()
-        return _con_items(cur, row)
-
-
-@router.patch("/{despacho_id}/items/{item_id}", response_model=Despacho)
+@router.patch(
+    "/{despacho_id}/items/{item_id}",
+    response_model=Despacho,
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
 def ajustar_cantidad_item(despacho_id: str, item_id: str, data: ActualizarCantidadDespachoItemRequest):
-    """El coordinador ajusta a mano cuanto se va a despachar de un producto,
+    """El coordinador ajusta a mano cuanto se va a despachar de un item,
     mientras el despacho no haya salido del almacen."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
@@ -271,68 +433,3 @@ def ajustar_cantidad_item(despacho_id: str, item_id: str, data: ActualizarCantid
 
         cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
         return _con_items(cur, cur.fetchone())
-
-
-@router.post("/{despacho_id}/iniciar", response_model=Despacho)
-def iniciar_ruta(despacho_id: str):
-    """El despachador marca que salio del almacen con el despacho."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
-        despacho = cur.fetchone()
-        if not despacho:
-            raise HTTPException(404, "Despacho no encontrado")
-        if despacho["estado"] != "APROBADO":
-            raise HTTPException(400, "Solo se puede iniciar un despacho aprobado")
-        if not despacho["vehiculoId"]:
-            raise HTTPException(400, "Asigna un vehiculo antes de iniciar la ruta")
-
-        cur.execute(
-            'UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "id" = %s RETURNING *',
-            (despacho_id,),
-        )
-        row = cur.fetchone()
-
-        # Aca es cuando el producto realmente sale del almacen: se descuenta
-        # el stock de verdad. Se re-topa contra el disponible actual por si
-        # cambio algo desde que se ajusto la cantidad (nunca deja stock
-        # negativo).
-        cur.execute(
-            'SELECT "productoId", "cantidad" FROM "DespachoItem" WHERE "despachoId" = %s',
-            (despacho_id,),
-        )
-        for item in cur.fetchall():
-            cur.execute(
-                'UPDATE "StockAlmacen" SET "cantidad" = GREATEST("cantidad" - %s, 0) '
-                'WHERE "productoId" = %s AND "almacenId" = %s',
-                (item["cantidad"], item["productoId"], row["origenId"]),
-            )
-
-        conn.commit()
-        return _con_items(cur, row)
-
-
-@router.post("/{despacho_id}/entregar", response_model=Despacho)
-def marcar_entregado(despacho_id: str):
-    """El despachador marca que el despacho llego a su destino, cerrando el ciclo de la venta."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
-        despacho = cur.fetchone()
-        if not despacho:
-            raise HTTPException(404, "Despacho no encontrado")
-        if despacho["estado"] != "EN_TRANSITO":
-            raise HTTPException(400, "Solo se puede marcar como entregado un despacho en transito")
-
-        cur.execute(
-            'UPDATE "Despacho" SET "estado" = \'ENTREGADO\' WHERE "id" = %s RETURNING *',
-            (despacho_id,),
-        )
-        row = cur.fetchone()
-
-        cur.execute(
-            'UPDATE "RutaPunto" SET "estado" = \'entregado\' WHERE "despachoId" = %s '
-            'AND "orden" = (SELECT MAX("orden") FROM "RutaPunto" WHERE "despachoId" = %s)',
-            (despacho_id, despacho_id),
-        )
-
-        conn.commit()
-        return _con_items(cur, row)

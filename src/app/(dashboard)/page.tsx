@@ -1,21 +1,16 @@
 import Link from "next/link";
 import {
-  CarIcon,
+  AlertTriangleIcon,
   ClipboardCheckIcon,
   MapPinnedIcon,
-  PackageXIcon,
-  ShoppingCartIcon,
-  UserCheckIcon,
+  PackageSearchIcon,
+  RouteIcon,
+  TruckIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -25,137 +20,111 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { convertirUsdABs, ESTADO_VENTA_META, formatBs, formatBsAmount, formatCurrency, formatDate } from "@/lib/constants";
+import { ESTADO_DESPACHO_META, formatDate } from "@/lib/constants";
 import {
-  getDespachosEnTransito,
+  getClientesRaw,
+  getDespachosConDetalle,
+  getDespachosDisponiblesParaRutaRaw,
   getDespachosPendientesAprobacion,
-  getProductosBajoStock,
+  getRutasActivas,
   getVehiculosDisponibles,
-  getVentasConDetalle,
-  getVentasEnRevision,
 } from "@/lib/mock-data";
 import {
   DespachosTransitoMap,
   type DespachoMapPoint,
 } from "@/components/modules/despachos/despachos-transito-map";
 
-const HOY = "2026-08-07";
-
 export default async function DashboardPage() {
-  const [ventas, ventasEnRevision, productosBajoStock, despachosPendientes, despachosEnTransito, vehiculosDisponibles] =
+  const [despachos, despachosPendientes, despachosSinRuta, rutasActivas, vehiculosDisponibles, clientes] =
     await Promise.all([
-      getVentasConDetalle(),
-      getVentasEnRevision(),
-      getProductosBajoStock(),
+      getDespachosConDetalle(),
       getDespachosPendientesAprobacion(),
-      getDespachosEnTransito(),
+      getDespachosDisponiblesParaRutaRaw(),
+      getRutasActivas(),
       getVehiculosDisponibles(),
+      getClientesRaw(),
     ]);
 
-  // La API devuelve "fecha" como timestamp ISO completo.
-  const ventasHoy = ventas.filter((v) => v.fecha.slice(0, 10) === HOY);
-  const totalVentasHoy = ventasHoy.reduce((sum, v) => sum + v.total, 0);
-  // Suma el Bs de cada venta con su propia tasa (todas del mismo dia, pero
-  // consistente con el resto de la app donde cada venta usa su tasaBcv).
-  const totalVentasHoyBs = ventasHoy.reduce((sum, v) => sum + convertirUsdABs(v.total, v.tasaBcv), 0);
-
-  const ventasRecientes = [...ventas]
-    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
+  const rutasEnTransito = rutasActivas.filter((r) => r.estado === "EN_TRANSITO");
+  const clientesSinCoordenadas = clientes.filter((c) => c.lat == null || c.lng == null).length;
+  const despachosRecientes = [...despachos]
+    .sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1))
     .slice(0, 5);
 
-  const puntosTransito: DespachoMapPoint[] = despachosEnTransito.map((d) => {
-    const ultimoPunto = d.ruta[d.ruta.length - 1];
+  const puntosTransito: DespachoMapPoint[] = rutasEnTransito.map((r) => {
+    const ultimoPunto = r.puntos[r.puntos.length - 1];
     return {
-      id: d.id,
-      numero: d.numero,
-      clienteNombre: d.destinoCliente.nombre,
-      position: ultimoPunto ? [ultimoPunto.lat, ultimoPunto.lng] : [d.origen.lat, d.origen.lng],
+      id: r.id,
+      numero: r.numero,
+      clienteNombre: `${r.despachos.length} parada(s)`,
+      position: ultimoPunto ? [ultimoPunto.lat, ultimoPunto.lng] : [r.origen.lat, r.origen.lng],
       tone: "info",
     };
   });
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Inicio"
-        subtitle="Resumen general de ventas, inventario, despachos y flota"
-      />
+      <PageHeader title="Inicio" subtitle="Resumen general de despachos, rutas y flota" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
-          icon={ShoppingCartIcon}
-          label="Ventas del día"
-          value={String(ventasHoy.length)}
-          trend={`${formatCurrency(totalVentasHoy)} · ${formatBsAmount(totalVentasHoyBs)}`}
-          tone="primary"
-        />
-        <StatCard
           icon={ClipboardCheckIcon}
-          label="Ventas en revisión"
-          value={String(ventasEnRevision.length)}
-          tone="warning"
-        />
-        <StatCard
-          icon={PackageXIcon}
-          label="Stock bajo"
-          value={String(productosBajoStock.length)}
-          tone="destructive"
-        />
-        <StatCard
-          icon={UserCheckIcon}
           label="Despachos por aprobar"
           value={String(despachosPendientes.length)}
           tone="warning"
         />
         <StatCard
-          icon={MapPinnedIcon}
-          label="Despachos en tránsito"
-          value={String(despachosEnTransito.length)}
+          icon={PackageSearchIcon}
+          label="Aprobados sin ruta"
+          value={String(despachosSinRuta.length)}
           tone="info"
         />
+        <StatCard icon={RouteIcon} label="Rutas en tránsito" value={String(rutasEnTransito.length)} tone="info" />
+        <StatCard icon={MapPinnedIcon} label="Rutas activas" value={String(rutasActivas.length)} tone="primary" />
         <StatCard
-          icon={CarIcon}
+          icon={TruckIcon}
           label="Vehículos disponibles"
           value={String(vehiculosDisponibles.length)}
           tone="success"
+        />
+        <StatCard
+          icon={AlertTriangleIcon}
+          label="Clientes sin coordenadas"
+          value={String(clientesSinCoordenadas)}
+          tone="destructive"
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Ventas recientes</CardTitle>
+            <CardTitle>Despachos recientes</CardTitle>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/ventas">Ver todas</Link>
+              <Link href="/despachos">Ver todos</Link>
             </Button>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>N° Venta</TableHead>
+                  <TableHead>N° Despacho</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ventasRecientes.map((venta) => (
-                  <TableRow key={venta.id}>
+                {despachosRecientes.map((d) => (
+                  <TableRow key={d.id}>
                     <TableCell className="font-medium">
-                      <Link href={`/ventas/${venta.id}`} className="hover:underline">
-                        {venta.numero}
+                      <Link href={`/despachos/${d.id}`} className="hover:underline">
+                        {d.numero}
                       </Link>
                     </TableCell>
-                    <TableCell>{venta.cliente.nombre}</TableCell>
-                    <TableCell>{formatDate(venta.fecha)}</TableCell>
+                    <TableCell>{d.destinoCliente.nombre}</TableCell>
+                    <TableCell>{formatDate(d.fechaCreacion)}</TableCell>
                     <TableCell>
-                      <StatusBadge {...ESTADO_VENTA_META[venta.estado]} />
-                    </TableCell>
-                    <TableCell className="text-right leading-tight">
-                      <p>{formatCurrency(venta.total)}</p>
-                      <p className="text-xs text-muted-foreground">{formatBs(venta.total, venta.tasaBcv)}</p>
+                      <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -166,22 +135,17 @@ export default async function DashboardPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Despachos en tránsito</CardTitle>
+            <CardTitle>Rutas en tránsito</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/seguimiento">Ver seguimiento</Link>
             </Button>
           </CardHeader>
           <CardContent>
             {puntosTransito.length > 0 ? (
-              <DespachosTransitoMap
-                puntos={puntosTransito}
-                center={[10.3, -67.8]}
-                zoom={6}
-                className="h-72"
-              />
+              <DespachosTransitoMap puntos={puntosTransito} center={[10.3, -67.8]} zoom={6} className="h-72" />
             ) : (
               <p className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-                No hay despachos en tránsito en este momento.
+                No hay rutas en tránsito en este momento.
               </p>
             )}
           </CardContent>

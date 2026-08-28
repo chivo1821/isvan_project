@@ -4,9 +4,9 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { ESTADO_DESPACHO_META } from "@/lib/constants";
+import { ESTADO_RUTA_META } from "@/lib/constants";
 import { StatusBadge } from "@/components/shared/status-badge";
-import type { EstadoDespacho } from "@prisma/client";
+import type { EstadoRuta } from "@prisma/client";
 
 const LeafletMap = dynamic(() => import("@/components/map/leaflet-map").then((m) => m.LeafletMap), {
   ssr: false,
@@ -17,51 +17,51 @@ const DespachoMarker = dynamic(() => import("@/components/map/despacho-marker").
 });
 const FlyTo = dynamic(() => import("@/components/map/fly-to").then((m) => m.FlyTo), { ssr: false });
 
-export type DespachoSeguimientoItem = {
+export type RutaSeguimientoItem = {
   id: string;
   numero: string;
-  destinoNombre: string;
-  destinoCiudad: string;
-  estado: EstadoDespacho;
+  vehiculoPlaca: string;
+  paradas: number;
+  estado: EstadoRuta;
   position: [number, number];
 };
 
 export function SeguimientoOverview({
-  despachos,
+  rutas,
   center,
 }: {
-  despachos: DespachoSeguimientoItem[];
+  rutas: RutaSeguimientoItem[];
   center: [number, number];
 }) {
-  const [seleccionado, setSeleccionado] = useState<DespachoSeguimientoItem | null>(null);
+  const [seleccionada, setSeleccionada] = useState<RutaSeguimientoItem | null>(null);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-2 lg:col-span-1">
-        {despachos.length === 0 ? (
+        {rutas.length === 0 ? (
           <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-            No hay despachos activos en este momento.
+            No hay rutas activas en este momento.
           </p>
         ) : (
-          despachos.map((d) => (
+          rutas.map((r) => (
             <button
-              key={d.id}
+              key={r.id}
               type="button"
-              onClick={() => setSeleccionado(d)}
+              onClick={() => setSeleccionada(r)}
               className={cn(
                 "w-full rounded-lg border border-border bg-card p-3 text-left text-sm transition-colors hover:border-primary/40",
-                seleccionado?.id === d.id && "border-primary ring-1 ring-primary/30"
+                seleccionada?.id === r.id && "border-primary ring-1 ring-primary/30"
               )}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium text-foreground">{d.numero}</span>
-                <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
+                <span className="font-medium text-foreground">{r.numero}</span>
+                <StatusBadge {...ESTADO_RUTA_META[r.estado]} />
               </div>
               <p className="mt-1 text-muted-foreground">
-                {d.destinoNombre} · {d.destinoCiudad}
+                {r.vehiculoPlaca} · {r.paradas} parada(s)
               </p>
               <Link
-                href={`/seguimiento/${d.id}`}
+                href={`/seguimiento/${r.id}`}
                 className="mt-1 inline-block text-xs text-primary hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -74,19 +74,15 @@ export function SeguimientoOverview({
 
       <div className="lg:col-span-2">
         <LeafletMap center={center} zoom={7} className="h-[28rem]">
-          {despachos.map((d) => (
-            <DespachoMarker
-              key={d.id}
-              position={d.position}
-              tone={ESTADO_DESPACHO_META[d.estado].tone}
-            >
+          {rutas.map((r) => (
+            <DespachoMarker key={r.id} position={r.position} tone={ESTADO_RUTA_META[r.estado].tone}>
               <div className="text-sm">
-                <p className="font-medium">{d.numero}</p>
-                <p className="text-muted-foreground">{d.destinoNombre}</p>
+                <p className="font-medium">{r.numero}</p>
+                <p className="text-muted-foreground">{r.vehiculoPlaca}</p>
               </div>
             </DespachoMarker>
           ))}
-          <FlyTo target={seleccionado?.position ?? null} zoom={10} />
+          <FlyTo target={seleccionada?.position ?? null} zoom={10} />
         </LeafletMap>
       </div>
     </div>

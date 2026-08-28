@@ -6,25 +6,19 @@ import { toast } from "sonner";
 import { CheckCircle2Icon, TruckIcon } from "lucide-react";
 import { apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import type { EstadoDespacho } from "@prisma/client";
 
-export function DespachadorActions({ despachoId, estado }: { despachoId: string; estado: EstadoDespacho }) {
+export function IniciarRutaButton({ rutaId }: { rutaId: string }) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
 
-  async function accionar(accion: "iniciar" | "entregar") {
+  async function iniciar() {
     setEnviando(true);
     try {
-      await apiPost(`/despachos/${despachoId}/${accion}`);
-      toast.success(accion === "iniciar" ? "Ruta iniciada" : "Despacho entregado", {
-        description:
-          accion === "iniciar"
-            ? "El despacho quedó marcado en tránsito."
-            : "El ciclo de la venta quedó cerrado.",
-      });
+      await apiPost(`/rutas/${rutaId}/iniciar`);
+      toast.success("Ruta iniciada", { description: "Todos los despachos de la ruta quedaron en tránsito." });
       router.refresh();
     } catch (err) {
-      toast.error("No se pudo actualizar el despacho", {
+      toast.error("No se pudo iniciar la ruta", {
         description: err instanceof Error ? err.message : undefined,
       });
     } finally {
@@ -32,23 +26,45 @@ export function DespachadorActions({ despachoId, estado }: { despachoId: string;
     }
   }
 
-  if (estado === "APROBADO") {
-    return (
-      <Button onClick={() => accionar("iniciar")} disabled={enviando} size="lg" className="w-full sm:w-auto">
-        <TruckIcon />
-        {enviando ? "Iniciando..." : "Salí del almacén"}
-      </Button>
-    );
+  return (
+    <Button onClick={iniciar} disabled={enviando} size="lg" className="w-full sm:w-auto">
+      <TruckIcon />
+      {enviando ? "Iniciando..." : "Salí del almacén"}
+    </Button>
+  );
+}
+
+export function MarcarParadaEntregadaButton({
+  rutaId,
+  despachoId,
+  size = "default",
+}: {
+  rutaId: string;
+  despachoId: string;
+  size?: "default" | "sm" | "lg";
+}) {
+  const router = useRouter();
+  const [enviando, setEnviando] = useState(false);
+
+  async function entregar() {
+    setEnviando(true);
+    try {
+      await apiPost(`/rutas/${rutaId}/paradas/${despachoId}/entregar`);
+      toast.success("Parada entregada");
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo marcar la entrega", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setEnviando(false);
+    }
   }
 
-  if (estado === "EN_TRANSITO") {
-    return (
-      <Button onClick={() => accionar("entregar")} disabled={enviando} size="lg" className="w-full sm:w-auto">
-        <CheckCircle2Icon />
-        {enviando ? "Marcando..." : "Marcar como entregado"}
-      </Button>
-    );
-  }
-
-  return null;
+  return (
+    <Button onClick={entregar} disabled={enviando} size={size}>
+      <CheckCircle2Icon />
+      {enviando ? "Marcando..." : "Marcar entregado"}
+    </Button>
+  );
 }

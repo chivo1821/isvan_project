@@ -1,19 +1,19 @@
-// Tipos de dominio para los datos mock de la Fase 1 (solo UI).
-// Espejan el modelo de prisma/schema.prisma, pero usan `number` en vez de
-// `Prisma.Decimal` para los montos, para simplificar el trabajo con datos
-// estaticos en memoria. Cuando se conecte Prisma/FastAPI en Fase 2, estos
-// tipos se reemplazan por los tipos generados de @prisma/client.
+// Tipos de dominio para el frontend. Espejan el modelo de
+// prisma/schema.prisma, pero usan `number` en vez de `Prisma.Decimal` /
+// tipos anidados donde simplifica el trabajo con la respuesta JSON de la
+// API (ver src/lib/api-client.ts y backend/app/schemas.py).
 
 import type {
   AccionRevision,
-  CategoriaProducto,
+  Empresa,
   EstadoDespacho,
-  EstadoFactura,
+  EstadoRuta,
   EstadoVehiculo,
-  EstadoVenta,
   RolUsuario,
   TipoVehiculo,
 } from "@prisma/client";
+
+export type { AccionRevision, Empresa, EstadoDespacho, EstadoRuta, EstadoVehiculo, RolUsuario, TipoVehiculo };
 
 export type Usuario = {
   id: string;
@@ -47,29 +47,12 @@ export type Vehiculo = {
   ultimaRevision?: string | null;
 };
 
-export type Producto = {
-  id: string;
-  sku: string;
-  nombre: string;
-  categoria: CategoriaProducto;
-  subcategoria?: string | null;
-  unidadMedida: string;
-  requiereCadenaFrio: boolean;
-  temperaturaMinC?: number | null;
-  temperaturaMaxC?: number | null;
-  precioUnitario: number;
-  activo: boolean;
-};
-
-export type StockAlmacen = {
-  id: string;
-  productoId: string;
-  almacenId: string;
-  cantidad: number;
-  stockMinimo: number;
-};
-
+// El mismo codigo puede referirse a clientes distintos segun la empresa
+// (ISVAN / TRALOG) — la llave de negocio real es (empresa, codigo), no el
+// codigo solo. `id` es la llave tecnica usada por el resto del modelo.
 export type Cliente = {
+  id: string;
+  empresa: Empresa;
   codigo: string;
   nombre: string;
   tipo: string;
@@ -77,71 +60,22 @@ export type Cliente = {
   ciudad: string;
   lat?: number | null;
   lng?: number | null;
-  telefono?: string | null;
+  /** Obligatorio: lo usan los despachadores para contactar al cliente. */
+  telefono: string;
   email?: string | null;
 };
 
-export type Factura = {
-  id: string;
-  numero: string;
-  clienteId: string;
-  monto: number;
-  fechaEmision: string;
-  fechaVencimiento: string;
-  estado: EstadoFactura;
-  /** Tasa BCV (Bs por USD) vigente en fechaEmision — ver TasaCambio. */
-  tasaBcv: number;
-  /** Datos de pago opcionales; lo relevante operativamente es pagoAprobado. */
-  fechaPago?: string | null;
-  montoPagado?: number | null;
-  metodoPago?: string | null;
-  pagoAprobado: boolean;
-};
-
-export type TasaCambio = {
-  id: string;
-  fecha: string;
-  tasa: number;
-};
-
-export type VentaItem = {
-  id: string;
-  productoId: string;
-  cantidad: number;
-  precioUnitario: number;
-  subtotal: number;
-};
-
-export type VentaRevision = {
-  id: string;
-  ventaId: string;
-  usuarioId: string;
-  accion: AccionRevision;
-  comentario?: string | null;
-  fecha: string;
-};
-
-export type Venta = {
-  id: string;
-  numero: string;
-  clienteId: string;
-  vendedorId: string;
-  fecha: string;
-  estado: EstadoVenta;
-  /** Total en USD — valor canonico para reportes/analisis. */
-  total: number;
-  /** Tasa BCV (Bs por USD) vigente el dia de "fecha" — ver TasaCambio. */
-  tasaBcv: number;
-  items: VentaItem[];
-};
-
+// Texto libre (viene del Excel o de carga manual) — ya no hay catalogo de
+// productos del que derivarlo.
 export type DespachoItem = {
   id: string;
-  productoId: string;
+  descripcion: string;
   /** Lo que realmente se va a despachar (ajustable hasta que el despacho sale del almacén). */
   cantidad: number;
-  /** Lo que el cliente pidió originalmente en la venta. */
+  /** Lo que pedía originalmente el documento (factura/nota de entrega) importado. */
   cantidadSolicitada: number;
+  pesoUnitarioKg: number;
+  requiereFrio: boolean;
 };
 
 export type DespachoAprobacion = {
@@ -153,30 +87,48 @@ export type DespachoAprobacion = {
   fecha: string;
 };
 
-export type RutaPunto = {
-  id: string;
-  despachoId: string;
-  orden: number;
-  lat: number;
-  lng: number;
-  estado: "salida" | "en_ruta" | "parada" | "entregado";
-  timestamp: string;
-  descripcion?: string | null;
-};
-
 export type Despacho = {
   id: string;
   numero: string;
-  ventaId?: string | null;
+  /** Numero de factura/nota de entrega del documento origen — unico, llave de idempotencia de la importación. */
+  numeroDocumento: string;
   origenId: string;
   destinoClienteId: string;
   creadoPorId: string;
   estado: EstadoDespacho;
   fechaCreacion: string;
   fechaEstimadaEntrega?: string | null;
-  vehiculoId?: string | null;
-  distanciaEstimadaKm?: number | null;
-  tiempoEstimadoMin?: number | null;
-  rutaCalculada: boolean;
+  /** Si ya forma parte de una Ruta multi-parada, y en qué posición. */
+  rutaId?: string | null;
+  ordenEnRuta?: number | null;
   items: DespachoItem[];
+};
+
+export type RutaPunto = {
+  id: string;
+  rutaId: string;
+  orden: number;
+  lat: number;
+  lng: number;
+  estado: "salida" | "en_ruta" | "parada" | "entregado";
+  timestamp: string;
+  descripcion?: string | null;
+  /** Si este punto es la llegada/entrega de un despacho puntual dentro del viaje. */
+  paradaDespachoId?: string | null;
+};
+
+// Un viaje de un vehiculo que agrupa varios despachos (uno por cliente),
+// visitados en el orden calculado por el optimizador desde Almacén Catia.
+export type Ruta = {
+  id: string;
+  numero: string;
+  vehiculoId: string;
+  origenId: string;
+  creadoPorId: string;
+  estado: EstadoRuta;
+  fechaCreacion: string;
+  distanciaTotalKm?: number | null;
+  tiempoTotalMin?: number | null;
+  despachos: Despacho[];
+  puntos: RutaPunto[];
 };

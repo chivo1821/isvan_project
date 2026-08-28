@@ -31,14 +31,15 @@ import { ROL_USUARIO_META } from "@/lib/constants";
 import type { Usuario } from "@/lib/mock-data";
 import type { RolUsuario } from "@prisma/client";
 
-const ROLES: RolUsuario[] = ["ADMIN", "VENTAS", "INVENTARIO", "DESPACHOS", "APROBADOR", "REPARTIDOR"];
+const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR"];
 
 const usuarioSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   email: z.email("Ingresa un email válido"),
-  rol: z.enum(["ADMIN", "VENTAS", "INVENTARIO", "DESPACHOS", "APROBADOR", "REPARTIDOR"], {
+  rol: z.enum(["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR"], {
     error: "Selecciona un rol",
   }),
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
 });
 
 type UsuarioFormValues = z.infer<typeof usuarioSchema>;
@@ -53,7 +54,7 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
     formState: { errors, isSubmitting },
   } = useForm<UsuarioFormValues>({
     resolver: zodResolver(usuarioSchema),
-    defaultValues: { nombre: "", email: "", rol: undefined },
+    defaultValues: { nombre: "", email: "", rol: undefined, password: "" },
   });
 
   async function onSubmit(values: UsuarioFormValues) {
@@ -88,7 +89,7 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Agregar usuario</DialogTitle>
-            <DialogDescription>Se crea activo, con acceso inmediato al sistema.</DialogDescription>
+            <DialogDescription>Se crea activo, con la contraseña indicada — puede cambiarla después desde su perfil.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
@@ -102,6 +103,12 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="persona@empresa.com" {...register("email")} />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Contraseña</Label>
+              <Input id="password" type="password" {...register("password")} />
+              {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
 
             <div className="space-y-1.5">

@@ -1,9 +1,11 @@
-// Fase 1 (solo UI): este schema define el modelo de datos / tipos para tipar los
-// datos mock en src/lib/mock-data/. No se ejecuta "migrate" ni "db push" en esta
-// fase — solo "prisma generate" para producir los tipos de TypeScript.
+// Prisma es la fuente de verdad del esquema/migraciones. El backend Python
+// (ver backend/app/core/db.py) accede a Postgres directo con psycopg + SQL
+// plano contra las tablas que este schema crea via "prisma migrate" — no usa
+// prisma-client-py (su motor bundleado todavia exige "url" dentro de
+// datasource, que Prisma 7 ya no permite aca; la conexion real se configura
+// en prisma.config.ts via DATABASE_URL). El generator "prisma-client-js" de
+// abajo solo produce tipos de TypeScript para el frontend.
 
-// Fase 1: sin "url" en el datasource (Prisma 7 exige moverla a prisma.config.ts /
-// al constructor de PrismaClient, ver prisma.config.ts). No se usa en esta fase.
 datasource db {
   provider = "postgresql"
 }
@@ -12,49 +14,23 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Nota: se evaluo agregar un generator "prisma-client-py" para que el
-// backend Python comparta este mismo schema, pero su motor bundleado
-// (5.17.x) todavia exige "url" dentro de este datasource — algo que
-// Prisma 7 ya no permite aca (se movio a prisma.config.ts). Mientras ese
-// paquete de terceros no se actualice, el backend (ver
-// backend/app/jobs/sync_tasa_bcv.py) accede a Postgres directo con
-// psycopg + SQL plano contra las tablas que este schema ya crea via
-// "migrate" — sin duplicar el modelo, solo sin un ORM Python.
-
 // ---------- Enums ----------
 
 enum RolUsuario {
   ADMIN
-  VENTAS
-  INVENTARIO
   DESPACHOS
   APROBADOR
   REPARTIDOR
 }
 
-enum CategoriaProducto {
-  HELADO
-  PIZZA
-}
-
-enum EstadoVenta {
-  PENDIENTE
-  EN_REVISION
-  APROBADA
-  RECHAZADA
-  DESPACHADA
-  ANULADA
+enum Empresa {
+  ISVAN
+  TRALOG
 }
 
 enum AccionRevision {
   APROBADA
   RECHAZADA
-}
-
-enum EstadoFactura {
-  PENDIENTE
-  PAGADA
-  VENCIDA
 }
 
 enum EstadoDespacho {
@@ -66,6 +42,13 @@ enum EstadoDespacho {
   EN_TRANSITO
   ENTREGADO
   CANCELADO
+}
+
+enum EstadoRuta {
+  PLANIFICADA
+  EN_TRANSITO
+  COMPLETADA
+  CANCELADA
 }
 
 enum TipoVehiculo {
@@ -80,178 +63,52 @@ enum EstadoVehiculo {
   FUERA_DE_SERVICIO
 }
 
-// ---------- Usuarios ----------
+// ---------- Usuarios / autenticacion ----------
 
 model Usuario {
-  id               String   @id @default(cuid())
-  nombre           String
-  email            String   @unique
-  rol              RolUsuario
-  avatarUrl        String?
-  activo           Boolean  @default(true)
-  createdAt        DateTime @default(now())
+  id           String     @id @default(cuid())
+  nombre       String
+  email        String     @unique
+  passwordHash String
+  rol          RolUsuario
+  avatarUrl    String?
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
 
-  ventas           Venta[]
-  despachosCreados Despacho[]           @relation("DespachosCreadosPor")
+  despachosCreados     Despacho[]           @relation("DespachosCreadosPor")
   aprobacionesDespacho DespachoAprobacion[]
-  revisionesVenta  VentaRevision[]
+  rutasCreadas         Ruta[]
+  sesiones             Sesion[]
 }
 
-// ---------- Catalogo / Inventario ----------
-
-model Producto {
-  id                 String            @id @default(cuid())
-  sku                String            @unique
-  nombre             String
-  categoria          CategoriaProducto
-  subcategoria       String?
-  unidadMedida       String
-  requiereCadenaFrio Boolean           @default(true)
-  temperaturaMinC    Int?
-  temperaturaMaxC    Int?
-  precioUnitario     Decimal
-  imagenUrl          String?
-  activo             Boolean           @default(true)
-  createdAt          DateTime          @default(now())
-
-  stocks        StockAlmacen[]
-  ventaItems    VentaItem[]
-  despachoItems DespachoItem[]
+// Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
+// lo cual conviene para un equipo pequeno donde puede hacer falta cerrar la
+// sesion de alguien a mano. El token crudo nunca se guarda, solo su hash.
+model Sesion {
+  id        String   @id @default(cuid())
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  tokenHash String   @unique
+  creadoEn  DateTime @default(now())
+  expiraEn  DateTime
 }
+
+// ---------- Almacen y flota ----------
 
 model Almacen {
-  id            String   @id @default(cuid())
+  id            String  @id @default(cuid())
   nombre        String
   tipo          String // "Centro de Distribucion" | "Planta" | "Tienda"
   direccion     String
   ciudad        String
   lat           Float
   lng           Float
-  esFrigorifico Boolean  @default(true)
+  esFrigorifico Boolean @default(true)
 
-  stocks          StockAlmacen[]
-  despachosOrigen Despacho[]     @relation("DespachoOrigen")
+  despachosOrigen Despacho[] @relation("DespachoOrigen")
   vehiculos       Vehiculo[]
+  rutas           Ruta[]
 }
-
-model StockAlmacen {
-  id          String   @id @default(cuid())
-  productoId  String
-  producto    Producto @relation(fields: [productoId], references: [id])
-  almacenId   String
-  almacen     Almacen  @relation(fields: [almacenId], references: [id])
-  cantidad    Int
-  stockMinimo Int
-
-  @@unique([productoId, almacenId])
-}
-
-// ---------- Tasa de cambio ----------
-
-// Historico de la tasa oficial del BCV (Bolivares por USD). Venta y Factura
-// guardan su propia copia ("congelada") de la tasa vigente el dia que se
-// registraron, para que el equivalente en Bs de un registro pasado no
-// cambie cuando la tasa fluctue — pero ambos montos (USD y Bs) siguen
-// mostrandose siempre juntos, ya que el USD es el valor estable para
-// comparar entre fechas.
-model TasaCambio {
-  id     String   @id @default(cuid())
-  fecha  DateTime @unique
-  tasa   Decimal // Bs por 1 USD
-}
-
-// ---------- Clientes y Facturas ----------
-
-model Cliente {
-  // El codigo del cliente es la llave primaria (no hay un id autogenerado aparte).
-  codigo    String   @id // ej. "CLI-0001"
-  nombre    String
-  tipo      String // "Tienda" | "Distribuidor" | "Consumidor final"
-  direccion String
-  ciudad    String
-  lat       Float?
-  lng       Float?
-  telefono  String?
-  email     String?
-
-  facturas  Factura[]
-  ventas    Venta[]
-  despachos Despacho[] @relation("DespachoDestino")
-}
-
-model Factura {
-  id               String        @id @default(cuid())
-  numero           String        @unique // ej. "F-00123"
-  clienteId        String
-  cliente          Cliente       @relation(fields: [clienteId], references: [codigo])
-  monto            Decimal
-  fechaEmision     DateTime
-  fechaVencimiento DateTime
-  estado           EstadoFactura @default(PENDIENTE)
-
-  // Tasa BCV (Bs por USD) vigente el dia de fechaEmision — "congelada" para
-  // que el equivalente en Bs de una factura vieja no cambie con el tiempo.
-  // Ver TasaCambio.
-  tasaBcv Decimal
-
-  // Datos de pago, capturados de forma opcional (no un historial normalizado
-  // de abonos). Lo que importa operativamente es si el pago reportado ya fue
-  // validado por alguien (pagoAprobado), no llevar un libro contable completo.
-  fechaPago    DateTime?
-  montoPagado  Decimal?
-  metodoPago   String?
-  pagoAprobado Boolean   @default(false)
-}
-
-// ---------- Ventas ----------
-
-model Venta {
-  id         String      @id @default(cuid())
-  numero     String      @unique // ej. "V-0001"
-  clienteId  String
-  cliente    Cliente     @relation(fields: [clienteId], references: [codigo])
-  vendedorId String
-  vendedor   Usuario     @relation(fields: [vendedorId], references: [id])
-  fecha      DateTime    @default(now())
-  estado     EstadoVenta @default(PENDIENTE)
-  total      Decimal // en USD — es la fuente de verdad para reportes/analisis
-
-  // Tasa BCV (Bs por USD) vigente el dia de "fecha" — se guarda ("congela")
-  // al registrar la venta para que el equivalente en Bs de una venta pasada
-  // no cambie cuando la tasa fluctue despues. total en USD sigue siendo el
-  // valor canonico para comparar ventas entre distintas fechas. Ver TasaCambio.
-  tasaBcv Decimal
-
-  items      VentaItem[]
-  revisiones VentaRevision[]
-  despachos  Despacho[]
-}
-
-model VentaItem {
-  id             String   @id @default(cuid())
-  ventaId        String
-  venta          Venta    @relation(fields: [ventaId], references: [id])
-  productoId     String
-  producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Int
-  precioUnitario Decimal
-  subtotal       Decimal
-}
-
-// Auditoria de la aprobacion/rechazo de una VENTA que quedo EN_REVISION por
-// facturas pendientes del cliente. Independiente de DespachoAprobacion.
-model VentaRevision {
-  id         String         @id @default(cuid())
-  ventaId    String
-  venta      Venta          @relation(fields: [ventaId], references: [id])
-  usuarioId  String
-  usuario    Usuario        @relation(fields: [usuarioId], references: [id])
-  accion     AccionRevision
-  comentario String?
-  fecha      DateTime       @default(now())
-}
-
-// ---------- Flota ----------
 
 model Vehiculo {
   id                 String         @id @default(cuid())
@@ -265,7 +122,31 @@ model Vehiculo {
   conductorNombre    String?
   ultimaRevision     DateTime?
 
-  despachos Despacho[]
+  rutas Ruta[]
+}
+
+// ---------- Clientes ----------
+
+// El mismo codigo puede referirse a clientes distintos segun la empresa
+// (ISVAN / TRALOG comparten almacen y flota pero no su cartera de clientes),
+// asi que la llave de negocio es (empresa, codigo), no el codigo solo.
+model Cliente {
+  id        String  @id @default(cuid())
+  empresa   Empresa
+  codigo    String // ej. "CLI-0001", unico solo dentro de su empresa
+  nombre    String
+  tipo      String // "Tienda" | "Distribuidor" | "Consumidor final"
+  direccion String
+  ciudad    String
+  lat       Float?
+  lng       Float?
+  // Obligatorio: lo usan los despachadores para contactar al cliente.
+  telefono  String
+  email     String?
+
+  despachos Despacho[] @relation("DespachoDestino")
+
+  @@unique([empresa, codigo])
 }
 
 // ---------- Despachos ----------
@@ -273,48 +154,49 @@ model Vehiculo {
 model Despacho {
   id                   String         @id @default(cuid())
   numero               String         @unique // ej. "D-0001"
-  ventaId              String?
-  venta                Venta?         @relation(fields: [ventaId], references: [id])
+  // Numero de factura/nota de entrega del documento origen (Excel o carga
+  // manual). Llave real de agrupacion e idempotencia de la importacion: cada
+  // documento subido debe ser nuevo, nunca repetir uno ya cargado.
+  numeroDocumento      String         @unique
   origenId             String
   origen               Almacen        @relation("DespachoOrigen", fields: [origenId], references: [id])
   destinoClienteId     String
-  destinoCliente       Cliente        @relation("DespachoDestino", fields: [destinoClienteId], references: [codigo])
+  destinoCliente       Cliente        @relation("DespachoDestino", fields: [destinoClienteId], references: [id])
   creadoPorId          String
   creadoPor            Usuario        @relation("DespachosCreadosPor", fields: [creadoPorId], references: [id])
   estado               EstadoDespacho @default(BORRADOR)
   fechaCreacion        DateTime       @default(now())
   fechaEstimadaEntrega DateTime?
 
-  vehiculoId       String?
-  vehiculo         Vehiculo? @relation(fields: [vehiculoId], references: [id])
+  // El vehiculo se asigna a nivel de Ruta (un vehiculo puede llevar varios
+  // despachos en un mismo viaje), no por despacho suelto.
+  rutaId      String?
+  ruta        Ruta?   @relation(fields: [rutaId], references: [id])
+  ordenEnRuta Int? // posicion de esta parada dentro de la ruta, calculada por el TSP
 
-  // Resultado del optimizador de rutas (mock en esta fase).
-  distanciaEstimadaKm Float?
-  tiempoEstimadoMin   Int?
-  rutaCalculada       Boolean @default(false)
-
-  items        DespachoItem[]
-  aprobaciones DespachoAprobacion[]
-  ruta         RutaPunto[]
+  items         DespachoItem[]
+  aprobaciones  DespachoAprobacion[]
+  puntosEntrega RutaPunto[] // puntos de la ruta marcados como la parada de este despacho
 }
 
 model DespachoItem {
   id         String   @id @default(cuid())
   despachoId String
   despacho   Despacho @relation(fields: [despachoId], references: [id])
-  productoId String
-  producto   Producto @relation(fields: [productoId], references: [id])
-  // Lo que el cliente pidio originalmente en la venta (se copia y se congela
-  // al generar el despacho). "cantidad" es lo que realmente se va a
-  // despachar: arranca sugerido como min(cantidadSolicitada, stock
-  // disponible) pero el coordinador puede ajustarlo a mano antes de que el
-  // despacho salga del almacen. La diferencia entre ambos es la demanda que
-  // el inventario actual no alcanza a cubrir.
+  // Texto libre (viene del Excel o de carga manual) — ya no hay catalogo de
+  // productos: cada fila trae su propia descripcion, cantidad y peso.
+  descripcion String
+  // Lo que el documento origen pedia originalmente (se copia y se congela al
+  // crear el despacho). "cantidad" es lo que realmente se va a despachar: el
+  // coordinador puede ajustarla a mano mientras el despacho no haya salido
+  // del almacen.
   cantidadSolicitada Int
   cantidad           Int
+  pesoUnitarioKg     Float
+  requiereFrio       Boolean @default(true)
 }
 
-// Auditoria de la aprobacion/rechazo del DESPACHO (independiente de VentaRevision).
+// Auditoria de la aprobacion/rechazo del despacho.
 model DespachoAprobacion {
   id         String         @id @default(cuid())
   despachoId String
@@ -326,16 +208,43 @@ model DespachoAprobacion {
   fecha      DateTime       @default(now())
 }
 
-// Waypoints de una ruta: usados tanto para la ruta calculada por el optimizador
-// como para el seguimiento en vivo del despacho.
+// ---------- Rutas (multi-parada) ----------
+
+// Un viaje de un vehiculo que agrupa varios despachos (uno por cliente),
+// visitados en el orden que calcula el optimizador (TSP) a partir de
+// Almacen Catia. Reemplaza el calculo "1 despacho = 1 tramo" de antes.
+model Ruta {
+  id               String     @id @default(cuid())
+  numero           String     @unique // ej. "R-0001"
+  vehiculoId       String
+  vehiculo         Vehiculo   @relation(fields: [vehiculoId], references: [id])
+  origenId         String
+  origen           Almacen    @relation(fields: [origenId], references: [id])
+  creadoPorId      String
+  creadoPor        Usuario    @relation(fields: [creadoPorId], references: [id])
+  estado           EstadoRuta @default(PLANIFICADA)
+  fechaCreacion    DateTime   @default(now())
+  distanciaTotalKm Float?
+  tiempoTotalMin   Int?
+
+  despachos Despacho[]
+  puntos    RutaPunto[]
+}
+
+// Waypoints de la geometria de una Ruta multi-parada, usados tanto para
+// dibujar el trazado calculado como para el seguimiento en vivo.
+// paradaDespachoId marca los puntos que corresponden a la llegada/entrega en
+// un cliente especifico (a diferencia de los puntos intermedios del trazado).
 model RutaPunto {
-  id          String   @id @default(cuid())
-  despachoId  String
-  despacho    Despacho @relation(fields: [despachoId], references: [id])
-  orden       Int
-  lat         Float
-  lng         Float
-  estado      String // "salida" | "en_ruta" | "parada" | "entregado"
-  timestamp   DateTime
-  descripcion String?
+  id               String    @id @default(cuid())
+  rutaId           String
+  ruta             Ruta      @relation(fields: [rutaId], references: [id])
+  orden            Int
+  lat              Float
+  lng              Float
+  estado           String // "salida" | "en_ruta" | "parada" | "entregado"
+  timestamp        DateTime
+  descripcion      String?
+  paradaDespachoId String?
+  paradaDespacho   Despacho? @relation(fields: [paradaDespachoId], references: [id])
 }

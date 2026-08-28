@@ -16,16 +16,14 @@ import { UserNav } from "@/components/layout/user-nav";
 import type { RolUsuario } from "@prisma/client";
 
 const SEGMENT_LABELS: Record<string, string> = {
-  ventas: "Ventas",
-  nueva: "Nueva venta",
-  revision: "Revisión",
-  inventario: "Inventario",
-  categorias: "Categorías",
   despachos: "Despachos",
   nuevo: "Nuevo despacho",
   aprobacion: "Aprobación",
+  rutas: "Rutas",
+  clientes: "Clientes",
   flota: "Flota",
   seguimiento: "Seguimiento",
+  despachador: "Despachador",
   usuarios: "Usuarios",
 };
 
@@ -36,7 +34,7 @@ function labelForSegment(segment: string) {
 export function Topbar({
   user,
 }: {
-  user: { nombre: string; email: string; rol: RolUsuario; avatarUrl?: string | null };
+  user: { id: string; nombre: string; email: string; rol: RolUsuario; avatarUrl?: string | null };
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);

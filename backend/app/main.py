@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # INFO para que se vean los logs de app.services.route_analysis al llamar al
@@ -13,17 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # motivo exacto de por que cayo al fallback mock) en la consola de uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from app.api import (
-    almacenes,
-    clientes,
-    despachos,
-    historial,
-    productos,
-    tasa_cambio,
-    usuarios,
-    vehiculos,
-    ventas,
-)
+from app.api import almacenes, auth, clientes, despachos, historial, rutas, usuarios, vehiculos
+from app.core.auth import get_current_user
 
 app = FastAPI(title="Gestion Logistica API")
 
@@ -38,19 +29,26 @@ ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_env.split(",") if o.strip
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    # La cookie de sesion (ver app/core/auth.py) viaja en llamadas
+    # cross-origin (frontend en :3000, backend en :8000 en dev) — sin esto
+    # el navegador no la manda ni el backend la deja pasar. Solo funciona
+    # con una lista explicita de origenes (no "*"), que es lo que ya usamos.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-ROUTERS = [
-    tasa_cambio.router,
-    productos.router,
+# auth.router se deja sin la dependencia global de sesion (login/logout no
+# la requieren; GET /auth/me exige sesion por su cuenta). Todos los demas
+# routers exigen una sesion valida en cada endpoint.
+ROUTERS_PUBLICOS = [auth.router]
+ROUTERS_PROTEGIDOS = [
     almacenes.router,
     clientes.router,
     usuarios.router,
     vehiculos.router,
-    ventas.router,
     despachos.router,
+    rutas.router,
     historial.router,
 ]
 
@@ -61,9 +59,13 @@ ROUTERS = [
 # que cada router queda registrado en ambas variantes -- funciona sin
 # importar cual de las dos use, y no rompe el desarrollo local (donde el
 # frontend llama directo a localhost:8000 sin prefijo).
-for _router in ROUTERS:
+for _router in ROUTERS_PUBLICOS:
     app.include_router(_router)
     app.include_router(_router, prefix="/api/backend")
+
+for _router in ROUTERS_PROTEGIDOS:
+    app.include_router(_router, dependencies=[Depends(get_current_user)])
+    app.include_router(_router, prefix="/api/backend", dependencies=[Depends(get_current_user)])
 
 
 @app.get("/")
