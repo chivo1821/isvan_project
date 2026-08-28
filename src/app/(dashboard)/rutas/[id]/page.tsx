@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { RecalcularRutaButton } from "@/components/modules/rutas/recalcular-ruta-button";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ESTADO_DESPACHO_META, ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDate } from "@/lib/constants";
@@ -21,6 +22,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
         subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} — ${TIPO_VEHICULO_META[ruta.vehiculo.tipo].label} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
         actions={
           <div className="flex items-center gap-3">
+            {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}
             <StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />
             {rutaActiva && (
               <Link href={`/despachador/${ruta.id}`} className="text-sm text-primary hover:underline">

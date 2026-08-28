@@ -373,6 +373,35 @@ def _ruta_multi_encadenada(
     return resultado, orden, indices_parada
 
 
+def _agrupar_paradas_por_ubicacion(paradas: list[LatLng]) -> tuple[list[LatLng], list[list[int]]]:
+    """Varios despachos pueden ir al MISMO cliente (misma lat/lng): fisicamente
+    es una sola parada. Devuelve las ubicaciones unicas y, por cada una, los
+    indices de las paradas originales que le corresponden.
+
+    Es imprescindible deduplicar antes de llamar al TSP: con nodos repetidos
+    el servicio devuelve "tspPathList": None (no encuentra ruta) o menos
+    stopIndexes de los nodos enviados, y terminabamos cayendo al fallback
+    encadenado, que ademas mete tramos sinteticos para los saltos de
+    distancia cero -- de ahi salian trazados absurdos.
+    """
+    ubicaciones: list[LatLng] = []
+    indices_por_ubicacion: list[list[int]] = []
+    clave_a_posicion: dict[tuple[float, float], int] = {}
+
+    for i, parada in enumerate(paradas):
+        # 6 decimales ~ 0.1 m: mismo cliente = misma ubicacion.
+        clave = (round(parada.lat, 6), round(parada.lng, 6))
+        posicion = clave_a_posicion.get(clave)
+        if posicion is None:
+            posicion = len(ubicaciones)
+            clave_a_posicion[clave] = posicion
+            ubicaciones.append(parada)
+            indices_por_ubicacion.append([])
+        indices_por_ubicacion[posicion].append(i)
+
+    return ubicaciones, indices_por_ubicacion
+
+
 def calcular_mejor_ruta_multi(
     origen: LatLng, paradas: list[LatLng]
 ) -> tuple[RutaMultiResultado, list[int], list[int]]:
@@ -383,14 +412,28 @@ def calcular_mejor_ruta_multi(
     Primero intenta el servicio TSP real de iServer (orden optimizado por
     costo real de red); si no esta configurado o falla, cae a una
     heuristica propia (vecino mas cercano) encadenando tramos de dos puntos.
-    """
-    real = _consultar_iserver_tsp(origen, paradas)
-    if real:
-        resultado, orden = real
-        # El TSP real devuelve un solo trazado combinado sin limites
-        # explicitos entre tramos -- se ubica cada parada por el punto de
-        # la geometria mas cercano a sus coordenadas reales.
-        indices_parada = [_indice_geometria_mas_cercano(resultado.geometry, paradas[i]) for i in orden]
-        return resultado, orden, indices_parada
 
-    return _ruta_multi_encadenada(origen, paradas)
+    Los despachos que van a la misma ubicacion se agrupan en una sola parada
+    (ver _agrupar_paradas_por_ubicacion) y quedan consecutivos en el orden.
+    """
+    ubicaciones, indices_por_ubicacion = _agrupar_paradas_por_ubicacion(paradas)
+
+    real = _consultar_iserver_tsp(origen, ubicaciones)
+    if real:
+        resultado, orden_ubicaciones = real
+    else:
+        resultado, orden_ubicaciones, _ = _ruta_multi_encadenada(origen, ubicaciones)
+
+    # El trazado viene combinado, sin limites explicitos entre tramos: cada
+    # parada se ubica por el punto de la geometria mas cercano a sus
+    # coordenadas reales. Los despachos que comparten ubicacion comparten
+    # tambien ese punto.
+    orden: list[int] = []
+    indices_parada: list[int] = []
+    for posicion in orden_ubicaciones:
+        indice_geometria = _indice_geometria_mas_cercano(resultado.geometry, ubicaciones[posicion])
+        for indice_parada in indices_por_ubicacion[posicion]:
+            orden.append(indice_parada)
+            indices_parada.append(indice_geometria)
+
+    return resultado, orden, indices_parada

@@ -146,61 +146,116 @@ def crear_ruta(data: RutaCreate):
         if not cur.fetchone():
             raise HTTPException(400, "El vehiculo no existe o no esta funcional")
 
-        origen = LatLng(lat=almacen["lat"], lng=almacen["lng"])
-        paradas = [LatLng(lat=d["clienteLat"], lng=d["clienteLng"]) for d in despachos]
-        resultado, orden, indices_parada = calcular_mejor_ruta_multi(origen, paradas)
-
         numero = siguiente_numero(cur, "Ruta", "R", 4)
         ruta_id = f"ruta-{uuid.uuid4().hex[:10]}"
         cur.execute(
             'INSERT INTO "Ruta" '
-            '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado", "distanciaTotalKm", "tiempoTotalMin") '
-            "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA', %s, %s) RETURNING *",
-            (
-                ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, data.creadoPorId,
-                resultado.distancia_km, resultado.tiempo_min,
-            ),
-        )
-        ruta_row = cur.fetchone()
-
-        for posicion, indice_despacho in enumerate(orden):
-            despacho_id = despachos[indice_despacho]["id"]
-            cur.execute(
-                'UPDATE "Despacho" SET "rutaId" = %s, "ordenEnRuta" = %s WHERE "id" = %s',
-                (ruta_id, posicion + 1, despacho_id),
-            )
-
-        # indices_parada[pos] = indice (en resultado.geometry) del punto de
-        # llegada de la parada visitada en la posicion `pos` de `orden`.
-        despacho_por_indice_geometria = {
-            idx: despachos[orden[pos]]["id"] for pos, idx in enumerate(indices_parada)
-        }
-
-        # Se guarda la geometria completa que devuelve SuperMap (puede ser
-        # de cientos a miles de puntos en un trayecto largo) -- reducirla
-        # aca cortaria curvas reales de las calles. La cantidad de
-        # RutaPunto por fila no es un problema (el mapa ya filtra que
-        # puntos marca, ver seguimiento-detalle-map.tsx); se inserta en
-        # lote para que no sea lenta con geometrias grandes.
-        ahora = datetime.now()
-        n = len(resultado.geometry)
-        filas = []
-        for i, (lng, lat) in enumerate(resultado.geometry):
-            estado_punto = "salida" if i == 0 else "en_ruta"
-            offset_min = resultado.tiempo_min * (i / (n - 1)) if n > 1 else 0
-            filas.append((
-                f"rp-{uuid.uuid4().hex[:10]}", ruta_id, i + 1, lat, lng, estado_punto,
-                ahora + timedelta(minutes=offset_min), despacho_por_indice_geometria.get(i),
-            ))
-        cur.executemany(
-            'INSERT INTO "RutaPunto" '
-            '("id", "rutaId", "orden", "lat", "lng", "estado", "timestamp", "paradaDespachoId") '
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            filas,
+            '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado") '
+            "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA') RETURNING *",
+            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, data.creadoPorId),
         )
 
+        _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
         conn.commit()
-        return _con_detalle(cur, ruta_row)
+
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        return _con_detalle(cur, cur.fetchone())
+
+
+def _calcular_y_guardar_trazado(cur, ruta_id: str, despachos: list[dict], almacen: dict) -> None:
+    """Calcula el orden de visita y el trazado de una ruta, y los persiste
+    (Despacho.ordenEnRuta + RutaPunto + totales de la Ruta). Se usa tanto al
+    crear la ruta como al recalcularla."""
+    origen = LatLng(lat=almacen["lat"], lng=almacen["lng"])
+    paradas = [LatLng(lat=d["clienteLat"], lng=d["clienteLng"]) for d in despachos]
+    resultado, orden, indices_parada = calcular_mejor_ruta_multi(origen, paradas)
+
+    cur.execute(
+        'UPDATE "Ruta" SET "distanciaTotalKm" = %s, "tiempoTotalMin" = %s WHERE "id" = %s',
+        (resultado.distancia_km, resultado.tiempo_min, ruta_id),
+    )
+
+    for posicion, indice_despacho in enumerate(orden):
+        cur.execute(
+            'UPDATE "Despacho" SET "rutaId" = %s, "ordenEnRuta" = %s WHERE "id" = %s',
+            (ruta_id, posicion + 1, despachos[indice_despacho]["id"]),
+        )
+
+    # indices_parada[pos] = indice (en resultado.geometry) del punto de
+    # llegada de la parada visitada en la posicion `pos` de `orden`. Varios
+    # despachos al mismo cliente comparten ese punto (es una sola parada
+    # fisica): se marca el primero, y los demas igual se entregan por su
+    # propio estado de Despacho, no por el RutaPunto.
+    despacho_por_indice_geometria: dict[int, str] = {}
+    for posicion, indice_geometria in enumerate(indices_parada):
+        despacho_por_indice_geometria.setdefault(indice_geometria, despachos[orden[posicion]]["id"])
+
+    # Se guarda la geometria completa que devuelve SuperMap (puede ser de
+    # cientos a miles de puntos en un trayecto largo) -- reducirla aca
+    # cortaria curvas reales de las calles. La cantidad de RutaPunto no es
+    # un problema (el mapa ya filtra que puntos marca, ver
+    # seguimiento-detalle-map.tsx); se inserta en lote para que no sea lenta
+    # con geometrias grandes.
+    cur.execute('DELETE FROM "RutaPunto" WHERE "rutaId" = %s', (ruta_id,))
+    ahora = datetime.now()
+    n = len(resultado.geometry)
+    filas = []
+    for i, (lng, lat) in enumerate(resultado.geometry):
+        estado_punto = "salida" if i == 0 else "en_ruta"
+        offset_min = resultado.tiempo_min * (i / (n - 1)) if n > 1 else 0
+        filas.append((
+            f"rp-{uuid.uuid4().hex[:10]}", ruta_id, i + 1, lat, lng, estado_punto,
+            ahora + timedelta(minutes=offset_min), despacho_por_indice_geometria.get(i),
+        ))
+    cur.executemany(
+        'INSERT INTO "RutaPunto" '
+        '("id", "rutaId", "orden", "lat", "lng", "estado", "timestamp", "paradaDespachoId") '
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        filas,
+    )
+
+
+@router.post(
+    "/{ruta_id}/recalcular",
+    response_model=Ruta,
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
+def recalcular_ruta(ruta_id: str):
+    """Vuelve a calcular el orden de visita y el trazado de una ruta ya
+    creada, con los despachos que tenga en ese momento. Util cuando la
+    geometria guardada quedo mal (el trazado se calcula una sola vez al
+    crear la ruta y queda congelado en RutaPunto)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        ruta = cur.fetchone()
+        if not ruta:
+            raise HTTPException(404, "Ruta no encontrada")
+        if ruta["estado"] not in ("PLANIFICADA", "EN_TRANSITO"):
+            raise HTTPException(400, "Solo se puede recalcular una ruta planificada o en transito")
+
+        cur.execute(
+            'SELECT d.*, c."lat" AS "clienteLat", c."lng" AS "clienteLng" '
+            'FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
+            'WHERE d."rutaId" = %s ORDER BY d."ordenEnRuta"',
+            (ruta_id,),
+        )
+        despachos = cur.fetchall()
+        if not despachos:
+            raise HTTPException(400, "La ruta no tiene despachos asociados")
+        for d in despachos:
+            if d["clienteLat"] is None or d["clienteLng"] is None:
+                raise HTTPException(400, f'El cliente del despacho {d["numero"]} no tiene coordenadas registradas')
+
+        cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ruta["origenId"],))
+        almacen = cur.fetchone()
+        if not almacen:
+            raise HTTPException(400, f'No existe el almacen de origen "{ruta["origenId"]}" en la base de datos.')
+
+        _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
+        conn.commit()
+
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        return _con_detalle(cur, cur.fetchone())
 
 
 @router.post(
