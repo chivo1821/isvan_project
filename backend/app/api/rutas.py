@@ -23,11 +23,17 @@ router = APIRouter(prefix="/rutas", tags=["rutas"])
 ALMACEN_BASE_ID = "alm-catia"
 
 
-def _con_detalle_lote(cur, rutas: list[dict]) -> list[dict]:
+def _con_detalle_lote(cur, rutas: list[dict], *, geometria_completa: bool = True) -> list[dict]:
     """Version en lote: sin importar cuantas rutas ni cuantos despachos por
     ruta, siempre son 3 consultas totales (despachos, items, puntos), en vez
     de una por despacho anidada dentro de una por ruta (N+1). Con la base en
-    otra region (Neon) cada round-trip pesa mucho mas que en local."""
+    otra region (Neon) cada round-trip pesa mucho mas que en local.
+
+    geometria_completa=False trae solo el ultimo punto de cada ruta: es lo
+    unico que necesitan las vistas de lista (dashboard y seguimiento, para
+    ubicar el vehiculo en el mapa), y evita mandar miles de vertices por
+    ruta en cada carga de pagina. El detalle de una ruta si la trae completa.
+    """
     if not rutas:
         return []
     ruta_ids = [r["id"] for r in rutas]
@@ -52,7 +58,14 @@ def _con_detalle_lote(cur, rutas: list[dict]) -> list[dict]:
         d["items"] = items_por_despacho.get(d["id"], [])
         despachos_por_ruta.setdefault(d["rutaId"], []).append(d)
 
-    cur.execute('SELECT * FROM "RutaPunto" WHERE "rutaId" = ANY(%s) ORDER BY "orden"', (ruta_ids,))
+    if geometria_completa:
+        cur.execute('SELECT * FROM "RutaPunto" WHERE "rutaId" = ANY(%s) ORDER BY "orden"', (ruta_ids,))
+    else:
+        cur.execute(
+            'SELECT DISTINCT ON ("rutaId") * FROM "RutaPunto" WHERE "rutaId" = ANY(%s) '
+            'ORDER BY "rutaId", "orden" DESC',
+            (ruta_ids,),
+        )
     puntos_por_ruta: dict[str, list[dict]] = {}
     for p in cur.fetchall():
         puntos_por_ruta.setdefault(p["rutaId"], []).append(p)
@@ -69,9 +82,11 @@ def _con_detalle(cur, ruta_row: dict) -> dict:
 
 @router.get("", response_model=list[Ruta])
 def listar_rutas():
+    """Listado: cada ruta trae solo su ultimo punto (posicion actual), no el
+    trazado completo — para eso esta GET /rutas/{id}."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
-        return _con_detalle_lote(cur, cur.fetchall())
+        return _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
 
 
 @router.get("/{ruta_id}", response_model=Ruta)
