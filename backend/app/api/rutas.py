@@ -133,6 +133,15 @@ def crear_ruta(data: RutaCreate):
 
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
         almacen = cur.fetchone()
+        if not almacen:
+            # Sin esta fila, mas abajo reventaba con un TypeError al leer
+            # almacen["lat"] -> 500 opaco. Ver _verificar_almacen_base en
+            # app/api/despachos.py.
+            raise HTTPException(
+                400,
+                f'No existe el almacen de origen "{ALMACEN_BASE_ID}" en la base de datos. '
+                "Hay que crearlo antes de poder armar rutas (ver README, seccion de datos iniciales).",
+            )
         cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s AND "estado" = \'FUNCIONAL\'', (data.vehiculoId,))
         if not cur.fetchone():
             raise HTTPException(400, "El vehiculo no existe o no esta funcional")
