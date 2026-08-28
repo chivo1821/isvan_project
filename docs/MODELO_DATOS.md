@@ -1,86 +1,52 @@
 # Modelo de datos — Gestión Logística
 
-Este documento describe el modelo de datos del sistema en términos de negocio.
-La fuente de verdad técnica es [`prisma/schema.prisma`](../prisma/schema.prisma);
-este archivo es su equivalente legible, pensado para discutir el modelo sin
-necesidad de leer Prisma. El modelo ya está conectado a una Postgres real
-(local por ahora): `prisma migrate` crea las tablas, la API FastAPI en
-`backend/` las lee/escribe con `psycopg`, y el frontend consume esa API — ver
-[`docs/PLAN.md`](./PLAN.md) para la arquitectura completa.
+Este documento describe el modelo de datos del sistema en términos de
+negocio. La fuente de verdad técnica es
+[`prisma/schema.prisma`](../prisma/schema.prisma); este archivo es su
+equivalente legible, pensado para discutir el modelo sin necesidad de leer
+Prisma. Ver [`docs/PLAN.md`](./PLAN.md) para la arquitectura completa.
+
+No hay modelos de Ventas ni Inventario (`Producto`, `StockAlmacen`,
+`TasaCambio`, `Factura`, `Venta`, `VentaItem`, `VentaRevision`) — se
+eliminaron a propósito de esta versión (ver `docs/PLAN.md`, decisión 2).
 
 ## Diagrama entidad-relación
 
 ```mermaid
 erDiagram
-    USUARIO ||--o{ VENTA : vende
+    USUARIO ||--o{ SESION : autentica
     USUARIO ||--o{ DESPACHO : crea
     USUARIO ||--o{ DESPACHO_APROBACION : audita
-    USUARIO ||--o{ VENTA_REVISION : audita
+    USUARIO ||--o{ RUTA : arma
 
-    CLIENTE ||--o{ FACTURA : tiene
-    CLIENTE ||--o{ VENTA : compra
     CLIENTE ||--o{ DESPACHO : recibe
 
-    PRODUCTO ||--o{ STOCK_ALMACEN : registra
-    PRODUCTO ||--o{ VENTA_ITEM : aparece_en
-    PRODUCTO ||--o{ DESPACHO_ITEM : aparece_en
-
-    ALMACEN ||--o{ STOCK_ALMACEN : guarda
     ALMACEN ||--o{ VEHICULO : es_base_de
     ALMACEN ||--o{ DESPACHO : origina
+    ALMACEN ||--o{ RUTA : origina
 
-    VENTA ||--o{ VENTA_ITEM : contiene
-    VENTA ||--o{ VENTA_REVISION : tiene
-    VENTA ||--o{ DESPACHO : genera
+    VEHICULO ||--o{ RUTA : transporta
 
-    VEHICULO ||--o{ DESPACHO : transporta
+    RUTA ||--o{ DESPACHO : agrupa
+    RUTA ||--o{ RUTA_PUNTO : traza
 
     DESPACHO ||--o{ DESPACHO_ITEM : contiene
     DESPACHO ||--o{ DESPACHO_APROBACION : tiene
-    DESPACHO ||--o{ RUTA_PUNTO : recorre
+    DESPACHO ||--o{ RUTA_PUNTO : marca_parada_en
 
     USUARIO {
         string id PK
         string nombre
         string email UK
+        string passwordHash
         string rol
         boolean activo
     }
-    CLIENTE {
-        string codigo PK
-        string nombre
-        string tipo
-        string direccion
-        string ciudad
-        float lat
-        float lng
-    }
-    TASA_CAMBIO {
+    SESION {
         string id PK
-        date fecha UK
-        decimal tasa
-    }
-    FACTURA {
-        string id PK
-        string numero UK
-        string clienteId FK
-        decimal monto
-        decimal tasaBcv
-        date fechaEmision
-        date fechaVencimiento
-        string estado
-        date fechaPago
-        decimal montoPagado
-        string metodoPago
-        boolean pagoAprobado
-    }
-    PRODUCTO {
-        string id PK
-        string sku UK
-        string nombre
-        string categoria
-        boolean requiereCadenaFrio
-        decimal precioUnitario
+        string usuarioId FK
+        string tokenHash UK
+        datetime expiraEn
     }
     ALMACEN {
         string id PK
@@ -88,37 +54,6 @@ erDiagram
         float lat
         float lng
         boolean esFrigorifico
-    }
-    STOCK_ALMACEN {
-        string id PK
-        string productoId FK
-        string almacenId FK
-        int cantidad
-        int stockMinimo
-    }
-    VENTA {
-        string id PK
-        string numero UK
-        string clienteId FK
-        string vendedorId FK
-        string estado
-        decimal total
-        decimal tasaBcv
-    }
-    VENTA_ITEM {
-        string id PK
-        string ventaId FK
-        string productoId FK
-        int cantidad
-        decimal precioUnitario
-        decimal subtotal
-    }
-    VENTA_REVISION {
-        string id PK
-        string ventaId FK
-        string usuarioId FK
-        string accion
-        string comentario
     }
     VEHICULO {
         string id PK
@@ -129,23 +64,37 @@ erDiagram
         string estado
         string almacenBaseId FK
     }
+    CLIENTE {
+        string id PK
+        string empresa
+        string codigo
+        string nombre
+        string tipo
+        string direccion
+        string ciudad
+        float lat
+        float lng
+        string telefono
+    }
     DESPACHO {
         string id PK
         string numero UK
-        string ventaId FK
+        string numeroDocumento UK
         string origenId FK
         string destinoClienteId FK
-        string vehiculoId FK
+        string creadoPorId FK
+        string rutaId FK
+        int ordenEnRuta
         string estado
-        float distanciaEstimadaKm
-        int tiempoEstimadoMin
     }
     DESPACHO_ITEM {
         string id PK
         string despachoId FK
-        string productoId FK
+        string descripcion
         int cantidad
         int cantidadSolicitada
+        float pesoUnitarioKg
+        boolean requiereFrio
     }
     DESPACHO_APROBACION {
         string id PK
@@ -154,9 +103,20 @@ erDiagram
         string accion
         string comentario
     }
+    RUTA {
+        string id PK
+        string numero UK
+        string vehiculoId FK
+        string origenId FK
+        string creadoPorId FK
+        string estado
+        float distanciaTotalKm
+        int tiempoTotalMin
+    }
     RUTA_PUNTO {
         string id PK
-        string despachoId FK
+        string rutaId FK
+        string paradaDespachoId FK
         int orden
         float lat
         float lng
@@ -168,168 +128,109 @@ erDiagram
 ## Entidades
 
 ### Usuario
-Personas con acceso al sistema. `rol` determina qué módulos usan típicamente
-(Ventas, Inventario, Despachos, Aprobador, Repartidor, Admin), aunque hoy no
-hay control de permisos por rol implementado. No tiene campos de
-autenticación (contraseña, sesión) — se agregan en Fase 2.
+Personas con acceso al sistema. `rol` (`ADMIN`, `DESPACHOS`, `APROBADOR`,
+`REPARTIDOR`) determina qué puede hacer cada quien — permisos aplicados
+tanto en la API (`requiere_rol`) como en la UI. `passwordHash` nunca se
+expone en ninguna respuesta de la API.
 
-### Producto
-Catálogo de helados y pizzas. `precioUnitario` está en USD — es el valor
-canónico. El peso no se registra por producto individual; el algoritmo de
-sugerencia de vehículo usa un promedio por categoría (decisión confirmada,
-ver "Decisiones confirmadas").
+### Sesion
+Respalda el login: una fila por sesión activa, con el hash del token (el
+token crudo solo vive en la cookie httpOnly del navegador). Cerrar sesión o
+expirar borra/ignora la fila — no hay JWT que revocar de otra forma.
 
 ### Almacén
-Centro de acopio/distribución. Actualmente la empresa opera con **un solo
-almacén** (Almacén Catia, Caracas), pero el modelo no lo fuerza a nivel de
-schema — sigue siendo una tabla de N almacenes por si se necesita escalar.
-
-### StockAlmacen
-Cantidad de un producto en un almacén, con su mínimo para disparar el
-indicador de "stock bajo". Es una tabla intermedia Producto↔Almacén.
-
-Se descuenta de verdad cuando un despacho sale del almacén
-(`POST /despachos/{id}/iniciar`, ver "Despacho" y "DespachoItem" abajo) — no
-es solo un valor informativo. `Venta` nunca lo valida ni lo bloquea, para no
-perder la señal de demanda real (ver "DespachoItem").
-
-### Cliente
-Tiendas, distribuidores o consumidores finales. **El `codigo` es la llave
-primaria** (no hay un id autogenerado aparte) — así lo pidió el negocio.
-
-### TasaCambio
-Histórico de la tasa oficial del BCV (Bolívares por USD), una fila por
-fecha. `Venta` y `Factura` guardan su propia copia "congelada" de la tasa
-vigente el día que se registraron (`tasaBcv`), para que el equivalente en Bs
-de un registro pasado no cambie con la fluctuación del bolívar. El monto en
-USD sigue siendo siempre el valor estable para comparar entre fechas — la UI
-muestra ambas monedas juntas en todos los montos de venta/factura.
-
-Se sincroniza sola: `backend/app/jobs/sync_tasa_bcv.py` consulta
-[dolarapi.com](https://ve.dolarapi.com/v1/dolares/oficial) y hace upsert en
-esta tabla todos los días a las 6:00pm (Tarea Programada de Windows), sobre
-una Postgres local por ahora. Cada venta nueva usa `GET /tasa-cambio/actual`
-(la fila más reciente) para su `tasaBcv`. Ver
-[`backend/app/jobs/README.md`](../backend/app/jobs/README.md).
-
-### Factura
-Facturas de un cliente. `estado` (pendiente/pagada/vencida) es lo que
-dispara el flujo de revisión de ventas: si el cliente tiene alguna factura
-`PENDIENTE` o `VENCIDA`, su próxima venta no se aprueba automáticamente.
-Los campos de pago (`fechaPago`, `montoPagado`, `metodoPago`) son
-**opcionales** — no llevan un historial normalizado de abonos, solo el
-último pago reportado. Lo que importa operativamente es `pagoAprobado`: si
-ese pago ya fue validado por alguien o no.
-
-### Venta
-Una venta a un cliente. `estado` sigue el flujo: `PENDIENTE` (recién creada) →
-si el cliente tiene deuda → `EN_REVISION` → `APROBADA`/`RECHAZADA`; si no tiene
-deuda, pasa directo a `APROBADA`. Solo una venta `APROBADA` sin despacho
-generado puede convertirse en un `Despacho` (ver wizard "Nuevo despacho").
-`total` es siempre en USD (valor canónico para reportes); `tasaBcv` congela
-la tasa del día para mostrar el Bs histórico correcto.
-
-**Un cliente no puede tener dos ciclos de venta abiertos a la vez**:
-`POST /ventas` rechaza (409) una venta nueva si el cliente ya tiene una
-`Venta` `APROBADA` cuyo `Despacho` asociado (si existe) todavía no llegó a
-`ENTREGADO` (ni fue `RECHAZADO`). El ciclo se cierra cuando el despachador
-marca el despacho como entregado desde `/despachador` — ver "Despacho" abajo.
-
-### VentaItem
-Línea de producto dentro de una venta, con el precio "congelado" al momento de
-vender (para que cambios futuros de precio no alteren ventas históricas).
-
-### VentaRevision
-Auditoría de quién aprobó/rechazó una venta que cayó en revisión por deuda del
-cliente, y por qué (comentario).
+Centro de acopio/distribución. Hoy la empresa opera con **un solo almacén**
+(Almacén Catia, Caracas, `esFrigorifico: true`), compartido por ambas
+empresas (ISVAN y TRALOG) y por toda la flota. El modelo no lo fuerza a
+nivel de schema — sigue siendo una tabla de N almacenes por si se necesita
+escalar.
 
 ### Vehículo
-Flota propia de la empresa (no de los clientes). `almacenBaseId` indica dónde
-tiene base — hoy siempre el único almacén. `tipo`, `capacidadKg` y
-`tieneRefrigeracion` alimentan el algoritmo de sugerencia de vehículo para un
-despacho.
+Flota propia de la empresa (no de los clientes), compartida entre ISVAN y
+TRALOG. `tipo`, `capacidadKg` y `tieneRefrigeracion` alimentan la
+sugerencia de vehículo al armar una Ruta (suma el peso de todos los
+despachos elegidos).
+
+### Cliente
+Tiendas, distribuidores o consumidores finales, **de una empresa
+específica**. La llave de negocio es `(empresa, codigo)` — el mismo código
+puede pertenecer a un cliente distinto según sea ISVAN o TRALOG, así que
+`id` es un identificador técnico aparte y `codigo` ya no es la llave
+primaria por sí solo. `codigo` **siempre lo asigna el cliente/negocio**, el
+sistema nunca lo genera. `lat`/`lng` son opcionales a nivel de schema, pero
+**obligatorios en la práctica**: un cliente sin coordenadas no se puede
+incluir en una Ruta. `telefono` es obligatorio (lo usan los despachadores
+para contactarlo).
 
 ### Despacho
-Un envío. `ventaId` es opcional: la mayoría se genera desde una venta
-aprobada (flujo actual del wizard "Nuevo despacho"), pero el campo permite
-despachos sin venta asociada (usados en los datos de ejemplo para representar
-casos históricos/manuales). Tiene su **propio** flujo de aprobación
-(`EstadoDespacho` + `DespachoAprobacion`), independiente de `VentaRevision`.
-`distanciaEstimadaKm`/`tiempoEstimadoMin`/`rutaCalculada` guardan el resultado
-del optimizador de rutas (`POST /despachos/{id}/ruta`) — calculado contra el
-servicio real de SuperMap iServer (Transportation Analyst) si
-`NETWORK_ANALYST_URL` está configurado, con fallback automático a una
-síntesis mock si el servicio no responde o no encuentra camino. Ver
-`backend/app/services/route_analysis.py`.
+Un envío a un cliente. `numeroDocumento` es el número de factura/nota de
+entrega del documento origen (Excel o carga manual) — es único y es la
+llave real de agrupación/idempotencia al importar (un documento ya
+importado no se puede volver a cargar). `rutaId`/`ordenEnRuta` quedan
+`null` hasta que el despacho se agrega a una Ruta (solo despachos
+`APROBADO` sin ruta se pueden agregar).
 
-El flujo completo de `estado` en uso hoy es:
-`PENDIENTE_APROBACION` → (aprobación) → `APROBADO` → (el despachador marca
-"Salí del almacén" en `/despachador`, `POST /despachos/{id}/iniciar`, exige
-`vehiculoId` asignado) → `EN_TRANSITO` → (el despachador marca "Marcar como
-entregado", `POST /despachos/{id}/entregar`) → `ENTREGADO`. Un despacho es
-visible en Seguimiento (`/seguimiento`) mientras esté en `APROBADO` o
-`EN_TRANSITO`; deja de aparecer al llegar a `ENTREGADO`, momento en el que
-también se cierra el ciclo de la `Venta` de origen (ver arriba). Los estados
-`BORRADOR`, `EN_PREPARACION` y `CANCELADO` existen en el enum pero ningún
-flujo actual los usa todavía.
+El flujo de `estado` en uso: `PENDIENTE_APROBACION` → (aprobación,
+`DespachoAprobacion`) → `APROBADO` → (se agrega a una Ruta y esa Ruta
+inicia el viaje) → `EN_TRANSITO` → (el despachador marca esa parada como
+entregada) → `ENTREGADO`. `BORRADOR`, `EN_PREPARACION` y `CANCELADO` existen
+en el enum pero ningún flujo actual los usa.
 
 ### DespachoItem
-Línea de producto dentro de un despacho, con **dos cantidades**:
-`cantidadSolicitada` es lo que el cliente pidió en la venta (se copia y se
-congela al generar el despacho, nunca cambia); `cantidad` es lo que
-realmente se va a despachar. Al crear el despacho, `cantidad` arranca
-sugerida como `min(cantidadSolicitada, stock disponible)`, pero el
-coordinador puede ajustarla a mano (`PATCH /despachos/{id}/items/{itemId}`,
-entre 0 y `cantidadSolicitada`) mientras el despacho no haya salido del
-almacén. La diferencia entre ambas es la demanda que el inventario actual no
-alcanza a cubrir — la señal que permite decidir si vale la pena invertir más
-en un producto.
+Línea de producto dentro de un despacho — **texto libre**, ya no referencia
+un catálogo (`Producto` no existe). `descripcion`, `pesoUnitarioKg` y
+`requiereFrio` vienen directo del Excel (columna directa, tamaño de
+presentación en la descripción, o `litros`) o de la carga manual.
+`cantidadSolicitada` se congela al crear el despacho; `cantidad` es lo que
+realmente se va a despachar, ajustable por el coordinador
+(`PATCH /despachos/{id}/items/{itemId}`) mientras el despacho no haya
+salido del almacén.
 
 ### DespachoAprobacion
-Auditoría de aprobación/rechazo del despacho (independiente de la revisión de
-la venta).
+Auditoría de aprobación/rechazo de un despacho.
+
+### Ruta
+Un viaje de **un vehículo** que agrupa varios despachos (uno por cliente),
+en el orden de visita que calcula **SuperMap iServer (FindTSPPaths)** a
+partir de Almacén Catia — no un tramo simple origen→destino. `estado`
+(`PLANIFICADA` → `EN_TRANSITO` → `COMPLETADA`, o `CANCELADA`) se maneja a
+nivel de ruta completa: "Salí del almacén" pasa todos sus despachos a
+`EN_TRANSITO` a la vez; la ruta pasa a `COMPLETADA` cuando se entrega la
+última parada pendiente.
 
 ### RutaPunto
-Waypoints (lat/lng + timestamp + estado) de la ruta de un despacho. Se usan
-tanto para mostrar la "mejor ruta" calculada como para el seguimiento en vivo
-en el mapa.
+Vértices de la geometría real de una Ruta (puede ser de decenas a miles de
+puntos en un trayecto largo — se guarda completo, sin submuestrear, para no
+cortar curvas reales de las calles). `paradaDespachoId` marca únicamente
+los puntos que corresponden a la llegada a un cliente específico; el resto
+de los puntos solo forma la línea del trazado (el frontend filtra cuáles
+puntos marca visualmente en el mapa, ver `seguimiento-detalle-map.tsx`).
 
 ## Decisiones confirmadas
 
-- **Un solo almacén** — confirmado por el negocio; el modelo lo permite pero
-  no lo obliga (fácil de escalar a N almacenes después).
-- **`Cliente.codigo` como llave primaria** — no hay un id técnico aparte.
-- **Dos aprobaciones independientes** — la venta se revisa por deuda del
-  cliente (`VentaRevision`); el despacho se aprueba por separado
-  (`DespachoAprobacion`).
-- **Despachos nacen de ventas aprobadas** — el wizard de creación ya no
-  permite cargar productos a mano; toma cliente y productos de la venta
-  seleccionada.
-- **Peso de producto por promedio de categoría** — no se agrega un campo de
-  peso real a `Producto`; el algoritmo de sugerencia de vehículo sigue
-  aproximando por categoría (0.4 kg helado, 0.6 kg pizza). Confirmado con el
-  negocio: el promedio es suficiente.
-- **Tasa BCV histórica por fecha** — se agregó `TasaCambio` (fecha + tasa) y
-  el campo `tasaBcv` en `Venta`/`Factura`, congelado al momento de
-  registrarse. El USD sigue siendo el valor canónico para análisis (evita
-  que la fluctuación del bolívar distorsione comparaciones entre fechas),
-  pero **todos los montos de venta se muestran siempre en ambas monedas**.
-- **Pagos de factura sin modelo normalizado** — en vez de una tabla `Pago`
-  con historial de abonos, `Factura` tiene campos de pago opcionales
-  (`fechaPago`, `montoPagado`, `metodoPago`) para el último pago reportado,
-  más un flag `pagoAprobado` — que es lo que realmente importa
-  operativamente (si ese pago ya fue validado o no).
-- **Sin devoluciones/notas de crédito** — no es una funcionalidad necesaria
-  por ahora; se puede agregar más adelante si surge la necesidad.
-- **La venta nunca se bloquea por falta de stock** — se puede vender más de
-  lo que hay en almacén, a propósito: la venta registra la demanda real del
-  cliente (`VentaItem.cantidad`), y es recién al generar el despacho que se
-  compara contra el stock disponible (`DespachoItem.cantidadSolicitada` vs
-  `cantidad`). Bloquear la venta perdería esa señal de demanda insatisfecha,
-  que es justo lo que se quiere medir para decidir en qué productos invertir
-  más inventario. `Nueva venta` sí muestra el stock disponible y un aviso no
-  bloqueante si se supera.
-- **El stock se descuenta al salir del almacén, no antes** — recién en
-  `POST /despachos/{id}/iniciar` (cuando el despachador marca "Salí del
-  almacén"), no al crear ni al aprobar el despacho, porque es el momento en
-  que el producto físicamente deja de estar disponible.
+- **Ventas e Inventario no existen en este modelo** — ver `docs/PLAN.md`,
+  decisión 2. Si se reintroducen en el futuro, es un módulo aparte.
+- **`(empresa, codigo)` como llave de negocio del cliente**, no `codigo`
+  solo — confirmado tras detectar que ISVAN y TRALOG pueden repetir el
+  mismo código para clientes distintos.
+- **Un solo almacén y una sola flota**, compartidos entre ambas empresas.
+- **`DespachoItem` es texto libre**, sin catálogo de productos — se evaluó
+  mantener un catálogo liviano para autocompletar, mismo se descartó: exige
+  reconciliación (fuzzy-match) sin beneficio hasta que exista una conexión
+  a la base de ventas real del cliente, que probablemente traiga sus
+  propios códigos de producto.
+- **`numeroDocumento` (no el código de cliente) agrupa las filas de un
+  Excel en un despacho**, y debe ser único — evita reimportar el mismo
+  archivo dos veces.
+- **Peso por ítem sin campo dedicado en el Excel del cliente**: se deriva,
+  en orden, de una columna de peso directa, del tamaño de presentación en
+  la descripción del producto, o de `litros` con un factor de densidad —
+  nunca se le pide al negocio un dato que no tienen a mano.
+- **El vehículo se asigna a nivel de Ruta, no de Despacho** — un vehículo
+  lleva varios despachos en un mismo viaje.
+- **Rutas multi-parada reales vía SuperMap iServer**, no una heurística
+  propia — confirmado que el servicio sí optimiza el orden de visita
+  (`stopIndexes` en la respuesta), con fallback a una heurística de vecino
+  más cercano si el servicio no responde.
+- **Sin recuperación de contraseña por correo** — un ADMIN restablece la
+  contraseña de cualquier usuario directamente desde **Usuarios**.
