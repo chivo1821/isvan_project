@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import re
 import uuid
+from datetime import datetime
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.excel_utils import mapear_columnas, valor_a_texto
-from app.core.numero import siguiente_numero
+from app.core.numero import siguiente_numero, siguientes_numeros
 from app.schemas import (
     ActualizarCantidadDespachoItemRequest,
     Despacho,
@@ -382,16 +383,54 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
                 f'Estos documentos ya fueron importados (por otra carga): {", ".join(sorted(ya_existentes))}',
             )
 
-        creados = [
-            _crear_despacho_interno(
-                cur,
-                destino_cliente_id=grupo.clienteId,
-                numero_documento=grupo.numeroDocumento,
-                creado_por_id=data.creadoPorId,
-                items=grupo.items,
+        # Todo en lote: 1 consulta para los correlativos + 1 insert masivo de
+        # despachos + 1 insert masivo de items. Antes era ~8 round-trips por
+        # documento (correlativo + despacho + un insert por item), lo que con
+        # cientos de documentos y la base en otra region se pasaba del tiempo
+        # limite de la funcion serverless (error 500 en produccion).
+        numeros = siguientes_numeros(cur, "Despacho", "D", 4, len(data.grupos))
+        ahora = datetime.now()
+
+        filas_despacho = []
+        filas_item = []
+        creados = []
+        for grupo, numero in zip(data.grupos, numeros):
+            despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
+            filas_despacho.append(
+                (despacho_id, numero, grupo.numeroDocumento, ALMACEN_BASE_ID, grupo.clienteId, data.creadoPorId, ahora)
             )
-            for grupo in data.grupos
-        ]
+            items_creados = []
+            for item in grupo.items:
+                item_id = f"di-{uuid.uuid4().hex[:10]}"
+                filas_item.append(
+                    (item_id, despacho_id, item.descripcion, item.cantidad, item.cantidad,
+                     item.pesoUnitarioKg, item.requiereFrio)
+                )
+                items_creados.append({
+                    "id": item_id, "descripcion": item.descripcion, "cantidad": item.cantidad,
+                    "cantidadSolicitada": item.cantidad, "pesoUnitarioKg": item.pesoUnitarioKg,
+                    "requiereFrio": item.requiereFrio,
+                })
+            creados.append({
+                "id": despacho_id, "numero": numero, "numeroDocumento": grupo.numeroDocumento,
+                "origenId": ALMACEN_BASE_ID, "destinoClienteId": grupo.clienteId,
+                "creadoPorId": data.creadoPorId, "estado": "PENDIENTE_APROBACION",
+                "fechaCreacion": ahora, "fechaEstimadaEntrega": None,
+                "rutaId": None, "ordenEnRuta": None, "items": items_creados,
+            })
+
+        cur.executemany(
+            'INSERT INTO "Despacho" '
+            '("id", "numero", "numeroDocumento", "origenId", "destinoClienteId", "creadoPorId", "fechaCreacion", "estado") '
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION')",
+            filas_despacho,
+        )
+        cur.executemany(
+            'INSERT INTO "DespachoItem" '
+            '("id", "despachoId", "descripcion", "cantidad", "cantidadSolicitada", "pesoUnitarioKg", "requiereFrio") '
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            filas_item,
+        )
         conn.commit()
         return creados
 

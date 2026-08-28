@@ -23,6 +23,11 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
 
   const despachoPorId = new Map(ruta.despachos.map((d) => [d.id, d]));
 
+  // ruta.puntos es el trazado completo por la red vial (miles de vértices);
+  // la línea de tiempo solo muestra los hitos reales — la salida del almacén
+  // y la llegada a cada cliente — no cada curva de la calle.
+  const hitos = ruta.puntos.filter((p, index) => index === 0 || p.paradaDespachoId != null);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -49,13 +54,13 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
             <CardTitle>Línea de tiempo</CardTitle>
           </CardHeader>
           <CardContent>
-            {ruta.puntos.length === 0 ? (
+            {hitos.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin eventos registrados todavía.</p>
             ) : (
               <ol className="space-y-4">
-                {ruta.puntos.map((punto, index) => {
+                {hitos.map((punto, index) => {
                   const Icono = ICONO_POR_ESTADO[punto.estado];
-                  const esUltimo = index === ruta.puntos.length - 1;
+                  const esUltimo = index === hitos.length - 1;
                   const despachoParada = punto.paradaDespachoId ? despachoPorId.get(punto.paradaDespachoId) : undefined;
                   return (
                     <li key={punto.id} className="relative flex gap-3 pb-1">

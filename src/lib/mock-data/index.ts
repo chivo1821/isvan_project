@@ -9,7 +9,7 @@ import {
   getDespachosRaw,
 } from "./despachos";
 import { getRutaPuntosRaw } from "./ruta-puntos";
-import { getRutasRaw } from "./rutas";
+import { getRutaRaw, getRutasRaw } from "./rutas";
 import type {
   Almacen,
   Cliente,
@@ -31,26 +31,27 @@ export {
   getDespachosDisponiblesParaRutaRaw,
   getDespachosRaw,
   getRutaPuntosRaw,
+  getRutaRaw,
   getRutasRaw,
   getUsuariosRaw,
   getVehiculosRaw,
 };
 
-// Trae todo lo necesario en paralelo, una sola vez por selector — el
-// dataset es chico (es una demo), no hace falta cache/memoizacion.
+// Trae en paralelo lo que hace falta para armar las relaciones. Ojo: NO se
+// pide /ruta-puntos aquí — devuelve todos los vértices de todas las rutas
+// (miles por ruta desde que se guarda la geometría completa) y ningún
+// selector lo usa; la geometría viene anidada en cada ruta.
 async function cargarTodo() {
-  const [almacenes, clientes, usuarios, vehiculos, despachos, despachoAprobaciones, rutas, rutaPuntos] =
-    await Promise.all([
-      getAlmacenesRaw(),
-      getClientesRaw(),
-      getUsuariosRaw(),
-      getVehiculosRaw(),
-      getDespachosRaw(),
-      getDespachoAprobacionesRaw(),
-      getRutasRaw(),
-      getRutaPuntosRaw(),
-    ]);
-  return { almacenes, clientes, usuarios, vehiculos, despachos, despachoAprobaciones, rutas, rutaPuntos };
+  const [almacenes, clientes, usuarios, vehiculos, despachos, despachoAprobaciones, rutas] = await Promise.all([
+    getAlmacenesRaw(),
+    getClientesRaw(),
+    getUsuariosRaw(),
+    getVehiculosRaw(),
+    getDespachosRaw(),
+    getDespachoAprobacionesRaw(),
+    getRutasRaw(),
+  ]);
+  return { almacenes, clientes, usuarios, vehiculos, despachos, despachoAprobaciones, rutas };
 }
 
 // ---------- Catalogo ----------
@@ -167,8 +168,12 @@ function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargar
 }
 
 export async function getRutaConDetalle(id: string): Promise<RutaConDetalle | undefined> {
-  const datos = await cargarTodo();
-  const ruta = datos.rutas.find((r) => r.id === id);
+  // Pide la ruta puntual (única con el trazado completo) en vez de traer
+  // todas las rutas con su geometría solo para quedarse con una.
+  const [ruta, datos] = await Promise.all([
+    getRutaRaw(id).catch(() => undefined),
+    cargarTodo(),
+  ]);
   if (!ruta) return undefined;
   return armarRutaConDetalle(ruta, datos);
 }
