@@ -41,6 +41,7 @@ erDiagram
         string passwordHash
         string rol
         boolean activo
+        string vehiculoAsignadoId FK
     }
     SESION {
         string id PK
@@ -134,6 +135,11 @@ Personas con acceso al sistema. `rol` (`ADMIN`, `DESPACHOS`, `APROBADOR`,
 `REPARTIDOR`) determina qué puede hacer cada quien — permisos aplicados
 tanto en la API (`requiere_rol`) como en la UI. `passwordHash` nunca se
 expone en ninguna respuesta de la API.
+
+`vehiculoAsignadoId` solo tiene sentido para el rol `REPARTIDOR`: es el
+vehículo que maneja y, por lo tanto, lo único que ese usuario puede ver —
+la ruta activa de ese vehículo y las paradas/clientes de esa ruta, nada
+más (ver `backend/app/core/permisos.py` y `docs/PLAN.md`, decisión 12).
 
 ### Sesion
 Respalda el login: una fila por sesión activa, con el hash del token (el

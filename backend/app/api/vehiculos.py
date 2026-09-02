@@ -2,8 +2,9 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.auth import requiere_rol
+from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
+from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.schemas import Vehiculo, VehiculoCreate, VehiculoEstadoUpdate
 
 router = APIRouter(prefix="/vehiculos", tags=["vehiculos"])
@@ -13,14 +14,23 @@ ALMACEN_BASE_ID = "alm-catia"
 
 
 @router.get("", response_model=list[Vehiculo])
-def listar_vehiculos():
+def listar_vehiculos(usuario: dict = Depends(get_current_user)):
+    """Un REPARTIDOR solo ve su propio vehiculo — no la flota completa."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Vehiculo" ORDER BY "placa"')
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                return []
+            cur.execute('SELECT * FROM "Vehiculo" WHERE "id" = %s', (vehiculo_id,))
+        else:
+            cur.execute('SELECT * FROM "Vehiculo" ORDER BY "placa"')
         return cur.fetchall()
 
 
 @router.get("/{vehiculo_id}", response_model=Vehiculo)
-def obtener_vehiculo(vehiculo_id: str):
+def obtener_vehiculo(vehiculo_id: str, usuario: dict = Depends(get_current_user)):
+    if es_repartidor(usuario) and vehiculo_id != vehiculo_asignado(usuario):
+        raise HTTPException(404, "Vehiculo no encontrado")
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Vehiculo" WHERE "id" = %s', (vehiculo_id,))
         row = cur.fetchone()

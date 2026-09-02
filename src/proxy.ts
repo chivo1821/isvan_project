@@ -9,6 +9,10 @@ import type { NextRequest } from "next/server";
 const SESSION_COOKIE_NAME = "sesion_id";
 const PUBLIC_PATHS = ["/login"];
 
+/** Cabecera con la ruta pedida, que inyecta este proxy y lee
+ * (dashboard)/layout.tsx para aplicar el acceso por rol. */
+export const RUTA_ACTUAL_HEADER = "x-ruta-actual";
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -22,7 +26,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  // Un Server Component no puede saber qué ruta se está pidiendo, y el
+  // layout del dashboard la necesita para mandar a un REPARTIDOR a su única
+  // pantalla. Se la pasamos en una cabecera de la request.
+  const headers = new Headers(request.headers);
+  headers.set(RUTA_ACTUAL_HEADER, pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

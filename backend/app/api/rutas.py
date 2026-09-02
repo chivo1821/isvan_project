@@ -11,9 +11,10 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.auth import requiere_rol
+from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.numero import siguiente_numero
+from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
     PlanRutasRequest,
@@ -89,21 +90,44 @@ def _con_detalle(cur, ruta_row: dict) -> dict:
     return _con_detalle_lote(cur, [ruta_row])[0]
 
 
+def _verificar_ruta_propia(usuario: dict, ruta: dict) -> None:
+    """Un REPARTIDOR solo puede tocar la ruta de su vehiculo asignado. Se
+    responde 404 (no 403) para no confirmarle que la ruta de otro existe."""
+    if es_repartidor(usuario) and ruta["vehiculoId"] != vehiculo_asignado(usuario):
+        raise HTTPException(404, "Ruta no encontrada")
+
+
 @router.get("", response_model=list[Ruta])
-def listar_rutas():
+def listar_rutas(usuario: dict = Depends(get_current_user)):
     """Listado: cada ruta trae solo su ultimo punto (posicion actual), no el
-    trazado completo — para eso esta GET /rutas/{id}."""
+    trazado completo — para eso esta GET /rutas/{id}.
+
+    Un REPARTIDOR solo ve las rutas de su vehiculo asignado (ver
+    app/core/permisos.py); el resto de roles las ve todas."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                return []
+            cur.execute(
+                'SELECT * FROM "Ruta" WHERE "vehiculoId" = %s ORDER BY "fechaCreacion" DESC',
+                (vehiculo_id,),
+            )
+        else:
+            cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
         return _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
 
 
 @router.get("/{ruta_id}", response_model=Ruta)
-def obtener_ruta(ruta_id: str):
+def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
         row = cur.fetchone()
         if not row:
+            raise HTTPException(404, "Ruta no encontrada")
+        # Para un repartidor, una ruta de otro vehiculo simplemente no
+        # existe: 404 y no 403, para no confirmarle que hay algo ahi.
+        if es_repartidor(usuario) and row["vehiculoId"] != vehiculo_asignado(usuario):
             raise HTTPException(404, "Ruta no encontrada")
         return _con_detalle(cur, row)
 
@@ -175,6 +199,22 @@ def crear_ruta(data: RutaCreate):
         cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s AND "estado" = \'FUNCIONAL\'', (data.vehiculoId,))
         if not cur.fetchone():
             raise HTTPException(400, "El vehiculo no existe o no esta funcional")
+
+        # Un vehiculo lleva una sola ruta activa a la vez: ademas de evitar
+        # mandar el mismo camion a dos viajes simultaneos, es lo que hace que
+        # el repartidor asignado a ese vehiculo tenga exactamente un viaje a
+        # la vista (ver app/core/permisos.py).
+        cur.execute(
+            'SELECT "numero" FROM "Ruta" WHERE "vehiculoId" = %s AND "estado" = ANY(%s)',
+            (data.vehiculoId, ["PLANIFICADA", "EN_TRANSITO"]),
+        )
+        ruta_activa = cur.fetchone()
+        if ruta_activa:
+            raise HTTPException(
+                400,
+                f'Ese vehiculo ya tiene la ruta {ruta_activa["numero"]} activa. '
+                "Hay que completarla o cancelarla antes de asignarle otra.",
+            )
 
         numero = siguiente_numero(cur, "Ruta", "R", 4)
         ruta_id = f"ruta-{uuid.uuid4().hex[:10]}"
@@ -297,7 +337,7 @@ def recalcular_ruta(ruta_id: str):
     response_model=Ruta,
     dependencies=[Depends(requiere_rol("REPARTIDOR"))],
 )
-def iniciar_ruta(ruta_id: str):
+def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     """El despachador marca que el vehiculo salio del almacen con todos los
     despachos de la ruta a la vez."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -305,6 +345,7 @@ def iniciar_ruta(ruta_id: str):
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
+        _verificar_ruta_propia(usuario, ruta)
         if ruta["estado"] != "PLANIFICADA":
             raise HTTPException(400, "Solo se puede iniciar una ruta planificada")
 
@@ -321,7 +362,7 @@ def iniciar_ruta(ruta_id: str):
     response_model=Ruta,
     dependencies=[Depends(requiere_rol("REPARTIDOR"))],
 )
-def marcar_parada_entregada(ruta_id: str, despacho_id: str):
+def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depends(get_current_user)):
     """El despachador marca que se entrego un despacho puntual dentro del
     viaje — no afecta a las demas paradas de la misma ruta. Cuando se
     entrega la ultima parada pendiente, la ruta pasa a COMPLETADA."""
@@ -330,6 +371,7 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str):
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
+        _verificar_ruta_propia(usuario, ruta)
         if ruta["estado"] != "EN_TRANSITO":
             raise HTTPException(400, "La ruta no esta en transito")
 

@@ -22,6 +22,7 @@ backend/
     core/
       db.py                # get_connection() — psycopg + DATABASE_URL
       auth.py              # hash/verificacion de password, sesiones, get_current_user, requiere_rol
+      permisos.py          # "solo puede ver lo suyo": filtra por vehiculo asignado al rol REPARTIDOR
       excel_utils.py       # helpers compartidos para parsear los Excel de importacion
       numero.py            # siguiente numero secuencial (D-0001, R-0001)
     services/
@@ -41,7 +42,7 @@ backend/
 | Router | Qué hace |
 |---|---|
 | `auth.py` | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — sesión por cookie httpOnly (ver `core/auth.py`) |
-| `usuarios.py` | Listar/crear usuarios (solo ADMIN), autoservicio de cambio de contraseña, reseteo por ADMIN |
+| `usuarios.py` | Listar/crear usuarios (solo ADMIN), autoservicio de cambio de contraseña, reseteo por ADMIN, asignación del vehículo de un repartidor (`PATCH /{id}/vehiculo`) |
 | `clientes.py` | CRUD de clientes por empresa (ISVAN/TRALOG), carga individual y masiva por Excel (`/importar/preview`, `/importar/confirmar`, `/importar/plantilla`) |
 | `despachos.py` | Creación manual o por Excel (`/importar/preview`, `/importar/confirmar`), aprobación, ajuste de cantidades por ítem |
 | `rutas.py` | Sugiere cómo agrupar los despachos aprobados en viajes (`POST /rutas/sugerencias`), arma la ruta multi-parada elegida (TSP contra SuperMap iServer), la recalcula, inicia el viaje y marca entregas por parada |

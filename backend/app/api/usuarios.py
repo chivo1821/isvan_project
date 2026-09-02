@@ -4,15 +4,27 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import get_current_user, hash_password, requiere_rol, verify_password
 from app.core.db import get_connection
-from app.schemas import CambiarPasswordRequest, ResetPasswordRequest, Usuario, UsuarioCreate
+from app.core.permisos import es_repartidor
+from app.schemas import (
+    AsignarVehiculoRequest,
+    CambiarPasswordRequest,
+    ResetPasswordRequest,
+    Usuario,
+    UsuarioCreate,
+)
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
 
 @router.get("", response_model=list[Usuario])
-def listar_usuarios():
+def listar_usuarios(usuario: dict = Depends(get_current_user)):
+    """Un REPARTIDOR no ve el directorio del equipo: solo su propia ficha
+    (que es lo unico que su pantalla necesita)."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Usuario" ORDER BY "nombre"')
+        if es_repartidor(usuario):
+            cur.execute('SELECT * FROM "Usuario" WHERE "id" = %s', (usuario["id"],))
+        else:
+            cur.execute('SELECT * FROM "Usuario" ORDER BY "nombre"')
         return cur.fetchall()
 
 
@@ -20,10 +32,13 @@ def listar_usuarios():
 def crear_usuario(data: UsuarioCreate):
     with get_connection() as conn, conn.cursor() as cur:
         usuario_id = f"usr-{uuid.uuid4().hex[:10]}"
+        # El vehiculo solo tiene sentido para un repartidor; para cualquier
+        # otro rol se ignora aunque venga en el request.
+        vehiculo_id = data.vehiculoAsignadoId if data.rol == "REPARTIDOR" else None
         cur.execute(
-            'INSERT INTO "Usuario" ("id", "nombre", "email", "passwordHash", "rol", "activo") '
-            "VALUES (%s, %s, %s, %s, %s, true) RETURNING *",
-            (usuario_id, data.nombre, data.email, hash_password(data.password), data.rol),
+            'INSERT INTO "Usuario" ("id", "nombre", "email", "passwordHash", "rol", "activo", "vehiculoAsignadoId") '
+            "VALUES (%s, %s, %s, %s, %s, true, %s) RETURNING *",
+            (usuario_id, data.nombre, data.email, hash_password(data.password), data.rol, vehiculo_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -72,3 +87,33 @@ def resetear_password(usuario_id: str, data: ResetPasswordRequest):
         if not cur.fetchone():
             raise HTTPException(404, "Usuario no encontrado")
         conn.commit()
+
+
+@router.patch(
+    "/{usuario_id}/vehiculo",
+    response_model=Usuario,
+    dependencies=[Depends(requiere_rol("ADMIN"))],
+)
+def asignar_vehiculo(usuario_id: str, data: AsignarVehiculoRequest):
+    """Asigna (o quita) el vehiculo que maneja un repartidor. Es lo que
+    define que ruta puede ver: la de ese vehiculo y ninguna otra."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "rol" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Usuario no encontrado")
+        if row["rol"] != "REPARTIDOR":
+            raise HTTPException(400, "Solo un usuario con rol REPARTIDOR puede tener un vehiculo asignado")
+
+        if data.vehiculoAsignadoId:
+            cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoAsignadoId,))
+            if not cur.fetchone():
+                raise HTTPException(404, "Vehiculo no encontrado")
+
+        cur.execute(
+            'UPDATE "Usuario" SET "vehiculoAsignadoId" = %s WHERE "id" = %s RETURNING *',
+            (data.vehiculoAsignadoId, usuario_id),
+        )
+        actualizado = cur.fetchone()
+        conn.commit()
+        return actualizado
