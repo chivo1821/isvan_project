@@ -75,6 +75,14 @@ model Usuario {
   activo       Boolean    @default(true)
   createdAt    DateTime   @default(now())
 
+  // Solo tiene sentido para el rol REPARTIDOR: el vehiculo que maneja. Es
+  // lo que acota lo que ese usuario puede ver — su vehiculo lleva una sola
+  // ruta activa a la vez, y esa es la unica ruta a la que tiene acceso (ver
+  // backend/app/core/permisos.py). Nullable porque los demas roles no lo
+  // usan, y porque un repartidor puede quedar sin vehiculo asignado.
+  vehiculoAsignadoId String?
+  vehiculoAsignado   Vehiculo? @relation("ConductorDelVehiculo", fields: [vehiculoAsignadoId], references: [id])
+
   despachosCreados     Despacho[]           @relation("DespachosCreadosPor")
   aprobacionesDespacho DespachoAprobacion[]
   rutasCreadas         Ruta[]
@@ -126,7 +134,8 @@ model Vehiculo {
   // referencia por tipo de vehiculo (ver plan_rutas.COSTO_POR_KM_POR_TIPO).
   costoPorKm         Float?
 
-  rutas Ruta[]
+  rutas       Ruta[]
+  conductores Usuario[] @relation("ConductorDelVehiculo")
 }
 
 // ---------- Clientes ----------

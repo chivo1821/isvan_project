@@ -14,8 +14,9 @@ from datetime import datetime
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.core.auth import requiere_rol
+from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
+from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, valor_a_texto
 from app.core.numero import siguiente_numero, siguientes_numeros
 from app.core.ubicacion import sin_ubicacion
@@ -108,20 +109,36 @@ def _crear_despacho_interno(cur, *, destino_cliente_id: str, numero_documento: s
 
 
 @router.get("", response_model=list[Despacho])
-def listar_despachos():
+def listar_despachos(usuario: dict = Depends(get_current_user)):
+    """Un REPARTIDOR no ve la cola de despachos: solo los que son parada de
+    la ruta de su vehiculo (ver app/core/permisos.py)."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Despacho" ORDER BY "fechaCreacion" DESC')
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                return []
+            cur.execute(
+                'SELECT d.* FROM "Despacho" d JOIN "Ruta" r ON r."id" = d."rutaId" '
+                'WHERE r."vehiculoId" = %s ORDER BY d."fechaCreacion" DESC',
+                (vehiculo_id,),
+            )
+        else:
+            cur.execute('SELECT * FROM "Despacho" ORDER BY "fechaCreacion" DESC')
         return _con_items_lote(cur, cur.fetchall())
 
 
-@router.get("/aprobacion", response_model=list[Despacho])
+@router.get("/aprobacion", response_model=list[Despacho], dependencies=[Depends(requiere_rol("APROBADOR", "DESPACHOS"))])
 def listar_despachos_pendientes_aprobacion():
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "estado" = \'PENDIENTE_APROBACION\' ORDER BY "fechaCreacion"')
         return _con_items_lote(cur, cur.fetchall())
 
 
-@router.get("/disponibles-para-ruta", response_model=list[Despacho])
+@router.get(
+    "/disponibles-para-ruta",
+    response_model=list[Despacho],
+    dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))],
+)
 def listar_despachos_disponibles_para_ruta():
     """Despachos ya aprobados y que todavia no forman parte de ninguna Ruta —
     el set del que se arma una nueva ruta multi-parada (ver POST /rutas)."""
@@ -133,11 +150,20 @@ def listar_despachos_disponibles_para_ruta():
 
 
 @router.get("/{despacho_id}", response_model=Despacho)
-def obtener_despacho(despacho_id: str):
+def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        cur.execute(
+            'SELECT d.*, r."vehiculoId" FROM "Despacho" d '
+            'LEFT JOIN "Ruta" r ON r."id" = d."rutaId" WHERE d."id" = %s',
+            (despacho_id,),
+        )
         row = cur.fetchone()
         if not row:
+            raise HTTPException(404, "Despacho no encontrado")
+        # Un despacho que no va en la ruta de su vehiculo no existe para un
+        # repartidor (404, no 403, para no revelar que hay algo ahi).
+        vehiculo_de_la_ruta = row.pop("vehiculoId")
+        if es_repartidor(usuario) and vehiculo_de_la_ruta != vehiculo_asignado(usuario):
             raise HTTPException(404, "Despacho no encontrado")
         return _con_items(cur, row)
 

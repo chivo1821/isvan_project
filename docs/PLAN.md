@@ -56,7 +56,7 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 | **Clientes** | `/clientes` | Cartera por empresa (ISVAN/TRALOG); alta individual o **carga masiva por Excel** (con plantilla descargable) |
 | **Flota** | `/flota`, `/flota/[id]` | CRUD de vehículos, compartidos entre ambas empresas |
 | **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con rutas activas y línea de tiempo por parada |
-| **Despachador** | `/despachador`, `/despachador/[id]` | Vista del chofer: inicia el viaje completo de una ruta y marca cada parada como entregada |
+| **Despachador** | `/despachador`, `/despachador/[id]` | Vista del chofer: inicia el viaje completo de una ruta y marca cada parada como entregada. **Es el único módulo que ve un `REPARTIDOR`**, y solo con la ruta de su vehículo asignado |
 | **Usuarios** | `/usuarios` | Login por sesión; ADMIN crea usuarios y restablece contraseñas (no hay recuperación por correo) |
 
 ## Historial de decisiones
@@ -78,7 +78,8 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    `APROBADOR`, `REPARTIDOR`): quién puede crear despachos/rutas, aprobar,
    iniciar/entregar, y administrar clientes/vehículos/usuarios — aplicado
    tanto en la API (`requiere_rol`) como ocultando acciones en la UI.
-   Caso aparte: **aprobar toda la cola de despachos de una vez**
+   El `REPARTIDOR` es un caso más fuerte que «ocultar botones»: ver la
+   decisión 12. Caso aparte: **aprobar toda la cola de despachos de una vez**
    (`POST /despachos/aprobacion/masiva`) es **solo ADMIN** — un `APROBADOR`
    puede aprobar de a uno, pero no en bloque. La UI esconde el botón y el
    endpoint rechaza con 403 a cualquier otro rol; la auditoría queda a
@@ -164,6 +165,24 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
     *serverless* de Vercel) — pendiente el contrato exacto (endpoint,
     autenticación, forma del JSON). La carga por Excel se mantiene
     disponible siempre, incluso después de que esa integración exista.
+
+12. **Un `REPARTIDOR` solo ve su viaje**, no la operación: su única pantalla
+    es el despachador, y ahí únicamente la ruta activa del vehículo que se
+    le asignó (`Usuario.vehiculoAsignadoId`). No ve Inicio, ni clientes, ni
+    la cola de despachos, ni la flota, ni las rutas de otros vehículos.
+    - Se aplica en **dos capas**: la interfaz esconde los módulos y
+      `(dashboard)/layout.tsx` devuelve al despachador cualquier otra URL;
+      y sobre todo **la API filtra los datos por vehículo asignado**
+      (`backend/app/core/permisos.py`), porque esconder un módulo no impide
+      llamar el endpoint a mano. Las rutas ajenas responden **404** y no
+      403, para no confirmar que existen.
+    - Un vehículo no puede tener dos rutas activas a la vez (`POST /rutas`
+      lo rechaza), que es lo que hace que el repartidor tenga exactamente
+      un viaje a la vista.
+    - Un repartidor sin vehículo asignado no ve ninguna ruta, y la pantalla
+      se lo dice.
+    - El ADMIN asigna el vehículo desde **Usuarios**
+      (`PATCH /usuarios/{id}/vehiculo`).
 
 ## Modelo de datos
 

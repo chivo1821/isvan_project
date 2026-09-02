@@ -39,6 +39,11 @@ type NavItem = {
 };
 type NavGroup = { label: string; items: NavItem[] };
 
+// Roles que ven la operación completa. Un REPARTIDOR queda fuera a
+// propósito: su única pantalla es el despachador (ver (dashboard)/layout.tsx
+// y backend/app/core/permisos.py).
+const ROLES_OPERACION: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR"];
+
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Rutas y despachos",
@@ -47,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Despachos",
         href: "/despachos",
         icon: TruckIcon,
+        roles: ROLES_OPERACION,
         children: [
           { label: "Todos los despachos", href: "/despachos" },
           { label: "Nuevo despacho", href: "/despachos/nuevo", roles: ["ADMIN", "DESPACHOS"] },
@@ -57,6 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Rutas",
         href: "/rutas",
         icon: RouteIcon,
+        roles: ROLES_OPERACION,
         children: [
           { label: "Todas las rutas", href: "/rutas" },
           { label: "Nueva ruta", href: "/rutas/nueva", roles: ["ADMIN", "DESPACHOS"] },
@@ -67,14 +74,14 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Clientes y flota",
     items: [
-      { label: "Clientes", href: "/clientes", icon: Building2Icon },
-      { label: "Vehículos", href: "/flota", icon: ClipboardCheckIcon },
+      { label: "Clientes", href: "/clientes", icon: Building2Icon, roles: ROLES_OPERACION },
+      { label: "Vehículos", href: "/flota", icon: ClipboardCheckIcon, roles: ROLES_OPERACION },
     ],
   },
   {
     label: "Seguimiento",
     items: [
-      { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon },
+      { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon, roles: ROLES_OPERACION },
       { label: "Despachador", href: "/despachador", icon: NavigationIcon, roles: ["ADMIN", "REPARTIDOR"] },
     ],
   },
@@ -95,6 +102,8 @@ function puedeVer(roles: RolUsuario[] | undefined, rol: RolUsuario) {
 
 export function AppSidebar({ rol }: { rol: RolUsuario }) {
   const pathname = usePathname();
+  const esRepartidor = rol === "REPARTIDOR";
+  const inicio = esRepartidor ? "/despachador" : "/";
 
   const grupos = NAV_GROUPS.map((group) => ({
     ...group,
@@ -112,7 +121,7 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg">
-              <Link href="/">
+              <Link href={inicio}>
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <IceCreamConeIcon className="size-4.5" />
                 </span>
@@ -126,20 +135,22 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/"} tooltip="Inicio">
-                  <Link href="/">
-                    <LayoutDashboardIcon />
-                    <span>Inicio</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {!esRepartidor && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === "/"} tooltip="Inicio">
+                    <Link href="/">
+                      <LayoutDashboardIcon />
+                      <span>Inicio</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {grupos.map((group) => (
           <SidebarGroup key={group.label}>

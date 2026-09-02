@@ -27,8 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ROL_USUARIO_META } from "@/lib/constants";
-import type { Usuario } from "@/lib/mock-data";
+import { ROL_USUARIO_META, TIPO_VEHICULO_META } from "@/lib/constants";
+import type { Usuario, Vehiculo } from "@/lib/mock-data";
 import type { RolUsuario } from "@prisma/client";
 
 const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR"];
@@ -40,26 +40,41 @@ const usuarioSchema = z.object({
     error: "Selecciona un rol",
   }),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  vehiculoAsignadoId: z.string().optional(),
 });
 
 type UsuarioFormValues = z.infer<typeof usuarioSchema>;
 
-export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => void }) {
+export function NuevoUsuarioDialog({
+  vehiculos,
+  onAdd,
+}: {
+  vehiculos: Vehiculo[];
+  onAdd: (usuario: Usuario) => void;
+}) {
   const [open, setOpen] = useState(false);
   const {
     control,
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<UsuarioFormValues>({
     resolver: zodResolver(usuarioSchema),
-    defaultValues: { nombre: "", email: "", rol: undefined, password: "" },
+    defaultValues: { nombre: "", email: "", rol: undefined, password: "", vehiculoAsignadoId: undefined },
   });
+
+  // El vehículo solo aplica al repartidor: es lo que define la única ruta
+  // que va a ver (ver backend/app/core/permisos.py).
+  const rolElegido = watch("rol");
 
   async function onSubmit(values: UsuarioFormValues) {
     try {
-      const usuario = await apiPost<Usuario>("/usuarios", values);
+      const usuario = await apiPost<Usuario>("/usuarios", {
+        ...values,
+        vehiculoAsignadoId: values.rol === "REPARTIDOR" ? values.vehiculoAsignadoId : undefined,
+      });
       onAdd(usuario);
       toast.success(`Usuario ${usuario.nombre} agregado`);
       reset();
@@ -133,6 +148,33 @@ export function NuevoUsuarioDialog({ onAdd }: { onAdd: (usuario: Usuario) => voi
               />
               {errors.rol && <p className="text-xs text-destructive">{errors.rol.message}</p>}
             </div>
+
+            {rolElegido === "REPARTIDOR" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="vehiculo">Vehículo asignado</Label>
+                <Controller
+                  control={control}
+                  name="vehiculoAsignadoId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger id="vehiculo" className="w-full">
+                        <SelectValue placeholder="Selecciona un vehículo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehiculos.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.placa} — {TIPO_VEHICULO_META[v.tipo].label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Solo verá la ruta activa de este vehículo. Se puede asignar después desde la lista.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

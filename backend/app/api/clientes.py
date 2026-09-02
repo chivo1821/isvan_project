@@ -4,8 +4,9 @@ import uuid
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 
-from app.core.auth import requiere_rol
+from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
+from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, valor_a_texto
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
@@ -47,17 +48,40 @@ def descargar_plantilla_clientes():
     )
 
 
+# Un REPARTIDOR no tiene acceso a la cartera de clientes: solo a los
+# clientes que son parada de la ruta de su vehiculo, que son los que su
+# pantalla necesita nombrar y ubicar (ver app/core/permisos.py).
+_CLIENTES_DE_MI_RUTA = (
+    'SELECT DISTINCT c.* FROM "Cliente" c '
+    'JOIN "Despacho" d ON d."destinoClienteId" = c."id" '
+    'JOIN "Ruta" r ON r."id" = d."rutaId" '
+    'WHERE r."vehiculoId" = %s'
+)
+
+
 @router.get("", response_model=list[Cliente])
-def listar_clientes():
+def listar_clientes(usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Cliente" ORDER BY "nombre"')
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                return []
+            cur.execute(f'{_CLIENTES_DE_MI_RUTA} ORDER BY c."nombre"', (vehiculo_id,))
+        else:
+            cur.execute('SELECT * FROM "Cliente" ORDER BY "nombre"')
         return cur.fetchall()
 
 
 @router.get("/{cliente_id}", response_model=Cliente)
-def obtener_cliente(cliente_id: str):
+def obtener_cliente(cliente_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Cliente" WHERE "id" = %s', (cliente_id,))
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                raise HTTPException(404, "Cliente no encontrado")
+            cur.execute(f'{_CLIENTES_DE_MI_RUTA} AND c."id" = %s', (vehiculo_id, cliente_id))
+        else:
+            cur.execute('SELECT * FROM "Cliente" WHERE "id" = %s', (cliente_id,))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Cliente no encontrado")

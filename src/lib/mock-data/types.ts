@@ -22,6 +22,11 @@ export type Usuario = {
   rol: RolUsuario;
   avatarUrl?: string | null;
   activo: boolean;
+  /**
+   * Solo aplica al rol REPARTIDOR: el vehículo que maneja. Determina la
+   * única ruta que ese usuario puede ver (ver backend/app/core/permisos.py).
+   */
+  vehiculoAsignadoId?: string | null;
 };
 
 export type Almacen = {

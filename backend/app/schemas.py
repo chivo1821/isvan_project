@@ -26,6 +26,9 @@ class Usuario(BaseModel):
     rol: str
     avatarUrl: Optional[str] = None
     activo: bool
+    # Solo aplica al rol REPARTIDOR: el vehiculo que maneja, y por lo tanto
+    # la unica ruta que puede ver (ver app/core/permisos.py).
+    vehiculoAsignadoId: Optional[str] = None
 
 
 class UsuarioCreate(BaseModel):
@@ -33,6 +36,12 @@ class UsuarioCreate(BaseModel):
     email: str
     rol: str
     password: str
+    vehiculoAsignadoId: Optional[str] = None
+
+
+class AsignarVehiculoRequest(BaseModel):
+    # None = quitarle el vehiculo asignado.
+    vehiculoAsignadoId: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

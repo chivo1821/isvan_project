@@ -38,6 +38,12 @@ export function Topbar({
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
+  // Un repartidor no tiene "Inicio": su raíz es el despachador, y el enlace
+  // a "/" solo lo devolvería ahí (ver (dashboard)/layout.tsx).
+  const esRepartidor = user.rol === "REPARTIDOR";
+  const raiz = esRepartidor
+    ? { href: "/despachador", label: "Despachador" }
+    : { href: "/", label: "Inicio" };
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4">
@@ -48,12 +54,13 @@ export function Topbar({
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href="/">Inicio</Link>
+                <Link href={raiz.href}>{raiz.label}</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
-            {segments.map((segment, index) => {
-              const href = `/${segments.slice(0, index + 1).join("/")}`;
-              const isLast = index === segments.length - 1;
+            {(esRepartidor ? segments.slice(1) : segments).map((segment, index) => {
+              const desplazamiento = esRepartidor ? 1 : 0;
+              const href = `/${segments.slice(0, index + 1 + desplazamiento).join("/")}`;
+              const isLast = index + desplazamiento === segments.length - 1;
               return (
                 <span key={href} className="flex items-center gap-1.5">
                   <BreadcrumbSeparator />

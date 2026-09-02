@@ -5,9 +5,13 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ESTADO_RUTA_META, TIPO_VEHICULO_META } from "@/lib/constants";
 import { getRutasActivas } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
 
 export default async function DespachadorPage() {
-  const rutas = await getRutasActivas();
+  const [rutas, usuarioActual] = await Promise.all([getRutasActivas(), getUsuarioActual()]);
+  // Un repartidor sin vehículo asignado no ve ninguna ruta (la API se las
+  // filtra por vehículo). Sin este aviso, la pantalla vacía no explica nada.
+  const sinVehiculo = usuarioActual?.rol === "REPARTIDOR" && !usuarioActual.vehiculoAsignadoId;
 
   return (
     <div className="space-y-6">
@@ -20,7 +24,9 @@ export default async function DespachadorPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
             <PackageSearchIcon className="size-8" />
-            No hay rutas planificadas o en tránsito en este momento.
+            {sinVehiculo
+              ? "Todavía no tienes un vehículo asignado — pídele a un administrador que te asigne uno para ver tu ruta."
+              : "No hay rutas planificadas o en tránsito en este momento."}
           </CardContent>
         </Card>
       ) : (
