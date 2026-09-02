@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.excel_utils import mapear_columnas, valor_a_texto
+from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
     Cliente,
     ClienteCreate,
@@ -25,10 +26,12 @@ def descargar_plantilla_clientes():
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja.title = "Clientes"
-    hoja.append(["codigo", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "telefono", "email"])
+    hoja.append([
+        "codigo", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "telefono", "email", "ruta",
+    ])
     hoja.append([
         "2118", "Distribuidora Don Pepe", "Distribuidor", "Calle Real, Sector Los Ruices", "Caracas",
-        10.4956, -66.8836, "+58 212 555 0102", "pedidos@donpepe.com",
+        10.4956, -66.8836, "+58 212 555 0102", "pedidos@donpepe.com", "R-07",
     ])
     for columna in hoja.columns:
         letra = columna[0].column_letter
@@ -63,13 +66,19 @@ def obtener_cliente(cliente_id: str):
 
 def _crear_cliente_interno(cur, data: ClienteCreate) -> dict:
     cliente_id = f"cli-{uuid.uuid4().hex[:10]}"
+    # Unas coordenadas en (0, 0) son un dato faltante disfrazado: se guardan
+    # como NULL para que el cliente aparezca claramente "sin ubicacion" en
+    # vez de como un punto en medio del Atlantico.
+    lat, lng = (None, None) if sin_ubicacion(data.lat, data.lng) else (data.lat, data.lng)
     cur.execute(
         'INSERT INTO "Cliente" '
-        '("id", "empresa", "codigo", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "telefono", "email") '
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+        '("id", "empresa", "codigo", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "telefono", '
+        '"email", "rutaComercial") '
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
         (
             cliente_id, data.empresa, data.codigo, data.nombre, data.tipo,
-            data.direccion, data.ciudad, data.lat, data.lng, data.telefono, data.email,
+            data.direccion, data.ciudad, lat, lng, data.telefono, data.email,
+            data.rutaComercial,
         ),
     )
     return cur.fetchone()
@@ -102,6 +111,13 @@ def crear_cliente(data: ClienteCreate):
 # de subir el archivo (igual que en la importacion de despachos), no es una
 # columna. Un codigo que ya existe en esa empresa se rechaza como error —
 # nunca se sobreescribe un cliente existente por una carga masiva.
+#
+# La columna "ruta" (ruta comercial de venta/reparto a la que el negocio
+# asigna al cliente) es opcional aca: el extracto de ventas tambien la trae y
+# es la fuente de verdad — al importar despachos se refresca el valor del
+# cliente (ver app/api/despachos.py). Se pide igual en esta plantilla para
+# poder cargar clientes nuevos ya con su ruta, sin esperar a la primera
+# venta.
 
 ALIAS_COLUMNAS: dict[str, list[str]] = {
     "codigo": ["codigo", "codigo_cliente", "cod_cliente"],
@@ -113,6 +129,7 @@ ALIAS_COLUMNAS: dict[str, list[str]] = {
     "lng": ["lng", "lon", "longitud"],
     "telefono": ["telefono", "telefonos", "tel"],
     "email": ["email", "correo"],
+    "ruta": ["ruta", "ruta_comercial", "cod_ruta", "codigo_ruta", "nro_ruta", "zona"],
 }
 CAMPOS_REQUERIDOS = ["codigo", "nombre", "tipo", "direccion", "ciudad", "lat", "lng", "telefono"]
 
@@ -163,6 +180,7 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
             telefono = valor_a_texto(val("telefono"))
             email_raw = val("email")
             email = str(email_raw).strip() or None if email_raw is not None else None
+            ruta_comercial = valor_a_texto(val("ruta")) or None
 
             error: tuple[str, str] | None = None
             if not codigo:
@@ -187,6 +205,12 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
                         raise ValueError
                 except (TypeError, ValueError):
                     error = ("lat/lng", "lat y lng deben ser numeros validos (lat entre -90 y 90, lng entre -180 y 180)")
+                else:
+                    # (0, 0) cae en el golfo de Guinea: es un dato faltante
+                    # cargado como cero, no una ubicacion real. Ver
+                    # app/core/ubicacion.py.
+                    if sin_ubicacion(lat, lng):
+                        error = ("lat/lng", "Las coordenadas estan en 0,0 — falta la ubicacion real del cliente")
 
             if error is None and codigo in codigos_en_archivo:
                 error = ("codigo", f'El codigo "{codigo}" esta repetido en la fila {codigos_en_archivo[codigo]}')
@@ -203,7 +227,7 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
             clientes_validos.append({
                 "empresa": empresa, "codigo": codigo, "nombre": nombre, "tipo": tipo,
                 "direccion": direccion, "ciudad": ciudad, "lat": lat, "lng": lng,
-                "telefono": telefono, "email": email,
+                "telefono": telefono, "email": email, "rutaComercial": ruta_comercial,
             })
 
     errores.sort(key=lambda e: e["fila"])

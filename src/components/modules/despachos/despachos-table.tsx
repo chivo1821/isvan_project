@@ -24,6 +24,17 @@ export function DespachosTable({ despachos }: { despachos: DespachoConDetalle[] 
     { accessorKey: "numeroDocumento", header: "Documento" },
     { id: "origen", header: "Origen", accessorFn: (row) => row.origen.nombre },
     {
+      id: "rutaComercial",
+      header: "Ruta cliente",
+      accessorFn: (row) => row.destinoCliente.rutaComercial ?? "",
+      cell: ({ row }) =>
+        row.original.destinoCliente.rutaComercial ? (
+          <StatusBadge tone="neutral" label={row.original.destinoCliente.rutaComercial} />
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
       id: "destino",
       header: "Destino",
       accessorFn: (row) => row.destinoCliente.nombre,

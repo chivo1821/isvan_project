@@ -27,7 +27,15 @@ def mapear_columnas(
                 break
     faltantes = [c for c in campos_requeridos if c not in mapa]
     if faltantes:
-        raise HTTPException(400, f"Faltan columnas obligatorias en el Excel: {', '.join(faltantes)}")
+        # Se listan tambien los encabezados que si trae el archivo: casi
+        # siempre el problema es un nombre de columna distinto al esperado, y
+        # sin verlos el usuario no sabe que corregir.
+        encontrados = ", ".join(sorted(normalizados)) or "(ninguno)"
+        raise HTTPException(
+            400,
+            f"Faltan columnas obligatorias en el Excel: {', '.join(faltantes)}. "
+            f"Los encabezados de la primera fila del archivo son: {encontrados}.",
+        )
     return mapa
 
 

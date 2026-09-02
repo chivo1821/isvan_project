@@ -50,9 +50,9 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 
 | Módulo | Rutas | Qué hace |
 |---|---|---|
-| **Dashboard** | `/` | KPIs de despachos/rutas/flota/clientes sin coordenadas, mapa de rutas en tránsito |
-| **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | Creación por **Excel** (extracto de ventas real del cliente, ISVAN o TRALOG) o **manual**; aprobación con modal de detalle (ítems, cliente, dirección) sin salir de la lista |
-| **Rutas** | `/rutas`, `/rutas/nueva`, `/rutas/[id]` | Agrupa varios despachos aprobados en el viaje de un vehículo, con el **orden de visita optimizado por SuperMap iServer (TSP)** partiendo siempre de Almacén Catia |
+| **Dashboard** | `/` | KPIs de despachos/rutas/flota/clientes sin ubicación, mapa de rutas en tránsito |
+| **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | Creación por **Excel** (extracto de ventas real del cliente, ISVAN o TRALOG) o **manual**; aprobación con modal de detalle (ítems, cliente, dirección) sin salir de la lista, y **aprobación en bloque de toda la cola solo para ADMIN** |
+| **Rutas** | `/rutas`, `/rutas/nueva`, `/rutas/[id]` | **Sugiere cómo agrupar** los despachos aprobados en viajes (cercanía entre clientes + capacidad del vehículo, con la ruta comercial como desempate y costo estimado) y arma la ruta elegida, con el **orden de visita optimizado por SuperMap iServer (TSP)** partiendo siempre de Almacén Catia |
 | **Clientes** | `/clientes` | Cartera por empresa (ISVAN/TRALOG); alta individual o **carga masiva por Excel** (con plantilla descargable) |
 | **Flota** | `/flota`, `/flota/[id]` | CRUD de vehículos, compartidos entre ambas empresas |
 | **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con rutas activas y línea de tiempo por parada |
@@ -78,6 +78,11 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    `APROBADOR`, `REPARTIDOR`): quién puede crear despachos/rutas, aprobar,
    iniciar/entregar, y administrar clientes/vehículos/usuarios — aplicado
    tanto en la API (`requiere_rol`) como ocultando acciones en la UI.
+   Caso aparte: **aprobar toda la cola de despachos de una vez**
+   (`POST /despachos/aprobacion/masiva`) es **solo ADMIN** — un `APROBADOR`
+   puede aprobar de a uno, pero no en bloque. La UI esconde el botón y el
+   endpoint rechaza con 403 a cualquier otro rol; la auditoría queda a
+   nombre del ADMIN que ejecutó la acción, una fila por despacho.
 5. **Dos empresas, un solo almacén y una sola flota**: ISVAN y TRALOG
    comparten Almacén Catia y los vehículos, pero **no comparten cartera de
    clientes** — el mismo código puede ser un cliente distinto según la
@@ -97,11 +102,21 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
      directa si existe → tamaño de presentación en la descripción (ej.
      "1X550GRS" da 0.55 kg exacto) → `litros ÷ unidades × 0.55` (densidad
      de helado) como último recurso.
+   - Columna opcional `ruta`: la **ruta comercial** del cliente. El extracto
+     de ventas es la fuente de verdad de ese dato — al confirmar la
+     importación se guarda en la ficha del cliente y pesa al sugerir cómo
+     agrupar las rutas (ver decisión 9).
    - Carga manual disponible en paralelo, mismo flujo de creación.
 7. **Carga masiva de clientes por Excel**: mismas reglas de preview/confirmar
    que despachos. El código de cliente **siempre lo asigna el negocio**, el
    sistema nunca lo genera — columna obligatoria. Teléfono también
-   obligatorio (lo usan los despachadores para contactar al cliente).
+   obligatorio (lo usan los despachadores para contactar al cliente). La
+   columna `ruta` (ruta comercial) es opcional acá: sirve para dar de alta
+   un cliente ya con su ruta, sin esperar a su primera venta. Unas
+   coordenadas en **(0, 0)** se rechazan como fila con error y, si ya están
+   guardadas así, el cliente se muestra como «sin ubicación» y queda fuera
+   de las rutas — es un dato faltante cargado como cero, no una posición
+   real (ver `backend/app/core/ubicacion.py`).
 8. **Rutas multi-parada reales**, no solo un tramo origen→destino: un
    vehículo visita varias paradas por viaje, en el orden que calcula
    **SuperMap iServer (FindTSPPaths)** contra la red vial real — confirmado
@@ -109,12 +124,40 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    devuelve el orden de entrada, ver `stopIndexes` en la respuesta). El
    trazado se guarda completo (sin submuestrear), para no cortar curvas
    reales de las calles.
-9. **Deploy en Vercel + Neon**: dos servicios bajo un dominio (`vercel.json`)
+9. **Sugerencia de agrupación de rutas** (`POST /rutas/sugerencias`,
+   `backend/app/services/plan_rutas.py`): el sistema propone qué despachos
+   meter en cada vehículo, en este orden de peso —
+   1. **Distancia entre clientes** (con el `lat`/`lng` que ya está en la
+      base): manda sobre todo lo demás. Una parada solo entra al viaje si
+      está a menos de `RADIO_MAX_ENTRE_PARADAS_KM` (12 km por defecto,
+      ajustable desde la pantalla) de alguna de las que ya están, y a menos
+      de ese radio × `FACTOR_EXTENSION_GRUPO` de la semilla del grupo.
+   2. **Capacidad del vehículo** (kg) y **cadena de frío**: restricciones
+      duras, nunca se propone un viaje que las viole.
+   3. **Ruta comercial del cliente** (`Cliente.rutaComercial`): desempata
+      entre paradas a distancia parecida. Se aplica como un **factor** sobre
+      la distancia (`FACTOR_RUTA_DISTINTA`), no como kilómetros sumados, para
+      que nunca arrastre un viaje largo. Quien arma la ruta puede volverla
+      restricción dura con una casilla en la pantalla.
+   4. **Costo** (`km × Vehiculo.costoPorKm`, con un valor de referencia por
+      tipo si el vehículo no lo tiene cargado): informativo, no condiciona
+      la agrupación — el cliente lo pidió como "si se puede".
+
+   El orden 1↔3 se invirtió tras la primera prueba con datos reales: con la
+   ruta comercial pesando primero, una ruta que abarca La Guaira y
+   Charallave (a ~55 km) producía un viaje imposible. La distancia es ahora
+   el criterio duro y la ruta comercial solo agrupa dentro de la misma zona.
+
+   Los km/tiempo/costo de las sugerencias son **estimados** (distancia en
+   línea recta × factor de vialidad): son decenas de combinaciones y llamar
+   al TSP por cada una sería lentísimo. El trazado real se calcula una sola
+   vez, al confirmar la ruta.
+10. **Deploy en Vercel + Neon**: dos servicios bajo un dominio (`vercel.json`)
    desplegados automáticamente en cada push a la rama conectada. Las
    migraciones **no** corren solas en el build — se aplican a mano
    (`prisma migrate deploy` apuntando a Neon) cada vez que cambia el
    esquema. Ver el [README principal](../README.md).
-10. **Conexión directa a la base de ventas real**: en negociación con el
+11. **Conexión directa a la base de ventas real**: en negociación con el
     cliente (credenciales pendientes). El plan acordado es que sea vía
     **API propia del cliente devolviendo JSON** (no conexión directa a su
     base de datos, que exigiría VPN incompatible con el hosting
@@ -136,4 +179,4 @@ API: [`backend/README.md`](../backend/README.md).
 - **Recuperación de contraseña por correo** — no hay servicio de correo
   configurado; lo maneja un ADMIN restableciendo la contraseña directamente.
 - **Conexión directa a la base de datos del cliente** — se optó por una
-  futura API propia del cliente en su lugar (ver decisión 10).
+  futura API propia del cliente en su lugar (ver decisión 11).

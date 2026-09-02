@@ -73,6 +73,7 @@ class Vehiculo(BaseModel):
     almacenBaseId: str
     conductorNombre: Optional[str] = None
     ultimaRevision: Optional[datetime] = None
+    costoPorKm: Optional[float] = None
 
 
 class VehiculoCreate(BaseModel):
@@ -81,6 +82,7 @@ class VehiculoCreate(BaseModel):
     capacidadKg: float
     tieneRefrigeracion: bool = True
     conductorNombre: Optional[str] = None
+    costoPorKm: Optional[float] = None
 
 
 class VehiculoEstadoUpdate(BaseModel):
@@ -114,6 +116,9 @@ class Cliente(BaseModel):
     lng: Optional[float] = None
     telefono: str
     email: Optional[str] = None
+    # Ruta comercial (de venta/reparto) del negocio, p.ej. "R-07" — no es la
+    # Ruta (viaje) de este sistema. Ver plan_rutas.py.
+    rutaComercial: Optional[str] = None
 
 
 class ClienteCreate(BaseModel):
@@ -127,6 +132,7 @@ class ClienteCreate(BaseModel):
     lng: Optional[float] = None
     telefono: str
     email: Optional[str] = None
+    rutaComercial: Optional[str] = None
 
 
 # ---------- Despachos ----------
@@ -189,6 +195,17 @@ class ActualizarCantidadDespachoItemRequest(BaseModel):
     cantidad: int
 
 
+class AprobacionMasivaRequest(BaseModel):
+    # Vacio = todos los despachos pendientes de aprobacion.
+    despachoIds: list[str] = []
+    comentario: Optional[str] = None
+
+
+class AprobacionMasivaResponse(BaseModel):
+    aprobados: int
+    numeros: list[str]
+
+
 # ---------- Importacion de Excel ----------
 
 
@@ -210,6 +227,10 @@ class ImportarExcelGrupoPreview(BaseModel):
     clienteId: str
     clienteCodigo: str
     clienteNombre: str
+    # Ruta comercial que trae el extracto de ventas para ese cliente (columna
+    # opcional). Al confirmar la importacion se guarda en el Cliente: el
+    # sistema de ventas es la fuente de verdad de ese dato.
+    rutaComercial: Optional[str] = None
     items: list[ImportarExcelItemPreview]
 
 
@@ -265,3 +286,46 @@ class RutaCreate(BaseModel):
     despachoIds: list[str]
     vehiculoId: str
     creadoPorId: str
+
+
+# ---------- Sugerencia de agrupacion de rutas ----------
+
+
+class SugerenciaRuta(BaseModel):
+    """Un viaje propuesto: que despachos agrupar y en que vehiculo. Las
+    metricas son estimadas (distancia en linea recta corregida por un factor
+    de vialidad); el trazado real lo calcula el TSP al crear la ruta."""
+
+    vehiculo: Vehiculo
+    despachoIds: list[str]
+    paradas: int
+    pesoKg: float
+    usoCapacidadPct: float
+    distanciaKmEstimada: float
+    tiempoMinEstimado: int
+    costoEstimado: Optional[float] = None
+    rutasComerciales: list[str]
+    motivos: list[str]
+
+
+class DespachosSinAsignar(BaseModel):
+    despachoIds: list[str]
+    motivo: str
+
+
+class PlanRutasResponse(BaseModel):
+    sugerencias: list[SugerenciaRuta]
+    sinAsignar: list[DespachosSinAsignar]
+
+
+class PlanRutasRequest(BaseModel):
+    # Si viene vacio se consideran todos los despachos aprobados sin ruta.
+    despachoIds: list[str] = []
+    # False = no mezclar clientes de rutas comerciales distintas en un mismo
+    # viaje (restriccion dura). True = preferir agruparlos, pero permitir
+    # mezclar antes que mandar un vehiculo a medio llenar.
+    mezclarRutasComerciales: bool = True
+    # Distancia maxima (km) entre una parada y las demas del mismo viaje.
+    # Vacio = el valor por defecto del servicio
+    # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).
+    radioMaxKm: Optional[float] = None

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AprobacionDespachoActions } from "@/components/modules/despachos/aprobacion-actions";
+import { AprobarTodosButton } from "@/components/modules/despachos/aprobar-todos-button";
 import { DetalleDespachoDialog } from "@/components/modules/despachos/detalle-despacho-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -19,12 +20,21 @@ export default async function AprobacionDespachosPage() {
   const [despachos, usuarioActual] = await Promise.all([getDespachosPendientesAprobacion(), getUsuarioActual()]);
   if (!usuarioActual) redirect("/login");
 
+  // Aprobar toda la cola de una es acción de administración: solo ADMIN ve
+  // el botón, y el endpoint además exige ese rol (la UI no autoriza nada).
+  const puedeAprobarEnBloque = usuarioActual.rol === "ADMIN";
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Aprobación de despachos"
         subtitle="Despachos pendientes de aprobación, creados por Excel o carga manual"
         helpText="Todo despacho (venga de una importación de Excel o de una carga manual) pasa por esta cola antes de poder agregarse a una ruta."
+        actions={
+          puedeAprobarEnBloque && despachos.length > 0 ? (
+            <AprobarTodosButton pendientes={despachos.length} />
+          ) : undefined
+        }
       />
       <Card>
         <CardContent>

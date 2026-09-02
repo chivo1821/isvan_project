@@ -35,8 +35,9 @@ def crear_vehiculo(data: VehiculoCreate):
         vehiculo_id = f"veh-{uuid.uuid4().hex[:10]}"
         cur.execute(
             'INSERT INTO "Vehiculo" '
-            '("id", "placa", "tipo", "capacidadKg", "tieneRefrigeracion", "estado", "almacenBaseId", "conductorNombre") '
-            "VALUES (%s, %s, %s, %s, %s, 'FUNCIONAL', %s, %s) RETURNING *",
+            '("id", "placa", "tipo", "capacidadKg", "tieneRefrigeracion", "estado", "almacenBaseId", '
+            '"conductorNombre", "costoPorKm") '
+            "VALUES (%s, %s, %s, %s, %s, 'FUNCIONAL', %s, %s, %s) RETURNING *",
             (
                 vehiculo_id,
                 data.placa.upper(),
@@ -45,6 +46,7 @@ def crear_vehiculo(data: VehiculoCreate):
                 data.tieneRefrigeracion,
                 ALMACEN_BASE_ID,
                 data.conductorNombre,
+                data.costoPorKm,
             ),
         )
         row = cur.fetchone()

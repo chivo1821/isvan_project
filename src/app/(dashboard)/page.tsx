@@ -33,6 +33,7 @@ import {
   DespachosTransitoMap,
   type DespachoMapPoint,
 } from "@/components/modules/despachos/despachos-transito-map";
+import { sinUbicacion } from "@/lib/ubicacion";
 
 export default async function DashboardPage() {
   const [despachos, despachosPendientes, despachosSinRuta, rutasActivas, vehiculosDisponibles, clientes] =
@@ -46,7 +47,9 @@ export default async function DashboardPage() {
     ]);
 
   const rutasEnTransito = rutasActivas.filter((r) => r.estado === "EN_TRANSITO");
-  const clientesSinCoordenadas = clientes.filter((c) => c.lat == null || c.lng == null).length;
+  // Un cliente en (0, 0) cuenta como sin ubicación: es un dato faltante
+  // cargado como cero, no una coordenada real (ver src/lib/ubicacion.ts).
+  const clientesSinUbicacion = clientes.filter(sinUbicacion).length;
   const despachosRecientes = [...despachos]
     .sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1))
     .slice(0, 5);
@@ -89,8 +92,8 @@ export default async function DashboardPage() {
         />
         <StatCard
           icon={AlertTriangleIcon}
-          label="Clientes sin coordenadas"
-          value={String(clientesSinCoordenadas)}
+          label="Clientes sin ubicación"
+          value={String(clientesSinUbicacion)}
           tone="destructive"
         />
       </div>

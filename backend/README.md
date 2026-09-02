@@ -27,6 +27,7 @@ backend/
     services/
       route_analysis.py    # ruta real (FindPath) y multi-parada (TSP) via SuperMap iServer, con fallback sintetico
       suggest_vehiculo.py  # sugerencia de vehiculo por capacidad/refrigeracion
+      plan_rutas.py        # sugerencia de como agrupar despachos en viajes (ruta comercial + capacidad + cercania + costo)
     api/
       auth.py       almacenes.py   clientes.py     despachos.py
       historial.py  rutas.py       usuarios.py     vehiculos.py
@@ -43,7 +44,7 @@ backend/
 | `usuarios.py` | Listar/crear usuarios (solo ADMIN), autoservicio de cambio de contraseña, reseteo por ADMIN |
 | `clientes.py` | CRUD de clientes por empresa (ISVAN/TRALOG), carga individual y masiva por Excel (`/importar/preview`, `/importar/confirmar`, `/importar/plantilla`) |
 | `despachos.py` | Creación manual o por Excel (`/importar/preview`, `/importar/confirmar`), aprobación, ajuste de cantidades por ítem |
-| `rutas.py` | Arma rutas multi-parada a partir de despachos aprobados (TSP contra SuperMap iServer), inicia el viaje y marca entregas por parada |
+| `rutas.py` | Sugiere cómo agrupar los despachos aprobados en viajes (`POST /rutas/sugerencias`), arma la ruta multi-parada elegida (TSP contra SuperMap iServer), la recalcula, inicia el viaje y marca entregas por parada |
 | `vehiculos.py` | CRUD de flota |
 | `almacenes.py` | Listado (hoy un único almacén, Catia) |
 | `historial.py` | Aprobaciones de despacho y puntos de ruta, sin filtrar (el frontend filtra) |
@@ -87,6 +88,22 @@ encuentra un camino entre los puntos, cada uno cae automáticamente a un
 fallback (ruta sintética / heurística de vecino más cercano encadenando
 tramos) para que la app nunca se rompa por esto.
 
+## Sugerencia de agrupación de rutas
+
+`services/plan_rutas.py` responde `POST /rutas/sugerencias`: propone qué
+despachos meter en cada vehículo **sin persistir nada**. Agrupa por
+**cercanía entre clientes** (criterio principal: una parada no entra si se
+sale del radio permitido, `RADIO_MAX_ENTRE_PARADAS_KM`, ajustable con
+`radioMaxKm` en el request), respetando capacidad y cadena de frío del
+vehículo; la ruta comercial del cliente (`Cliente.rutaComercial`) solo
+desempata entre paradas igual de cerca — como factor sobre la distancia, no
+como km sumados — o pasa a restricción dura si se pide. Además
+estima km/tiempo/costo de cada viaje. Las distancias de esta etapa son
+estimadas (Haversine × factor de vialidad) porque son decenas de
+combinaciones; el trazado real se calcula una sola vez al crear la ruta con
+`POST /rutas`. Las constantes ajustables (penalización, tope de paradas,
+costo por km de referencia) están al inicio del módulo.
+
 ## Carga de Excel
 
 Tanto despachos (`/despachos/importar/*`) como clientes
@@ -95,3 +112,8 @@ valida el archivo completo y devuelve filas válidas + errores (fila,
 columna, motivo) sin escribir nada; `confirmar` crea todo en una sola
 transacción. `core/excel_utils.py` tiene la normalización de encabezados
 (flexible a variaciones de nombre/acentos) compartida por ambos.
+
+Ambos importadores reconocen una columna opcional `ruta` (alias: `zona`,
+`cod ruta`, `ruta comercial`…) con la **ruta comercial** del cliente. El
+extracto de ventas es la fuente de verdad: al confirmar una importación de
+despachos, esa ruta se guarda en la ficha del cliente.

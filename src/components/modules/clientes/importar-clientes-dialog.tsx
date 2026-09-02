@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { AlertTriangleIcon, CheckCircle2Icon, DownloadIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
-import { API_URL, apiPost, apiPostForm } from "@/lib/api-client";
+import { API_URL, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
 import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,7 @@ type ClientePreview = {
   lng: number;
   telefono: string;
   email?: string | null;
+  rutaComercial?: string | null;
 };
 type ErrorFila = { fila: number; columna?: string | null; motivo: string };
 type PreviewResponse = { clientes: ClientePreview[]; errores: ErrorFila[] };
@@ -43,10 +44,16 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
   const [analizando, setAnalizando] = useState(false);
   const [resultado, setResultado] = useState<PreviewResponse | null>(null);
   const [confirmando, setConfirmando] = useState(false);
+  // Los fallos que no son "fila con error" (columnas faltantes, archivo
+  // ilegible, códigos ya existentes) se muestran fijos en el diálogo: el
+  // toast se va solo a los pocos segundos y el usuario se quedaba sin saber
+  // por qué no se importó nada.
+  const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
 
   function reiniciarArchivo() {
     setArchivo(null);
     setResultado(null);
+    setErrorGeneral(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -59,6 +66,7 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
     if (!empresa || !archivo) return;
     setAnalizando(true);
     setResultado(null);
+    setErrorGeneral(null);
     try {
       const formData = new FormData();
       formData.append("empresa", empresa);
@@ -69,9 +77,9 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
         toast.info("El archivo no tiene filas para importar");
       }
     } catch (err) {
-      toast.error("No se pudo analizar el archivo", {
-        description: err instanceof Error ? err.message : undefined,
-      });
+      const motivo = mensajeDeError(err, "No se pudo analizar el archivo");
+      setErrorGeneral(motivo);
+      toast.error("No se pudo analizar el archivo", { description: motivo });
     } finally {
       setAnalizando(false);
     }
@@ -80,6 +88,7 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
   async function confirmar() {
     if (!resultado || resultado.clientes.length === 0) return;
     setConfirmando(true);
+    setErrorGeneral(null);
     try {
       const creados = await apiPost<Cliente[]>("/clientes/importar/confirmar", { clientes: resultado.clientes });
       onImportados(creados);
@@ -87,9 +96,9 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
       setOpen(false);
       reiniciarTodo();
     } catch (err) {
-      toast.error("No se pudo confirmar la importación", {
-        description: err instanceof Error ? err.message : undefined,
-      });
+      const motivo = mensajeDeError(err, "No se pudo confirmar la importación");
+      setErrorGeneral(motivo);
+      toast.error("No se pudo confirmar la importación", { description: motivo });
     } finally {
       setConfirmando(false);
     }
@@ -114,7 +123,8 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
           <DialogTitle>Importar clientes desde Excel</DialogTitle>
           <DialogDescription>
             Cada fila es un cliente. El código lo asignan ustedes — el archivo debe traerlo, nunca se genera acá.
-            Código, nombre, tipo, dirección, ciudad, coordenadas y teléfono son obligatorios.
+            Código, nombre, tipo, dirección, ciudad, coordenadas y teléfono son obligatorios; la columna
+            «ruta» (ruta comercial del cliente) es opcional y también se actualiza sola al importar ventas.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,6 +178,13 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
             {analizando ? "Analizando..." : "Analizar archivo"}
           </Button>
 
+          {errorGeneral && (
+            <p className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
+              <span>{errorGeneral}</span>
+            </p>
+          )}
+
           {resultado && (
             <div className="max-h-[22rem] space-y-4 overflow-y-auto border-t border-border pt-4">
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -191,6 +208,7 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
                         <TableHead>Código</TableHead>
                         <TableHead>Nombre</TableHead>
                         <TableHead>Ciudad</TableHead>
+                        <TableHead>Ruta</TableHead>
                         <TableHead>Teléfono</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -200,6 +218,7 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
                           <TableCell className="font-medium">{c.codigo}</TableCell>
                           <TableCell>{c.nombre}</TableCell>
                           <TableCell className="text-muted-foreground">{c.ciudad}</TableCell>
+                          <TableCell className="text-muted-foreground">{c.rutaComercial ?? "—"}</TableCell>
                           <TableCell className="text-muted-foreground">{c.telefono}</TableCell>
                         </TableRow>
                       ))}

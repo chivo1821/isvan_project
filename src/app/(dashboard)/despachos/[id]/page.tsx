@@ -55,6 +55,9 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
             <p className="text-muted-foreground">
               {despacho.destinoCliente.direccion}, {despacho.destinoCliente.ciudad}
             </p>
+            <p className="text-muted-foreground">
+              Ruta comercial: {despacho.destinoCliente.rutaComercial ?? "sin asignar"}
+            </p>
           </CardContent>
         </Card>
       </div>
