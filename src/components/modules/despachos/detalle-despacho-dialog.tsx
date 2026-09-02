@@ -58,6 +58,9 @@ export function DetalleDespachoDialog({
             <p className="text-muted-foreground">
               {despacho.destinoCliente.direccion}, {despacho.destinoCliente.ciudad}
             </p>
+            <p className="text-muted-foreground">
+              Ruta comercial: {despacho.destinoCliente.rutaComercial ?? "sin asignar"}
+            </p>
             {despacho.destinoCliente.telefono && (
               <p className="text-muted-foreground">{despacho.destinoCliente.telefono}</p>
             )}

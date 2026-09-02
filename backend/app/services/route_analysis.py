@@ -209,11 +209,12 @@ class RutaMultiResultado:
     tiempo_min: int
 
 
-def _orden_vecino_mas_cercano(origen: LatLng, paradas: list[LatLng]) -> list[int]:
+def orden_vecino_mas_cercano(origen: LatLng, paradas: list[LatLng]) -> list[int]:
     """Heuristica de vecino mas cercano (Haversine): partiendo de `origen`,
     en cada paso elige la parada no visitada mas cercana a la posicion
     actual. Solo se usa como fallback si el servicio TSP real no responde —
-    ver calcular_mejor_ruta_multi()."""
+    ver calcular_mejor_ruta_multi() — y como estimacion de distancia al
+    sugerir agrupaciones (ver app/services/plan_rutas.py)."""
     restantes = list(range(len(paradas)))
     orden: list[int] = []
     actual = origen
@@ -353,7 +354,7 @@ def _ruta_multi_encadenada(
     NETWORK_ANALYST_URL). Aca si se conocen los limites exactos entre
     tramos, asi que indices_parada se arma directo (sin necesidad de buscar
     el punto mas cercano)."""
-    orden = _orden_vecino_mas_cercano(origen, paradas)
+    orden = orden_vecino_mas_cercano(origen, paradas)
 
     geometry: list[tuple[float, float]] = [(origen.lng, origen.lat)]
     distancia_km = 0.0

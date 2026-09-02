@@ -18,8 +18,11 @@ from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.excel_utils import mapear_columnas, valor_a_texto
 from app.core.numero import siguiente_numero, siguientes_numeros
+from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
     ActualizarCantidadDespachoItemRequest,
+    AprobacionMasivaRequest,
+    AprobacionMasivaResponse,
     Despacho,
     DespachoAprobacionCreate,
     DespachoCreate,
@@ -188,6 +191,11 @@ def crear_despacho(data: DespachoCreate):
 #   para productos liquidos sin peso explicito en la descripcion.
 # - No hay columna de cadena de frio: todo el catalogo de ISVAN/TRALOG la
 #   requiere, se marca siempre True.
+# - Columna opcional "ruta": la ruta comercial (de venta/reparto) a la que el
+#   negocio tiene asignado a ese cliente. El extracto de ventas es la fuente
+#   de verdad de ese dato, asi que al confirmar la importacion se guarda en
+#   el Cliente (ver mas abajo); de ahi lo toma el motor de sugerencia de
+#   rutas para agrupar juntos a los clientes de una misma ruta comercial.
 
 ALIAS_COLUMNAS: dict[str, list[str]] = {
     "codigo_cliente": ["codigo_cliente", "codigo_de_cliente", "cod_cliente", "codigo"],
@@ -196,6 +204,7 @@ ALIAS_COLUMNAS: dict[str, list[str]] = {
     "cantidad": ["cantidad", "cant", "unidades"],
     "peso_unitario_kg": ["peso_unitario_kg", "peso_unitario", "peso_kg", "peso"],
     "litros": ["litros"],
+    "ruta": ["ruta", "ruta_comercial", "cod_ruta", "codigo_ruta", "nro_ruta", "zona"],
 }
 CAMPOS_REQUERIDOS = ["codigo_cliente", "numero_documento", "descripcion_item", "cantidad"]
 
@@ -282,6 +291,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
             numero_documento = valor_a_texto(val("numero_documento"))
             descripcion = str(val("descripcion_item") or "").strip()
             cantidad_raw = val("cantidad")
+            ruta_comercial = valor_a_texto(val("ruta")) or None
 
             # Filas con cantidad <= 0 son devoluciones/notas de credito del
             # extracto de ventas -- se ignoran en silencio, no es un error.
@@ -328,8 +338,12 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                 cliente = clientes_por_codigo.get(codigo_cliente)
                 if not cliente:
                     error = ("codigo_cliente", f'No existe el cliente "{codigo_cliente}" en {empresa}')
-                elif cliente["lat"] is None or cliente["lng"] is None:
-                    error = ("codigo_cliente", f'El cliente "{codigo_cliente}" no tiene coordenadas registradas')
+                elif sin_ubicacion(cliente["lat"], cliente["lng"]):
+                    error = (
+                        "codigo_cliente",
+                        f'El cliente "{codigo_cliente}" no tiene una ubicacion valida '
+                        "(faltan las coordenadas o estan en 0,0)",
+                    )
 
             if error is None and numero_documento in documentos_ya_importados:
                 error = ("numero_documento", f'El documento "{numero_documento}" ya fue importado antes')
@@ -343,7 +357,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                 "fila": n, "numeroDocumento": numero_documento, "clienteId": cliente["id"],
                 "clienteCodigo": cliente["codigo"], "clienteNombre": cliente["nombre"],
                 "descripcion": descripcion, "cantidad": cantidad, "pesoUnitarioKg": peso,
-                "requiereFrio": True,
+                "requiereFrio": True, "rutaComercial": ruta_comercial,
             })
 
     # Agrupa por numero de documento (llave real del despacho, no el codigo
@@ -363,9 +377,13 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                 })
             continue
         primero = filas_doc[0]
+        # La ruta comercial es del cliente, no del item: se toma la primera
+        # que traiga el documento (todas sus filas son del mismo cliente).
+        ruta_comercial_doc = next((f["rutaComercial"] for f in filas_doc if f["rutaComercial"]), None)
         grupos.append({
             "numeroDocumento": doc, "clienteId": primero["clienteId"],
             "clienteCodigo": primero["clienteCodigo"], "clienteNombre": primero["clienteNombre"],
+            "rutaComercial": ruta_comercial_doc,
             "items": [{
                 "descripcion": f["descripcion"], "cantidad": f["cantidad"],
                 "pesoUnitarioKg": f["pesoUnitarioKg"], "requiereFrio": f["requiereFrio"],
@@ -448,8 +466,65 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             filas_item,
         )
+
+        # El extracto de ventas es la fuente de verdad de la ruta comercial
+        # del cliente: si el archivo la trae, se refresca en el Cliente (solo
+        # las filas donde realmente cambio). Si un cliente aparece en varios
+        # documentos del mismo archivo, gana el ultimo.
+        rutas_por_cliente = {g.clienteId: g.rutaComercial for g in data.grupos if g.rutaComercial}
+        if rutas_por_cliente:
+            cur.executemany(
+                'UPDATE "Cliente" SET "rutaComercial" = %s '
+                'WHERE "id" = %s AND "rutaComercial" IS DISTINCT FROM %s',
+                [(ruta, cliente_id, ruta) for cliente_id, ruta in rutas_por_cliente.items()],
+            )
+
         conn.commit()
         return creados
+
+
+# Ojo: esta ruta tiene que declararse ANTES de "/{despacho_id}/aprobacion",
+# porque esa tambien son dos segmentos y capturaria "aprobacion" como si
+# fuera un id de despacho.
+@router.post("/aprobacion/masiva", response_model=AprobacionMasivaResponse)
+def aprobar_despachos_masivo(
+    data: AprobacionMasivaRequest,
+    # Solo ADMIN: requiere_rol deja pasar siempre a ADMIN y, al no listar
+    # ningun otro rol, rechaza al resto (incluido APROBADOR, que si puede
+    # aprobar de a uno). Aprobar toda la cola de una es una accion de
+    # administracion, no del dia a dia de quien revisa despacho por despacho.
+    usuario: dict = Depends(requiere_rol("ADMIN")),
+):
+    """Aprueba de una sola vez todos los despachos pendientes (o solo los
+    `despachoIds` que se manden). Deja la misma auditoria que la aprobacion
+    individual: una fila en DespachoAprobacion por despacho, a nombre del
+    ADMIN que ejecuto la accion."""
+    with get_connection() as conn, conn.cursor() as cur:
+        # El UPDATE filtra por estado y devuelve lo que realmente cambio, en
+        # una sola sentencia: si alguien aprueba o rechaza algo entre medias,
+        # no se audita un despacho que este endpoint no movio.
+        sql = 'UPDATE "Despacho" SET "estado" = \'APROBADO\' WHERE "estado" = \'PENDIENTE_APROBACION\''
+        parametros: tuple = ()
+        if data.despachoIds:
+            sql += ' AND "id" = ANY(%s)'
+            parametros = (data.despachoIds,)
+        cur.execute(f'{sql} RETURNING "id", "numero"', parametros)
+        aprobados = cur.fetchall()
+
+        if not aprobados:
+            raise HTTPException(400, "No hay despachos pendientes de aprobacion")
+
+        cur.executemany(
+            'INSERT INTO "DespachoAprobacion" ("id", "despachoId", "usuarioId", "accion", "comentario") '
+            "VALUES (%s, %s, %s, 'APROBADA', %s)",
+            [
+                (f"dap-{uuid.uuid4().hex[:10]}", d["id"], usuario["id"], data.comentario)
+                for d in aprobados
+            ],
+        )
+        conn.commit()
+
+    return {"aprobados": len(aprobados), "numeros": [d["numero"] for d in aprobados]}
 
 
 @router.post(

@@ -40,6 +40,7 @@ const clienteSchema = z.object({
   lng: z.number().optional(),
   telefono: z.string().min(1, "El teléfono es obligatorio"),
   email: z.union([z.email("Ingresa un email válido"), z.literal("")]).optional(),
+  rutaComercial: z.string().optional(),
 });
 
 type ClienteFormValues = z.infer<typeof clienteSchema>;
@@ -65,6 +66,7 @@ export function NuevoClienteDialog({ onAdd }: { onAdd: (cliente: Cliente) => voi
       lng: undefined,
       telefono: "",
       email: "",
+      rutaComercial: "",
     },
   });
 
@@ -81,6 +83,7 @@ export function NuevoClienteDialog({ onAdd }: { onAdd: (cliente: Cliente) => voi
         lng: values.lng,
         telefono: values.telefono.trim(),
         email: values.email?.trim() || undefined,
+        rutaComercial: values.rutaComercial?.trim() || undefined,
       });
       onAdd(cliente);
       toast.success(`Cliente ${cliente.nombre} agregado`);
@@ -183,6 +186,15 @@ export function NuevoClienteDialog({ onAdd }: { onAdd: (cliente: Cliente) => voi
               <Label htmlFor="email">Email (opcional)</Label>
               <Input id="email" type="email" {...register("email")} />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="rutaComercial">Ruta comercial (opcional)</Label>
+              <Input id="rutaComercial" placeholder="R-07" {...register("rutaComercial")} />
+              <p className="text-xs text-muted-foreground">
+                Ruta de venta/reparto a la que pertenece el cliente. Si el Excel de ventas la trae, se
+                actualiza sola al importar los despachos.
+              </p>
             </div>
           </div>
 

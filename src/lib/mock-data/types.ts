@@ -45,6 +45,8 @@ export type Vehiculo = {
   almacenBaseId: string;
   conductorNombre?: string | null;
   ultimaRevision?: string | null;
+  /** Costo operativo por km (USD) para estimar el costo de una ruta sugerida. */
+  costoPorKm?: number | null;
 };
 
 // El mismo codigo puede referirse a clientes distintos segun la empresa
@@ -63,6 +65,12 @@ export type Cliente = {
   /** Obligatorio: lo usan los despachadores para contactar al cliente. */
   telefono: string;
   email?: string | null;
+  /**
+   * Ruta comercial (de venta/reparto) que el negocio le asigna al cliente,
+   * p.ej. "R-07" — NO es la `Ruta` (viaje) de este sistema. Viene del
+   * extracto de ventas y pesa al sugerir cómo agrupar despachos en un viaje.
+   */
+  rutaComercial?: string | null;
 };
 
 // Texto libre (viene del Excel o de carga manual) — ya no hay catalogo de

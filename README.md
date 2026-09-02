@@ -5,7 +5,8 @@ distribuidora de helados y pizzas congeladas en Venezuela, que opera para
 dos empresas (**ISVAN** y **TRALOG**) desde un mismo almacén (Almacén
 Catia, Caracas).
 
-Módulos: **Rutas** (multi-parada, optimizadas contra SuperMap iServer),
+Módulos: **Rutas** (agrupación sugerida por ruta comercial, capacidad y
+cercanía; multi-parada, optimizadas contra SuperMap iServer),
 **Despachos** (carga por Excel o manual, aprobación, ciclo de vida hasta
 entrega), **Clientes** (por empresa, carga individual o masiva por Excel),
 **Flota**, **Seguimiento** (mapa en vivo) y **Usuarios** (login por sesión,

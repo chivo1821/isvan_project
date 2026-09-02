@@ -121,6 +121,10 @@ model Vehiculo {
   almacenBase        Almacen        @relation(fields: [almacenBaseId], references: [id])
   conductorNombre    String?
   ultimaRevision     DateTime?
+  // Costo operativo por kilometro (USD) usado para estimar el costo de una
+  // ruta sugerida. Opcional: si no esta cargado se usa un valor de
+  // referencia por tipo de vehiculo (ver plan_rutas.COSTO_POR_KM_POR_TIPO).
+  costoPorKm         Float?
 
   rutas Ruta[]
 }
@@ -143,6 +147,13 @@ model Cliente {
   // Obligatorio: lo usan los despachadores para contactar al cliente.
   telefono  String
   email     String?
+  // Ruta comercial (de venta/reparto) a la que el negocio asigna al cliente,
+  // p.ej. "R-07". No es la Ruta (viaje) de este sistema: es un dato del
+  // cliente que viene del extracto de ventas y se usa como criterio de peso
+  // al sugerir como agrupar despachos en un viaje (ver
+  // backend/app/services/plan_rutas.py). Opcional porque hay clientes
+  // cargados antes de que existiera la columna.
+  rutaComercial String?
 
   despachos Despacho[] @relation("DespachoDestino")
 

@@ -63,6 +63,7 @@ erDiagram
         boolean tieneRefrigeracion
         string estado
         string almacenBaseId FK
+        float costoPorKm
     }
     CLIENTE {
         string id PK
@@ -75,6 +76,7 @@ erDiagram
         float lat
         float lng
         string telefono
+        string rutaComercial
     }
     DESPACHO {
         string id PK
@@ -149,7 +151,9 @@ escalar.
 Flota propia de la empresa (no de los clientes), compartida entre ISVAN y
 TRALOG. `tipo`, `capacidadKg` y `tieneRefrigeracion` alimentan la
 sugerencia de vehículo al armar una Ruta (suma el peso de todos los
-despachos elegidos).
+despachos elegidos). `costoPorKm` es opcional y solo se usa para estimar
+el costo de una ruta sugerida; si está vacío se toma un valor de
+referencia por tipo de vehículo (`plan_rutas.COSTO_POR_KM_POR_TIPO`).
 
 ### Cliente
 Tiendas, distribuidores o consumidores finales, **de una empresa
@@ -159,8 +163,21 @@ puede pertenecer a un cliente distinto según sea ISVAN o TRALOG, así que
 primaria por sí solo. `codigo` **siempre lo asigna el cliente/negocio**, el
 sistema nunca lo genera. `lat`/`lng` son opcionales a nivel de schema, pero
 **obligatorios en la práctica**: un cliente sin coordenadas no se puede
-incluir en una Ruta. `telefono` es obligatorio (lo usan los despachadores
-para contactarlo).
+incluir en una Ruta. Unas coordenadas en **(0, 0)** valen lo mismo que un
+`NULL`: ese punto cae en el golfo de Guinea, así que cuando aparece es un
+dato faltante cargado como cero, no una ubicación real. El criterio vive en
+un solo lugar (`backend/app/core/ubicacion.py` y su espejo
+`src/lib/ubicacion.ts`) y lo aplican por igual los importadores, el armado
+de rutas y el motor de sugerencia. `telefono` es obligatorio (lo usan los
+despachadores para contactarlo).
+
+`rutaComercial` es la **ruta comercial** (de venta/reparto) a la que el
+negocio tiene asignado al cliente, p. ej. `"R-07"` — **no** es la `Ruta`
+(viaje) de este sistema. Es opcional a nivel de schema y se puede cargar
+en el Excel de clientes (columna `ruta`), pero la fuente de verdad es el
+extracto de ventas: cada importación de despachos que traiga esa columna
+refresca el valor del cliente. Es el criterio de mayor peso al sugerir
+cómo agrupar despachos en viajes.
 
 ### Despacho
 Un envío a un cliente. `numeroDocumento` es el número de factura/nota de
@@ -198,6 +215,14 @@ nivel de ruta completa: "Salí del almacén" pasa todos sus despachos a
 `EN_TRANSITO` a la vez; la ruta pasa a `COMPLETADA` cuando se entrega la
 última parada pendiente.
 
+### Sugerencia de rutas (no es una tabla)
+`POST /rutas/sugerencias` propone cómo repartir los despachos aprobados sin
+ruta en viajes, sin persistir nada: agrupa por `Cliente.rutaComercial` y
+cercanía, respetando capacidad y cadena de frío del vehículo, y estima km,
+tiempo y costo. El usuario elige una sugerencia y la confirma con
+`POST /rutas`, que es donde se calcula el trazado real. Ver
+`backend/app/services/plan_rutas.py`.
+
 ### RutaPunto
 Vértices de la geometría real de una Ruta (puede ser de decenas a miles de
 puntos en un trayecto largo — se guarda completo, sin submuestrear, para no
@@ -232,5 +257,15 @@ puntos marca visualmente en el mapa, ver `seguimiento-detalle-map.tsx`).
   propia — confirmado que el servicio sí optimiza el orden de visita
   (`stopIndexes` en la respuesta), con fallback a una heurística de vecino
   más cercano si el servicio no responde.
+- **La distancia entre clientes manda sobre la ruta comercial al agrupar** —
+  una parada solo entra a un viaje si está dentro del radio permitido
+  (`RADIO_MAX_ENTRE_PARADAS_KM`, ajustable desde la pantalla); la ruta
+  comercial solo desempata entre paradas igual de cerca, como factor sobre
+  la distancia. Se invirtió respecto del primer diseño, donde la ruta
+  comercial pesaba primero y llegó a juntar La Guaira con Charallave.
+  Quien arma la ruta puede volver la ruta comercial restricción dura con la
+  casilla «No mezclar clientes de rutas comerciales distintas».
+- **El costo es informativo, no condiciona la agrupación** — se estima como
+  `km × costo por km del vehículo` y sirve para comparar sugerencias.
 - **Sin recuperación de contraseña por correo** — un ADMIN restablece la
   contraseña de cualquier usuario directamente desde **Usuarios**.

@@ -14,7 +14,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.numero import siguiente_numero
-from app.schemas import Ruta, RutaCreate, SugerenciaVehiculo, SugerenciaVehiculoRequest
+from app.core.ubicacion import sin_ubicacion
+from app.schemas import (
+    PlanRutasRequest,
+    PlanRutasResponse,
+    Ruta,
+    RutaCreate,
+    SugerenciaVehiculo,
+    SugerenciaVehiculoRequest,
+)
+from app.services.plan_rutas import sugerir_plan_rutas
 from app.services.route_analysis import LatLng, calcular_mejor_ruta_multi
 from app.services.suggest_vehiculo import sugerir_vehiculos
 
@@ -108,6 +117,23 @@ def obtener_vehiculos_sugeridos(data: SugerenciaVehiculoRequest):
     return sugerir_vehiculos(data.despachoIds)
 
 
+@router.post(
+    "/sugerencias",
+    response_model=PlanRutasResponse,
+    dependencies=[Depends(requiere_rol("DESPACHOS"))],
+)
+def sugerir_rutas(data: PlanRutasRequest):
+    """Propone como repartir los despachos aprobados en viajes: agrupa por
+    cercania entre clientes (criterio principal) usando la ruta comercial
+    solo como desempate, respetando la capacidad (y la refrigeracion) de los
+    vehiculos libres, y estima km, tiempo y costo de cada viaje. No crea
+    nada — el usuario elige una sugerencia y la confirma con POST /rutas,
+    que es donde se calcula el trazado real."""
+    if data.radioMaxKm is not None and data.radioMaxKm <= 0:
+        raise HTTPException(400, "El radio maximo entre paradas debe ser mayor que 0")
+    return sugerir_plan_rutas(data.despachoIds, data.mezclarRutasComerciales, data.radioMaxKm)
+
+
 @router.post("", response_model=Ruta, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
 def crear_ruta(data: RutaCreate):
     if not data.despachoIds:
@@ -128,8 +154,12 @@ def crear_ruta(data: RutaCreate):
                 raise HTTPException(400, f'El despacho {d["numero"]} no esta aprobado')
             if d["rutaId"] is not None:
                 raise HTTPException(400, f'El despacho {d["numero"]} ya pertenece a otra ruta')
-            if d["clienteLat"] is None or d["clienteLng"] is None:
-                raise HTTPException(400, f'El cliente del despacho {d["numero"]} no tiene coordenadas registradas')
+            if sin_ubicacion(d["clienteLat"], d["clienteLng"]):
+                raise HTTPException(
+                    400,
+                    f'El cliente del despacho {d["numero"]} no tiene una ubicacion valida '
+                    "(faltan las coordenadas o estan en 0,0)",
+                )
 
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
         almacen = cur.fetchone()
@@ -243,8 +273,12 @@ def recalcular_ruta(ruta_id: str):
         if not despachos:
             raise HTTPException(400, "La ruta no tiene despachos asociados")
         for d in despachos:
-            if d["clienteLat"] is None or d["clienteLng"] is None:
-                raise HTTPException(400, f'El cliente del despacho {d["numero"]} no tiene coordenadas registradas')
+            if sin_ubicacion(d["clienteLat"], d["clienteLng"]):
+                raise HTTPException(
+                    400,
+                    f'El cliente del despacho {d["numero"]} no tiene una ubicacion valida '
+                    "(faltan las coordenadas o estan en 0,0)",
+                )
 
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ruta["origenId"],))
         almacen = cur.fetchone()

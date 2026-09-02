@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PackageSearchIcon, RouteIcon } from "lucide-react";
+import { AlertTriangleIcon, PackageSearchIcon, RouteIcon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   Table,
@@ -18,17 +20,41 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TIPO_VEHICULO_META } from "@/lib/constants";
-import type { Cliente, Despacho, Ruta } from "@/lib/mock-data";
+import type { Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
 
 type DespachoConCliente = Despacho & { destinoCliente: Cliente };
 type SugerenciaVehiculo = {
-  vehiculo: { id: string; placa: string; tipo: string };
+  vehiculo: Vehiculo;
   holguraKg: number;
   motivos: string[];
 };
 
+// Respuesta de POST /rutas/sugerencias — un viaje propuesto (qué despachos
+// juntar y en qué vehículo) con sus métricas estimadas. Ver
+// backend/app/services/plan_rutas.py.
+type SugerenciaRuta = {
+  vehiculo: Vehiculo;
+  despachoIds: string[];
+  paradas: number;
+  pesoKg: number;
+  usoCapacidadPct: number;
+  distanciaKmEstimada: number;
+  tiempoMinEstimado: number;
+  costoEstimado?: number | null;
+  rutasComerciales: string[];
+  motivos: string[];
+};
+type PlanRutas = {
+  sugerencias: SugerenciaRuta[];
+  sinAsignar: { despachoIds: string[]; motivo: string }[];
+};
+
 function pesoTotal(despacho: Despacho) {
   return despacho.items.reduce((sum, item) => sum + item.cantidad * item.pesoUnitarioKg, 0);
+}
+
+function formatKg(kg: number) {
+  return `${kg.toLocaleString("es-VE", { maximumFractionDigits: 0 })} kg`;
 }
 
 export function NuevaRutaWizard({
@@ -44,6 +70,13 @@ export function NuevaRutaWizard({
   const [sugerencias, setSugerencias] = useState<SugerenciaVehiculo[] | null>(null);
   const [vehiculoId, setVehiculoId] = useState<string | null>(null);
   const [creando, setCreando] = useState(false);
+  const [plan, setPlan] = useState<PlanRutas | null>(null);
+  const [planeando, setPlaneando] = useState(false);
+  const [mezclarRutasComerciales, setMezclarRutasComerciales] = useState(true);
+  // Qué tan lejos puede estar una parada de las demás del mismo viaje. Es el
+  // freno contra viajes absurdos (un cliente en La Guaira y otro en
+  // Charallave); bajarlo da viajes más compactos pero usa más vehículos.
+  const [radioMaxKm, setRadioMaxKm] = useState("12");
 
   function alternar(id: string) {
     setSeleccionados((prev) => {
@@ -54,6 +87,42 @@ export function NuevaRutaWizard({
     });
     setSugerencias(null);
     setVehiculoId(null);
+  }
+
+  async function sugerirAgrupacion() {
+    setPlaneando(true);
+    try {
+      const data = await apiPost<PlanRutas>("/rutas/sugerencias", {
+        despachoIds: despachos.map((d) => d.id),
+        mezclarRutasComerciales,
+        radioMaxKm: Number(radioMaxKm),
+      });
+      setPlan(data);
+      if (data.sugerencias.length === 0) {
+        toast.info("No se pudo armar ninguna ruta con los despachos y vehículos disponibles");
+      }
+    } catch (err) {
+      toast.error("No se pudieron calcular las sugerencias", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setPlaneando(false);
+    }
+  }
+
+  /** Vuelca una sugerencia en la selección manual: quedan marcados sus
+   * despachos y elegido su vehículo, listo para confirmar (o para ajustar a
+   * mano antes de crear la ruta). */
+  function usarSugerencia(sugerencia: SugerenciaRuta) {
+    setSeleccionados(new Set(sugerencia.despachoIds));
+    setSugerencias([
+      {
+        vehiculo: sugerencia.vehiculo,
+        holguraKg: sugerencia.vehiculo.capacidadKg - sugerencia.pesoKg,
+        motivos: sugerencia.motivos,
+      },
+    ]);
+    setVehiculoId(sugerencia.vehiculo.id);
   }
 
   async function buscarVehiculos() {
@@ -100,14 +169,123 @@ export function NuevaRutaWizard({
   }
 
   const despachosSeleccionados = despachos.filter((d) => seleccionados.has(d.id));
+  const pesoSeleccionado = despachosSeleccionados.reduce((sum, d) => sum + pesoTotal(d), 0);
+  const porId = new Map(despachos.map((d) => [d.id, d]));
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <NumberedCard
           number={1}
+          title="Rutas sugeridas"
+          helpText="Agrupa los despachos por cercanía entre clientes, sin pasarse de la capacidad del vehículo; la ruta comercial del cliente desempata entre paradas igual de cerca. Los kilómetros, el tiempo y el costo son estimados; el trazado real se calcula al crear la ruta."
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <Button onClick={sugerirAgrupacion} disabled={despachos.length === 0 || planeando}>
+                <SparklesIcon />
+                {planeando ? "Calculando..." : "Sugerir agrupación"}
+              </Button>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="radio-max" className="text-sm font-normal text-muted-foreground">
+                  Distancia máx. entre paradas
+                </Label>
+                <Select
+                  value={radioMaxKm}
+                  onValueChange={(v) => {
+                    setRadioMaxKm(v);
+                    setPlan(null);
+                  }}
+                >
+                  <SelectTrigger id="radio-max" className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 km</SelectItem>
+                    <SelectItem value="8">8 km</SelectItem>
+                    <SelectItem value="12">12 km</SelectItem>
+                    <SelectItem value="20">20 km</SelectItem>
+                    <SelectItem value="30">30 km</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="no-mezclar"
+                  checked={!mezclarRutasComerciales}
+                  onCheckedChange={(v) => {
+                    setMezclarRutasComerciales(!v);
+                    setPlan(null);
+                  }}
+                />
+                <Label htmlFor="no-mezclar" className="text-sm font-normal text-muted-foreground">
+                  No mezclar clientes de rutas comerciales distintas
+                </Label>
+              </div>
+            </div>
+
+            {plan && plan.sugerencias.length > 0 && (
+              <div className="space-y-3">
+                {plan.sugerencias.map((s, index) => {
+                  const paradas = s.despachoIds.map((id) => porId.get(id)).filter(Boolean) as DespachoConCliente[];
+                  return (
+                    <div key={s.vehiculo.id} className="rounded-lg border border-border p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-foreground">Ruta sugerida {index + 1}</span>
+                            {s.rutasComerciales.map((ruta) => (
+                              <StatusBadge key={ruta} tone="neutral" label={ruta} />
+                            ))}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {s.vehiculo.placa} — {TIPO_VEHICULO_META[s.vehiculo.tipo].label} ·{" "}
+                            {s.paradas} parada(s) · {formatKg(s.pesoKg)} ({s.usoCapacidadPct}% de{" "}
+                            {formatKg(s.vehiculo.capacidadKg)})
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            ~{s.distanciaKmEstimada.toLocaleString("es-VE")} km · ~{s.tiempoMinEstimado} min
+                            {s.costoEstimado != null &&
+                              ` · ~${s.costoEstimado.toLocaleString("es-VE", { maximumFractionDigits: 2 })} USD`}
+                          </p>
+                          <ul className="text-xs text-muted-foreground">
+                            {paradas.slice(0, 5).map((d) => (
+                              <li key={d.id}>
+                                · {d.numero} — {d.destinoCliente.nombre}
+                              </li>
+                            ))}
+                            {paradas.length > 5 && <li>· y {paradas.length - 5} más</li>}
+                          </ul>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => usarSugerencia(s)}>
+                          Usar esta sugerencia
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {plan && plan.sinAsignar.length > 0 && (
+              <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                {plan.sinAsignar.map((sa) => (
+                  <p key={sa.motivo} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                    <span>
+                      {sa.despachoIds.length} despacho(s) sin asignar: {sa.motivo}
+                    </span>
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </NumberedCard>
+
+        <NumberedCard
+          number={2}
           title="Despachos a incluir"
-          helpText="Solo se listan despachos ya aprobados que todavía no forman parte de una ruta."
+          helpText="Solo se listan despachos ya aprobados que todavía no forman parte de una ruta. Puedes partir de una sugerencia y ajustarla a mano."
         >
           {despachos.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-6 text-center">
@@ -124,6 +302,7 @@ export function NuevaRutaWizard({
                     <TableHead className="w-10" />
                     <TableHead>Despacho</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Ruta cliente</TableHead>
                     <TableHead className="text-right">Peso est.</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -142,8 +321,15 @@ export function NuevaRutaWizard({
                         {d.destinoCliente.nombre}
                         <span className="ml-1 text-xs text-muted-foreground">({d.destinoCliente.ciudad})</span>
                       </TableCell>
+                      <TableCell>
+                        {d.destinoCliente.rutaComercial ? (
+                          <StatusBadge tone="neutral" label={d.destinoCliente.rutaComercial} />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {pesoTotal(d).toLocaleString("es-VE")} kg
+                        {formatKg(pesoTotal(d))}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -154,7 +340,7 @@ export function NuevaRutaWizard({
         </NumberedCard>
 
         <NumberedCard
-          number={2}
+          number={3}
           title="Vehículo"
           helpText="Se sugiere el vehículo con mejor ajuste de capacidad para el peso total de los despachos elegidos."
         >
@@ -175,7 +361,7 @@ export function NuevaRutaWizard({
                         {index === 0 && <StatusBadge tone="success" label="Recomendado" />}
                         <span className="font-medium text-foreground">{s.vehiculo.placa}</span>
                         <span className="text-sm text-muted-foreground">
-                          {TIPO_VEHICULO_META[s.vehiculo.tipo as keyof typeof TIPO_VEHICULO_META].label}
+                          {TIPO_VEHICULO_META[s.vehiculo.tipo].label}
                         </span>
                       </div>
                       <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
@@ -200,7 +386,7 @@ export function NuevaRutaWizard({
       </div>
 
       <div className="lg:sticky lg:top-6 lg:self-start">
-        <NumberedCard number={3} title="Confirmar ruta" helpText="Se calcula el orden de paradas y el trazado desde Almacén Catia.">
+        <NumberedCard number={4} title="Confirmar ruta" helpText="Se calcula el orden de paradas y el trazado desde Almacén Catia.">
           {despachosSeleccionados.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-6 text-center">
               <RouteIcon className="size-8 text-muted-foreground" />
@@ -208,11 +394,14 @@ export function NuevaRutaWizard({
             </div>
           ) : (
             <div className="space-y-1 text-sm">
-              <p className="font-medium text-foreground">{despachosSeleccionados.length} parada(s)</p>
+              <p className="font-medium text-foreground">
+                {despachosSeleccionados.length} parada(s) · {formatKg(pesoSeleccionado)}
+              </p>
               <ul className="space-y-0.5 text-xs text-muted-foreground">
                 {despachosSeleccionados.map((d) => (
                   <li key={d.id}>
                     {d.numero} — {d.destinoCliente.nombre}
+                    {d.destinoCliente.rutaComercial && ` · ${d.destinoCliente.rutaComercial}`}
                   </li>
                 ))}
               </ul>

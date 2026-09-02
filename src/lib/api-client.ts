@@ -20,6 +20,28 @@ async function cookieHeader(): Promise<HeadersInit> {
   return header ? { Cookie: header } : {};
 }
 
+/** Error de la API con el detalle que mandó FastAPI ya separado del ruido
+ * técnico. `message` mantiene el formato de siempre ("400 en /ruta: ...")
+ * para logs; `detalle` es lo que se le muestra al usuario. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+    readonly detalle: string
+  ) {
+    super(`${status} en ${path}${detalle ? `: ${detalle}` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
+/** Texto a mostrarle al usuario ante un error de la API: el detalle que
+ * explica qué pasó, sin el código ni la ruta del endpoint. */
+export function mensajeDeError(err: unknown, respaldo: string): string {
+  if (err instanceof ApiError) return err.detalle || `${respaldo} (error ${err.status})`;
+  if (err instanceof Error && err.message) return err.message;
+  return respaldo;
+}
+
 async function handle<T>(res: Response, path: string): Promise<T> {
   if (!res.ok) {
     let detalle = "";
@@ -29,7 +51,7 @@ async function handle<T>(res: Response, path: string): Promise<T> {
     } catch {
       // respuesta sin JSON, se ignora
     }
-    throw new Error(`${res.status} en ${path}${detalle ? `: ${detalle}` : ""}`);
+    throw new ApiError(res.status, path, detalle);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
