@@ -117,7 +117,15 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    coordenadas en **(0, 0)** se rechazan como fila con error y, si ya están
    guardadas así, el cliente se muestra como «sin ubicación» y queda fuera
    de las rutas — es un dato faltante cargado como cero, no una posición
-   real (ver `backend/app/core/ubicacion.py`).
+   real (ver `backend/app/core/ubicacion.py`). El importador además:
+   - **rechaza** coordenadas fuera del recuadro de Venezuela (atrapa lat/lng
+     invertidas o un signo perdido);
+   - **avisa** cuando la columna de latitud parece haber perdido un dígito:
+     si en buena parte del archivo la latitud tiene exactamente un decimal
+     menos que la longitud de su misma fila. Pasó de verdad —
+     `10.4986017` llegó como `10.986017` y dejó a 189 clientes en el mar.
+     Es una coordenada numéricamente válida, así que fila por fila no se
+     nota; solo se ve mirando la columna completa.
 8. **Rutas multi-parada reales**, no solo un tramo origen→destino: un
    vehículo visita varias paradas por viaje, en el orden que calcula
    **SuperMap iServer (FindTSPPaths)** contra la red vial real — confirmado

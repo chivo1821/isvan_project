@@ -34,7 +34,12 @@ type ClientePreview = {
   rutaComercial?: string | null;
 };
 type ErrorFila = { fila: number; columna?: string | null; motivo: string };
-type PreviewResponse = { clientes: ClientePreview[]; errores: ErrorFila[] };
+type PreviewResponse = {
+  clientes: ClientePreview[];
+  errores: ErrorFila[];
+  /** Avisos sobre el archivo completo (no bloquean la importación). */
+  advertencias?: string[];
+};
 
 export function ImportarClientesDialog({ onImportados }: { onImportados: (clientes: Cliente[]) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -187,6 +192,16 @@ export function ImportarClientesDialog({ onImportados }: { onImportados: (client
 
           {resultado && (
             <div className="max-h-[22rem] space-y-4 overflow-y-auto border-t border-border pt-4">
+              {resultado.advertencias?.map((aviso) => (
+                <p
+                  key={aviso}
+                  className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm text-muted-foreground"
+                >
+                  <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <span>{aviso}</span>
+                </p>
+              ))}
+
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <span className="flex items-center gap-1.5 text-success">
                   <CheckCircle2Icon className="size-4" />

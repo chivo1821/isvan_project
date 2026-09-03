@@ -256,6 +256,9 @@ class ImportarExcelConfirmarRequest(BaseModel):
 class ImportarClientesPreviewResponse(BaseModel):
     clientes: list[ClienteCreate]
     errores: list[ImportarExcelFilaError]
+    # Avisos sobre el archivo completo (no bloquean la importacion): p.ej.
+    # que la columna de latitud parezca haber perdido un digito.
+    advertencias: list[str] = []
 
 
 class ImportarClientesConfirmarRequest(BaseModel):
