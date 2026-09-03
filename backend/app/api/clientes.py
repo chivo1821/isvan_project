@@ -8,7 +8,7 @@ from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, valor_a_texto
-from app.core.ubicacion import sin_ubicacion
+from app.core.ubicacion import filas_con_latitud_truncada, fuera_de_venezuela, sin_ubicacion
 from app.schemas import (
     Cliente,
     ClienteCreate,
@@ -110,6 +110,14 @@ def _crear_cliente_interno(cur, data: ClienteCreate) -> dict:
 
 @router.post("", response_model=Cliente, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
 def crear_cliente(data: ClienteCreate):
+    if data.lat is not None and data.lng is not None and not sin_ubicacion(data.lat, data.lng):
+        if fuera_de_venezuela(data.lat, data.lng):
+            raise HTTPException(
+                400,
+                f"Las coordenadas ({data.lat}, {data.lng}) caen fuera de Venezuela — "
+                "revisa que no esten invertidas o les falte un digito",
+            )
+
     with get_connection() as conn, conn.cursor() as cur:
         # (empresa, codigo) es la llave de negocio real — el mismo codigo
         # puede referirse a clientes distintos en ISVAN y en TRALOG.
@@ -180,6 +188,7 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
     errores: list[dict] = []
     clientes_validos: list[dict] = []
     codigos_en_archivo: dict[str, int] = {}
+    coordenadas: list[tuple[int, float, float]] = []
 
     with get_connection() as conn, conn.cursor() as cur:
         # Los codigos ya existentes se traen de una sola vez, no una consulta
@@ -235,6 +244,12 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
                     # app/core/ubicacion.py.
                     if sin_ubicacion(lat, lng):
                         error = ("lat/lng", "Las coordenadas estan en 0,0 — falta la ubicacion real del cliente")
+                    elif fuera_de_venezuela(lat, lng):
+                        error = (
+                            "lat/lng",
+                            f"Las coordenadas ({lat}, {lng}) caen fuera de Venezuela — "
+                            "revisa que no esten invertidas o les falte un digito",
+                        )
 
             if error is None and codigo in codigos_en_archivo:
                 error = ("codigo", f'El codigo "{codigo}" esta repetido en la fila {codigos_en_archivo[codigo]}')
@@ -248,6 +263,7 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
                 continue
 
             codigos_en_archivo[codigo] = n
+            coordenadas.append((n, lat, lng))
             clientes_validos.append({
                 "empresa": empresa, "codigo": codigo, "nombre": nombre, "tipo": tipo,
                 "direccion": direccion, "ciudad": ciudad, "lat": lat, "lng": lng,
@@ -255,7 +271,23 @@ def importar_clientes_preview(empresa: str = Form(...), archivo: UploadFile = Fi
             })
 
     errores.sort(key=lambda e: e["fila"])
-    return {"clientes": clientes_validos, "errores": errores}
+
+    # Chequeo sobre el archivo completo: una latitud a la que le falta un
+    # digito sigue siendo un numero valido, asi que fila por fila no se ve.
+    # Ver filas_con_latitud_truncada en app/core/ubicacion.py.
+    advertencias: list[str] = []
+    truncadas = filas_con_latitud_truncada(coordenadas)
+    if truncadas:
+        muestra = ", ".join(str(f) for f in truncadas[:5])
+        advertencias.append(
+            f"En {len(truncadas)} de {len(coordenadas)} filas la latitud tiene un decimal menos que "
+            f"la longitud (por ejemplo, las filas {muestra}). Suele significar que la columna de "
+            "latitud perdio un digito al editar el Excel: un valor como 10.4986017 queda en "
+            "10.986017, que es una coordenada valida pero ubica al cliente a decenas de km de "
+            "donde va. Revisa la columna antes de confirmar."
+        )
+
+    return {"clientes": clientes_validos, "errores": errores, "advertencias": advertencias}
 
 
 @router.post(
