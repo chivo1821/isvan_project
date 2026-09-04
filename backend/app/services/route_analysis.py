@@ -35,6 +35,12 @@ EARTH_RADIUS_KM = 6371
 FACTOR_VIALIDAD = 1.3
 VELOCIDAD_PROMEDIO_KMH = 45
 
+# Minutos que el vehiculo pasa detenido en cada cliente: bajar la mercancia,
+# entregarla y que la reciban. El servicio de rutas solo devuelve tiempo de
+# manejo, que no es la naturaleza del reparto — sin esto, la duracion
+# estimada de un viaje de 10 paradas se quedaba corta por mas de dos horas.
+MINUTOS_POR_PARADA = 15
+
 NETWORK_ANALYST_URL = (os.environ.get("NETWORK_ANALYST_URL") or "").rstrip("/")
 NETWORK_ANALYST_WEIGHT_FIELD = os.environ.get("NETWORK_ANALYST_WEIGHT_FIELD", "time")
 NETWORK_ANALYST_TIMEOUT_S = 20.0

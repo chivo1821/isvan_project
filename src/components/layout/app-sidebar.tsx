@@ -27,6 +27,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import { INICIO_POR_ROL } from "@/lib/constants";
 import type { RolUsuario } from "@/lib/mock-data";
 
 type NavLeaf = { label: string; href: string; roles?: RolUsuario[] };
@@ -102,8 +103,8 @@ function puedeVer(roles: RolUsuario[] | undefined, rol: RolUsuario) {
 
 export function AppSidebar({ rol }: { rol: RolUsuario }) {
   const pathname = usePathname();
-  const esRepartidor = rol === "REPARTIDOR";
-  const inicio = esRepartidor ? "/despachador" : "/";
+  const esAdmin = rol === "ADMIN";
+  const inicio = INICIO_POR_ROL[rol];
 
   const grupos = NAV_GROUPS.map((group) => ({
     ...group,
@@ -135,7 +136,7 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {!esRepartidor && (
+        {esAdmin && (
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>

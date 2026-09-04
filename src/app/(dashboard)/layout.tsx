@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { RUTA_ACTUAL_HEADER } from "@/proxy";
+import { INICIO_POR_ROL } from "@/lib/constants";
 import { getUsuarioActual } from "@/lib/session";
 
 /** Único módulo al que tiene acceso un REPARTIDOR: su viaje del día. */
@@ -20,9 +21,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // dashboard lo devuelve ahí. Es la puerta de la interfaz; la de verdad
   // está en la API, que además le filtra los datos a su vehículo asignado
   // (ver backend/app/core/permisos.py).
+  const rutaActual = (await headers()).get(RUTA_ACTUAL_HEADER) ?? "";
   if (usuarioActual.rol === "REPARTIDOR") {
-    const rutaActual = (await headers()).get(RUTA_ACTUAL_HEADER) ?? "";
     if (!rutaActual.startsWith(INICIO_REPARTIDOR)) redirect(INICIO_REPARTIDOR);
+  } else if (rutaActual === "/" && usuarioActual.rol !== "ADMIN") {
+    // El dashboard muestra la operación completa (incluido el rendimiento
+    // por conductor): solo ADMIN. Los demás entran a su propio módulo.
+    redirect(INICIO_POR_ROL[usuarioActual.rol]);
   }
 
   return (

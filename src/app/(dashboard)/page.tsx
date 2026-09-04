@@ -33,6 +33,8 @@ import {
   DespachosTransitoMap,
   type DespachoMapPoint,
 } from "@/components/modules/despachos/despachos-transito-map";
+import { RendimientoReparto, type ResumenRendimiento } from "@/components/modules/dashboard/rendimiento-reparto";
+import { apiGet } from "@/lib/api-client";
 import { sinUbicacion } from "@/lib/ubicacion";
 
 export default async function DashboardPage() {
@@ -45,6 +47,11 @@ export default async function DashboardPage() {
       getVehiculosDisponibles(),
       getClientesRaw(),
     ]);
+
+  // Indicadores de rendimiento del reparto. Si el endpoint falla (o el
+  // usuario no es ADMIN) el dashboard sigue mostrando el resto: es
+  // informacion adicional, no la razon de ser de la pantalla.
+  const resumen = await apiGet<ResumenRendimiento>("/reportes/resumen").catch(() => null);
 
   const rutasEnTransito = rutasActivas.filter((r) => r.estado === "EN_TRANSITO");
   // Un cliente en (0, 0) cuenta como sin ubicación: es un dato faltante
@@ -97,6 +104,8 @@ export default async function DashboardPage() {
           tone="destructive"
         />
       </div>
+
+      {resumen && <RendimientoReparto resumen={resumen} />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">

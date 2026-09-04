@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { INICIO_POR_ROL } from "@/lib/constants";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserNav } from "@/components/layout/user-nav";
@@ -38,12 +39,13 @@ export function Topbar({
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
-  // Un repartidor no tiene "Inicio": su raíz es el despachador, y el enlace
-  // a "/" solo lo devolvería ahí (ver (dashboard)/layout.tsx).
+  // Solo ADMIN tiene "Inicio": para los demás roles el enlace a "/" los
+  // devolvería a su propio módulo (ver (dashboard)/layout.tsx).
   const esRepartidor = user.rol === "REPARTIDOR";
-  const raiz = esRepartidor
-    ? { href: "/despachador", label: "Despachador" }
-    : { href: "/", label: "Inicio" };
+  const raiz =
+    user.rol === "ADMIN"
+      ? { href: "/", label: "Inicio" }
+      : { href: INICIO_POR_ROL[user.rol], label: SEGMENT_LABELS[INICIO_POR_ROL[user.rol].split("/")[1]] ?? "Inicio" };
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4">

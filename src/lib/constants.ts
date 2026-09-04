@@ -4,16 +4,41 @@ export type Tone = "success" | "warning" | "destructive" | "info" | "neutral" | 
 
 type StatusMeta = { label: string; tone: Tone };
 
+// Cada estado con un color propio: "Aprobado" y "Entregado" compartían el
+// verde y en el histórico no se distinguía lo que ya salió de lo que sigue
+// esperando ruta. Ahora el verde es solo para lo entregado (lo terminado).
 export const ESTADO_DESPACHO_META: Record<EstadoDespacho, StatusMeta> = {
   BORRADOR: { label: "Borrador", tone: "neutral" },
   PENDIENTE_APROBACION: { label: "Pendiente de aprobación", tone: "warning" },
-  APROBADO: { label: "Aprobado", tone: "success" },
+  APROBADO: { label: "Aprobado", tone: "info" },
   RECHAZADO: { label: "Rechazado", tone: "destructive" },
   EN_PREPARACION: { label: "En preparación", tone: "warning" },
-  EN_TRANSITO: { label: "En tránsito", tone: "info" },
+  EN_TRANSITO: { label: "En tránsito", tone: "primary" },
   ENTREGADO: { label: "Entregado", tone: "success" },
   CANCELADO: { label: "Cancelado", tone: "destructive" },
 };
+
+/** Estado de una parada tal como se muestra en el viaje.
+ *
+ * `EstadoDespacho` no distingue "va en camino" de "ya está en el cliente":
+ * entre la marca de llegada y la de entrega el despacho sigue en
+ * `EN_TRANSITO`. Para el mapa y la lista del despachador esa diferencia es
+ * justo lo que interesa —saber dónde está parado el conductor ahora—, así
+ * que se deriva de las marcas. */
+export function estadoDeParada(parada: {
+  estado: EstadoDespacho;
+  llegadaEn?: string | null;
+  entregadoEn?: string | null;
+}): StatusMeta {
+  if (parada.entregadoEn || parada.estado === "ENTREGADO") return ESTADO_DESPACHO_META.ENTREGADO;
+  if (parada.llegadaEn && parada.estado === "EN_TRANSITO") {
+    // Azul: no choca con el naranja de "en tránsito" ni con el verde de
+    // "entregado". El azul de "Aprobado" no compite, porque una parada solo
+    // puede estar "en el cliente" con el viaje ya en marcha.
+    return { label: "En el cliente", tone: "info" };
+  }
+  return ESTADO_DESPACHO_META[parada.estado];
+}
 
 export const ESTADO_RUTA_META: Record<EstadoRuta, StatusMeta> = {
   PLANIFICADA: { label: "Planificada", tone: "warning" },
@@ -26,6 +51,17 @@ export const ESTADO_VEHICULO_META: Record<EstadoVehiculo, StatusMeta> = {
   FUNCIONAL: { label: "Funcional", tone: "success" },
   EN_MANTENIMIENTO: { label: "En mantenimiento", tone: "warning" },
   FUERA_DE_SERVICIO: { label: "Fuera de servicio", tone: "destructive" },
+};
+
+// A dónde entra cada rol. El dashboard tiene la foto completa de la
+// operación (KPIs, rendimiento por conductor), así que queda reservado a
+// ADMIN; los demás roles arrancan en su propio módulo. La regla se aplica
+// en (dashboard)/layout.tsx, no solo escondiendo el enlace.
+export const INICIO_POR_ROL: Record<RolUsuario, string> = {
+  ADMIN: "/",
+  DESPACHOS: "/despachos",
+  APROBADOR: "/despachos/aprobacion",
+  REPARTIDOR: "/despachador",
 };
 
 export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
@@ -61,6 +97,16 @@ export function formatDate(value: Date | string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: TIMEZONE,
+  }).format(toLocalDate(value));
+}
+
+/** Solo la hora (HH:mm) — para las marcas de llegada y entrega en la calle.
+ * Con la misma zona horaria fija que el resto, para no romper la hidratación. */
+export function formatHora(value: Date | string) {
+  return new Intl.DateTimeFormat("es-VE", {
+    hour: "2-digit",
+    minute: "2-digit",
     timeZone: TIMEZONE,
   }).format(toLocalDate(value));
 }

@@ -31,7 +31,7 @@ backend/
       plan_rutas.py        # sugerencia de como agrupar despachos en viajes (ruta comercial + capacidad + cercania + costo)
     api/
       auth.py       almacenes.py   clientes.py     despachos.py
-      historial.py  rutas.py       usuarios.py     vehiculos.py
+      historial.py  reportes.py    rutas.py        usuarios.py     vehiculos.py
     seed.py               # siembra Postgres con datos de ejemplo (opcional, ver README principal)
     seed_data.json
   requirements.txt
@@ -48,6 +48,7 @@ backend/
 | `rutas.py` | Sugiere cómo agrupar los despachos aprobados en viajes (`POST /rutas/sugerencias`), arma la ruta multi-parada elegida (TSP contra SuperMap iServer), la recalcula, inicia el viaje y marca entregas por parada |
 | `vehiculos.py` | CRUD de flota |
 | `almacenes.py` | Listado (hoy un único almacén, Catia) |
+| `reportes.py` | Descargas en Excel (`/reportes/clientes.xlsx`, `/despachos.xlsx`, `/rutas.xlsx`) para gestión — no accesibles a un REPARTIDOR |
 | `historial.py` | Aprobaciones de despacho y puntos de ruta, sin filtrar (el frontend filtra) |
 
 Todos los routers salvo `auth` exigen sesión válida (dependencia global en

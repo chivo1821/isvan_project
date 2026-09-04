@@ -38,6 +38,7 @@ from app.core.db import get_connection
 from app.core.ubicacion import sin_ubicacion
 from app.services.route_analysis import (
     FACTOR_VIALIDAD,
+    MINUTOS_POR_PARADA,
     VELOCIDAD_PROMEDIO_KMH,
     LatLng,
     haversine_km,
@@ -262,8 +263,9 @@ def _dispersion_km(grupo: list[_Parada]) -> float:
 def _estimar_recorrido(origen: LatLng, grupo: list[_Parada]) -> tuple[float, int]:
     """Distancia y tiempo estimados del viaje: orden por vecino mas cercano
     desde el almacen y suma de tramos en linea recta corregidos por
-    FACTOR_VIALIDAD. Es una estimacion de planificacion; el valor real sale
-    del TSP al crear la ruta."""
+    FACTOR_VIALIDAD, mas el tiempo detenido en cada cliente
+    (MINUTOS_POR_PARADA). Es una estimacion de planificacion; el valor real
+    sale del TSP al crear la ruta."""
     ubicaciones = [p.ubicacion for p in grupo]
     orden = orden_vecino_mas_cercano(origen, ubicaciones)
 
@@ -274,7 +276,8 @@ def _estimar_recorrido(origen: LatLng, grupo: list[_Parada]) -> tuple[float, int
         actual = ubicaciones[indice]
 
     distancia_km = round(distancia_km * FACTOR_VIALIDAD, 1)
-    tiempo_min = max(1, round((distancia_km / VELOCIDAD_PROMEDIO_KMH) * 60))
+    tiempo_manejo = (distancia_km / VELOCIDAD_PROMEDIO_KMH) * 60
+    tiempo_min = max(1, round(tiempo_manejo + len(grupo) * MINUTOS_POR_PARADA))
     return distancia_km, tiempo_min
 
 
@@ -312,11 +315,14 @@ def _motivos(
     )
     if len(grupo) > 1:
         motivos.append(f"Paradas a menos de {_dispersion_km(grupo):,.1f} km entre sí")
-    motivos.append(f"~{distancia_km:,.1f} km estimados desde el almacén")
+    motivos.append(
+        f"~{distancia_km:,.1f} km estimados desde el almacén "
+        f"(+{len(grupo) * MINUTOS_POR_PARADA} min detenido en las paradas)"
+    )
     if any(p.requiere_frio for p in grupo):
         motivos.append("Vehículo con refrigeración")
     if costo is not None:
-        motivos.append(f"Costo estimado ~{costo:,.2f} USD")
+        motivos.append(f"Costo del vehículo ~{costo:,.2f} USD")
     return motivos
 
 

@@ -50,13 +50,14 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
 
 | Módulo | Rutas | Qué hace |
 |---|---|---|
-| **Dashboard** | `/` | KPIs de despachos/rutas/flota/clientes sin ubicación, mapa de rutas en tránsito |
+| **Dashboard** | `/` | **Solo ADMIN.** KPIs de despachos/rutas/flota/clientes sin ubicación, rendimiento del reparto (entregas, kg, minutos en el cliente y de traslado, tabla por conductor) y mapa de rutas en tránsito |
 | **Despachos** | `/despachos`, `/despachos/nuevo`, `/despachos/[id]`, `/despachos/aprobacion`, `/despachos/aprobacion/[id]` | Creación por **Excel** (extracto de ventas real del cliente, ISVAN o TRALOG) o **manual**; aprobación con modal de detalle (ítems, cliente, dirección) sin salir de la lista, y **aprobación en bloque de toda la cola solo para ADMIN** |
 | **Rutas** | `/rutas`, `/rutas/nueva`, `/rutas/[id]` | **Sugiere cómo agrupar** los despachos aprobados en viajes (cercanía entre clientes + capacidad del vehículo, con la ruta comercial como desempate y costo estimado) y arma la ruta elegida, con el **orden de visita optimizado por SuperMap iServer (TSP)** partiendo siempre de Almacén Catia |
-| **Clientes** | `/clientes` | Cartera por empresa (ISVAN/TRALOG); alta individual o **carga masiva por Excel** (con plantilla descargable) |
+| **Clientes** | `/clientes` | Cartera por empresa (ISVAN/TRALOG); alta individual o **carga masiva por Excel** (con plantilla descargable), y descarga de la cartera |
+| **Reportes** | `GET /reportes/{clientes,despachos,rutas}.xlsx`, `GET /reportes/resumen` | Descargas en Excel para gestión: cartera, despachos realizados (con productos y tiempos por parada) y viajes realizados (duración real vs estimada). Fuera del alcance del `REPARTIDOR` |
 | **Flota** | `/flota`, `/flota/[id]` | CRUD de vehículos, compartidos entre ambas empresas |
 | **Seguimiento** | `/seguimiento`, `/seguimiento/[id]` | Mapa con rutas activas y línea de tiempo por parada |
-| **Despachador** | `/despachador`, `/despachador/[id]` | Vista del chofer: inicia el viaje completo de una ruta y marca cada parada como entregada. **Es el único módulo que ve un `REPARTIDOR`**, y solo con la ruta de su vehículo asignado |
+| **Despachador** | `/despachador`, `/despachador/[id]` | Vista del chofer: inicia el viaje, marca **llegada** y **entrega** en cada parada (las dos marcas alimentan los reportes de rendimiento). **Es el único módulo que ve un `REPARTIDOR`**, y solo con la ruta de su vehículo asignado |
 | **Usuarios** | `/usuarios` | Login por sesión; ADMIN crea usuarios y restablece contraseñas (no hay recuperación por correo) |
 
 ## Historial de decisiones
@@ -79,7 +80,10 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    iniciar/entregar, y administrar clientes/vehículos/usuarios — aplicado
    tanto en la API (`requiere_rol`) como ocultando acciones en la UI.
    El `REPARTIDOR` es un caso más fuerte que «ocultar botones»: ver la
-   decisión 12. Caso aparte: **aprobar toda la cola de despachos de una vez**
+   decisión 12. El **dashboard es solo para ADMIN** por privacidad de los
+   datos (muestra la operación completa y el rendimiento por conductor):
+   cada rol entra a su propio módulo según `INICIO_POR_ROL`, y
+   `(dashboard)/layout.tsx` redirige quien pida `/` sin ser ADMIN. Caso aparte: **aprobar toda la cola de despachos de una vez**
    (`POST /despachos/aprobacion/masiva`) es **solo ADMIN** — un `APROBADOR`
    puede aprobar de a uno, pero no en bloque. La UI esconde el botón y el
    endpoint rechaza con 403 a cualquier otro rol; la auditoría queda a
@@ -99,10 +103,14 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
      reimportar el mismo archivo dos veces).
    - Filas con cantidad ≤ 0 son devoluciones/notas de crédito — se
      ignoran en silencio, no cuentan como error.
-   - El peso por ítem se calcula, en orden de prioridad: columna de peso
-     directa si existe → tamaño de presentación en la descripción (ej.
-     "1X550GRS" da 0.55 kg exacto) → `litros ÷ unidades × 0.55` (densidad
-     de helado) como último recurso.
+   - El peso por ítem sale de la columna **`litros`**, que es el contenido
+     total de la fila según el sistema de ventas, y se toma como kilos
+     **1 a 1** (confirmado por el negocio: un pote de 850 ml pesa 0,85 kg).
+     No hay factor de densidad, y da lo mismo si el producto se mide por
+     volumen o por peso — para las pizzas esa columna ya viene en kilos.
+     El tamaño de presentación en la descripción quedó solo como respaldo
+     para filas sin `litros`: no distingue los multi-empaque
+     ("10X5X135ML").
    - Columna opcional `ruta`: la **ruta comercial** del cliente. El extracto
      de ventas es la fuente de verdad de ese dato — al confirmar la
      importación se guarda en la ficha del cliente y pesa al sugerir cómo
@@ -156,6 +164,10 @@ Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Po
    ruta comercial pesando primero, una ruta que abarca La Guaira y
    Charallave (a ~55 km) producía un viaje imposible. La distancia es ahora
    el criterio duro y la ruta comercial solo agrupa dentro de la misma zona.
+
+   El tiempo estimado incluye lo que el vehículo pasa **detenido en cada
+   cliente** (`MINUTOS_POR_PARADA`, 15 min): el servicio de rutas solo
+   devuelve tiempo de manejo, que no es la naturaleza del reparto.
 
    Los km/tiempo/costo de las sugerencias son **estimados** (distancia en
    línea recta × factor de vialidad): son decenas de combinaciones y llamar
