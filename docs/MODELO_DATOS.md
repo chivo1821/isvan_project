@@ -89,6 +89,8 @@ erDiagram
         string rutaId FK
         int ordenEnRuta
         string estado
+        datetime llegadaEn
+        datetime entregadoEn
     }
     DESPACHO_ITEM {
         string id PK
@@ -113,6 +115,8 @@ erDiagram
         string origenId FK
         string creadoPorId FK
         string estado
+        datetime iniciadaEn
+        datetime completadaEn
         float distanciaTotalKm
         int tiempoTotalMin
     }
@@ -193,6 +197,12 @@ importado no se puede volver a cargar). `rutaId`/`ordenEnRuta` quedan
 `null` hasta que el despacho se agrega a una Ruta (solo despachos
 `APROBADO` sin ruta se pueden agregar).
 
+`llegadaEn` y `entregadoEn` son las dos marcas que pone el repartidor en la
+calle. La diferencia entre ambas es el **tiempo de atención** de esa parada;
+entre la entrega anterior y esta llegada, el **tiempo de traslado**. Son la
+base de los reportes de rendimiento por conductor. La API exige marcar la
+llegada antes de la entrega: sin las dos, no hay nada que medir.
+
 El flujo de `estado` en uso: `PENDIENTE_APROBACION` → (aprobación,
 `DespachoAprobacion`) → `APROBADO` → (se agrega a una Ruta y esa Ruta
 inicia el viaje) → `EN_TRANSITO` → (el despachador marca esa parada como
@@ -228,6 +238,11 @@ cercanía, respetando capacidad y cadena de frío del vehículo, y estima km,
 tiempo y costo. El usuario elige una sugerencia y la confirma con
 `POST /rutas`, que es donde se calcula el trazado real. Ver
 `backend/app/services/plan_rutas.py`.
+
+`iniciadaEn` y `completadaEn` marcan la salida del almacén y el fin del
+viaje. Con ellas y las marcas de cada Despacho salen la duración real contra
+la estimada, el tiempo hasta la primera parada y el de traslado entre
+paradas — la base del reporte de rutas.
 
 ### RutaPunto
 Vértices de la geometría real de una Ruta (puede ser de decenas a miles de

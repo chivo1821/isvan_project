@@ -25,7 +25,7 @@ from app.schemas import (
     SugerenciaVehiculoRequest,
 )
 from app.services.plan_rutas import sugerir_plan_rutas
-from app.services.route_analysis import LatLng, calcular_mejor_ruta_multi
+from app.services.route_analysis import MINUTOS_POR_PARADA, LatLng, calcular_mejor_ruta_multi
 from app.services.suggest_vehiculo import sugerir_vehiculos
 
 router = APIRouter(prefix="/rutas", tags=["rutas"])
@@ -88,6 +88,16 @@ def _con_detalle_lote(cur, rutas: list[dict], *, geometria_completa: bool = True
 
 def _con_detalle(cur, ruta_row: dict) -> dict:
     return _con_detalle_lote(cur, [ruta_row])[0]
+
+
+def _sin_trazado(cur, ruta_id: str) -> dict:
+    """La ruta con sus despachos pero sin la geometria completa. Es lo que
+    devuelven las acciones del viaje (iniciar, marcar llegada, marcar
+    entrega): el trazado no cambia con ellas y el frontend no lo usa, pero
+    en una ruta larga son cientos de kB en cada clic — se notaba como una
+    demora al actualizar el mapa y los botones."""
+    cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+    return _con_detalle_lote(cur, [cur.fetchone()], geometria_completa=False)[0]
 
 
 def _verificar_ruta_propia(usuario: dict, ruta: dict) -> None:
@@ -240,9 +250,14 @@ def _calcular_y_guardar_trazado(cur, ruta_id: str, despachos: list[dict], almace
     paradas = [LatLng(lat=d["clienteLat"], lng=d["clienteLng"]) for d in despachos]
     resultado, orden, indices_parada = calcular_mejor_ruta_multi(origen, paradas)
 
+    # El TSP devuelve solo tiempo de manejo. Al total se le suma lo que el
+    # vehiculo pasa detenido entregando en cada cliente, que es la mayor
+    # parte del dia de un repartidor (ver MINUTOS_POR_PARADA).
+    tiempo_total_min = resultado.tiempo_min + len(despachos) * MINUTOS_POR_PARADA
+
     cur.execute(
         'UPDATE "Ruta" SET "distanciaTotalKm" = %s, "tiempoTotalMin" = %s WHERE "id" = %s',
-        (resultado.distancia_km, resultado.tiempo_min, ruta_id),
+        (resultado.distancia_km, tiempo_total_min, ruta_id),
     )
 
     for posicion, indice_despacho in enumerate(orden):
@@ -349,12 +364,47 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
         if ruta["estado"] != "PLANIFICADA":
             raise HTTPException(400, "Solo se puede iniciar una ruta planificada")
 
-        cur.execute('UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\' WHERE "id" = %s', (ruta_id,))
+        cur.execute(
+            'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',
+            (datetime.now(), ruta_id),
+        )
         cur.execute('UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "rutaId" = %s', (ruta_id,))
         conn.commit()
 
+        return _sin_trazado(cur, ruta_id)
+
+
+@router.post(
+    "/{ruta_id}/paradas/{despacho_id}/llegada",
+    response_model=Ruta,
+    dependencies=[Depends(requiere_rol("REPARTIDOR"))],
+)
+def marcar_llegada_a_parada(ruta_id: str, despacho_id: str, usuario: dict = Depends(get_current_user)):
+    """El repartidor marca que llego al cliente. Junto con la marca de
+    entrega da el tiempo de atencion de esa parada, y contra la entrega
+    anterior, el tiempo de traslado."""
+    with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
-        return _con_detalle(cur, cur.fetchone())
+        ruta = cur.fetchone()
+        if not ruta:
+            raise HTTPException(404, "Ruta no encontrada")
+        _verificar_ruta_propia(usuario, ruta)
+        if ruta["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "La ruta no esta en transito")
+
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s', (despacho_id, ruta_id))
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(404, "El despacho no pertenece a esta ruta")
+        if despacho["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "Este despacho ya fue entregado (o no esta en transito)")
+        if despacho["llegadaEn"] is not None:
+            raise HTTPException(400, "La llegada a este cliente ya estaba marcada")
+
+        cur.execute('UPDATE "Despacho" SET "llegadaEn" = %s WHERE "id" = %s', (datetime.now(), despacho_id))
+        conn.commit()
+
+        return _sin_trazado(cur, ruta_id)
 
 
 @router.post(
@@ -381,8 +431,16 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
             raise HTTPException(404, "El despacho no pertenece a esta ruta")
         if despacho["estado"] != "EN_TRANSITO":
             raise HTTPException(400, "Este despacho ya fue entregado (o no esta en transito)")
+        # La llegada va antes que la entrega: sin las dos marcas no se puede
+        # medir cuanto tardo la atencion en ese cliente, que es justo lo que
+        # el negocio quiere seguir.
+        if despacho["llegadaEn"] is None:
+            raise HTTPException(400, "Marca primero la llegada al cliente")
 
-        cur.execute('UPDATE "Despacho" SET "estado" = \'ENTREGADO\' WHERE "id" = %s', (despacho_id,))
+        cur.execute(
+            'UPDATE "Despacho" SET "estado" = \'ENTREGADO\', "entregadoEn" = %s WHERE "id" = %s',
+            (datetime.now(), despacho_id),
+        )
         cur.execute(
             'UPDATE "RutaPunto" SET "estado" = \'entregado\' WHERE "rutaId" = %s AND "paradaDespachoId" = %s',
             (ruta_id, despacho_id),
@@ -393,9 +451,11 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
             (ruta_id,),
         )
         if cur.fetchone()["pendientes"] == 0:
-            cur.execute('UPDATE "Ruta" SET "estado" = \'COMPLETADA\' WHERE "id" = %s', (ruta_id,))
+            cur.execute(
+                'UPDATE "Ruta" SET "estado" = \'COMPLETADA\', "completadaEn" = %s WHERE "id" = %s',
+                (datetime.now(), ruta_id),
+            )
 
         conn.commit()
 
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
-        return _con_detalle(cur, cur.fetchone())
+        return _sin_trazado(cur, ruta_id)

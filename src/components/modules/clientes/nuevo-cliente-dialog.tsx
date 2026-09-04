@@ -110,8 +110,8 @@ export function NuevoClienteDialog({ onAdd }: { onAdd: (cliente: Cliente) => voi
           Agregar cliente
         </Button>
       </DialogTrigger>
-      <DialogContent>
-        <form onSubmit={handleSubmit(onSubmit)}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={handleSubmit(onSubmit)} className="contents">
           <DialogHeader>
             <DialogTitle>Agregar cliente</DialogTitle>
             <DialogDescription>

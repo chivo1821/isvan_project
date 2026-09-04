@@ -39,7 +39,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {ruta.puntos.length > 0 ? (
-            <SeguimientoDetalleMap ruta={ruta.puntos} />
+            <SeguimientoDetalleMap ruta={ruta.puntos} paradas={ruta.despachos} />
           ) : (
             <Card>
               <CardContent className="flex h-[26rem] items-center justify-center text-sm text-muted-foreground">

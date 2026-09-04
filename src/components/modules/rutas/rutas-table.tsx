@@ -33,6 +33,13 @@ export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
       ),
     },
     {
+      id: "conductor",
+      header: "Conductor",
+      accessorFn: (row) => row.conductor ?? "",
+      cell: ({ row }) =>
+        row.original.conductor ?? <span className="text-xs text-muted-foreground">Sin asignar</span>,
+    },
+    {
       id: "paradas",
       header: "Paradas",
       accessorFn: (row) => row.despachos.length,

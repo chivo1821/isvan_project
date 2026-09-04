@@ -19,7 +19,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
     <div className="space-y-6">
       <PageHeader
         title={ruta.numero}
-        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} — ${TIPO_VEHICULO_META[ruta.vehiculo.tipo].label} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
+        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} — ${TIPO_VEHICULO_META[ruta.vehiculo.tipo].label} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
         actions={
           <div className="flex items-center gap-3">
             {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}
@@ -36,7 +36,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {ruta.puntos.length > 0 ? (
-            <SeguimientoDetalleMap ruta={ruta.puntos} className="h-[28rem]" />
+            <SeguimientoDetalleMap ruta={ruta.puntos} paradas={ruta.despachos} className="h-[28rem]" />
           ) : (
             <Card>
               <CardContent className="flex h-[28rem] items-center justify-center text-center text-sm text-muted-foreground">

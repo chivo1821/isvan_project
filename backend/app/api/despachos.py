@@ -210,11 +210,10 @@ def crear_despacho(data: DespachoCreate):
 # - Filas con "unidades" <= 0 son devoluciones/notas de credito — se ignoran
 #   en silencio (no son un error, simplemente no generan despacho).
 # - No hay columna de peso: se calcula por prioridad — (1) columna de peso
-#   directa si el archivo la trae (plantillas futuras); (2) el tamano de
-#   presentacion en la propia descripcion del producto (ej. "1X550GRS" en
-#   una pizza da 0.55 kg exactos, sin aproximar); (3) "litros" (litros
-#   totales de la fila) con un factor de densidad promedio de helado, solo
-#   para productos liquidos sin peso explicito en la descripcion.
+#   directa si el archivo la trae (plantillas futuras); (2) la columna
+#   "litros", que es la fuente confiable y se toma como kilos 1 a 1 (ver
+#   _peso_unitario_de_la_fila); (3) el tamano de presentacion en la
+#   descripcion, solo como ultimo recurso si la fila no trae "litros".
 # - No hay columna de cadena de frio: todo el catalogo de ISVAN/TRALOG la
 #   requiere, se marca siempre True.
 # - Columna opcional "ruta": la ruta comercial (de venta/reparto) a la que el
@@ -234,18 +233,25 @@ ALIAS_COLUMNAS: dict[str, list[str]] = {
 }
 CAMPOS_REQUERIDOS = ["codigo_cliente", "numero_documento", "descripcion_item", "cantidad"]
 
-# Densidad promedio de helado (kg por litro) — solo se usa como ultimo
-# recurso, cuando ni la descripcion ni una columna de peso directa traen el
-# dato (ver _peso_unitario_desde_descripcion). Ajustable si el negocio da un
-# factor mas preciso.
-FACTOR_LITROS_A_KG = 0.55
+# El negocio confirma que para su catalogo la equivalencia es 1 a 1: un pote
+# de 850 ml pesa 0.85 kg. Por eso el numero de la columna "litros" se toma
+# como kilos tal cual, sin factor de densidad — y da lo mismo si el producto
+# se mide por volumen (helados) o por peso (pizzas, donde esa columna ya
+# venia en kilos: "FULL PIZZA HOME 12 1X550GRS", 10 unidades, litros = 5.5).
 
-# La descripcion del producto en el extracto de ventas trae el tamano de
-# presentacion en el patron "<unidades_por_caja>X<tamano><unidad>", ej.
-# "36X135ML" (helado, se mide por volumen) o "1X550GRS" (pizza, se mide por
-# peso real). Cuando la unidad ya es de peso (GR/KG) se usa tal cual — mucho
-# mas preciso que aproximar por densidad, que solo tiene sentido para
-# liquidos/helado. Si no hay match, se cae al calculo por litros.
+
+def _peso_unitario_de_la_fila(contenido: float, cantidad: int) -> float:
+    """Peso por unidad a partir de la columna "litros" (el contenido total
+    de la fila), que es la fuente confiable: sale del propio sistema de
+    ventas y ya contempla las presentaciones multi-empaque, que la
+    descripcion no permite deducir bien (ej. "10X5X135ML")."""
+    return round(abs(contenido) / cantidad, 4)
+
+
+# Ultimo recurso, solo si la fila no trae "litros": deduce el tamano de la
+# presentacion desde la descripcion ("1X550GRS" -> 0.55 kg; "1X850ML" ->
+# 0.85 kg, por la equivalencia 1 a 1). Es menos fiable que la columna de
+# litros porque no distingue los multi-empaque.
 _PATRON_TAMANO_PRESENTACION = re.compile(
     r"(?<!\d)\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(GRS?|KGS?|MLS?|LTS?|L)\b"
 )
@@ -257,13 +263,11 @@ def _peso_unitario_desde_descripcion(descripcion: str) -> float | None:
         return None
     cantidad_str, unidad = match.groups()
     cantidad = float(cantidad_str.replace(",", "."))
-    if unidad.startswith("GR"):
+    # Gramos y mililitros van a kilos igual (1 ml = 1 g); kilos y litros ya
+    # estan en la unidad final.
+    if unidad.startswith(("GR", "ML")):
         return round(cantidad / 1000, 4)
-    if unidad.startswith("KG"):
-        return round(cantidad, 4)
-    if unidad.startswith("ML"):
-        return round((cantidad / 1000) * FACTOR_LITROS_A_KG, 4)
-    return round(cantidad * FACTOR_LITROS_A_KG, 4)  # LT/LTS/L
+    return round(cantidad, 4)  # KG/KGS, LT/LTS/L
 
 
 def _mapear_columnas(fila_encabezados: tuple) -> dict[str, int]:
@@ -351,13 +355,19 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                     except (TypeError, ValueError):
                         error = ("peso_unitario_kg", "El peso debe ser un numero mayor o igual a 0")
                 else:
-                    peso = _peso_unitario_desde_descripcion(descripcion)
-                    if peso is None:
-                        try:
-                            litros = abs(float(val("litros")))
-                            peso = round((litros / cantidad) * FACTOR_LITROS_A_KG, 4)
-                        except (TypeError, ValueError):
-                            error = ("litros", "No se pudo calcular el peso del item (ni desde la descripcion ni desde litros)")
+                    # La columna "litros" manda: es el contenido real de la
+                    # fila segun el sistema de ventas. La descripcion queda
+                    # como respaldo por si esa columna viene vacia.
+                    try:
+                        contenido = abs(float(val("litros")))
+                    except (TypeError, ValueError):
+                        contenido = 0.0
+                    if contenido:
+                        peso = _peso_unitario_de_la_fila(contenido, cantidad)
+                    else:
+                        peso = _peso_unitario_desde_descripcion(descripcion)
+                        if peso is None:
+                            error = ("litros", "No se pudo calcular el peso del item (ni desde litros ni desde la descripcion)")
 
             cliente = None
             if error is None:

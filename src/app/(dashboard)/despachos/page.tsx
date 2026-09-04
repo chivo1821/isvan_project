@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClipboardCheckIcon, PlusIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { DescargarReporteButton } from "@/components/shared/descargar-reporte-button";
 import { DespachosTable } from "@/components/modules/despachos/despachos-table";
 import { getDespachosConDetalle, getDespachosPendientesAprobacion } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
@@ -16,6 +17,7 @@ export default async function DespachosPage() {
   const pendientes = pendientesLista.length;
   const puedeCrear = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
   const puedeAprobar = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "APROBADOR";
+  const puedeDescargar = usuarioActual != null && usuarioActual.rol !== "REPARTIDOR";
 
   return (
     <div className="space-y-6">
@@ -24,6 +26,7 @@ export default async function DespachosPage() {
         subtitle="Todos los despachos, creados por Excel o carga manual"
         actions={
           <>
+            {puedeDescargar && <DescargarReporteButton reporte="despachos" />}
             {puedeAprobar && (
               <Button variant="outline" asChild>
                 <Link href="/despachos/aprobacion">

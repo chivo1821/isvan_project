@@ -178,7 +178,7 @@ export function NuevaRutaWizard({
         <NumberedCard
           number={1}
           title="Rutas sugeridas"
-          helpText="Agrupa los despachos por cercanía entre clientes, sin pasarse de la capacidad del vehículo; la ruta comercial del cliente desempata entre paradas igual de cerca. Los kilómetros, el tiempo y el costo son estimados; el trazado real se calcula al crear la ruta."
+          helpText="Agrupa los despachos por cercanía entre clientes, sin pasarse de la capacidad del vehículo; la ruta comercial del cliente desempata entre paradas igual de cerca. Los kilómetros, el tiempo y el costo operativo del vehículo son estimados (el tiempo ya incluye lo que el camión pasa detenido en cada cliente); el trazado real se calcula al crear la ruta."
         >
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-4">
@@ -246,7 +246,9 @@ export function NuevaRutaWizard({
                           <p className="text-sm text-muted-foreground">
                             ~{s.distanciaKmEstimada.toLocaleString("es-VE")} km · ~{s.tiempoMinEstimado} min
                             {s.costoEstimado != null &&
-                              ` · ~${s.costoEstimado.toLocaleString("es-VE", { maximumFractionDigits: 2 })} USD`}
+                              ` · costo del vehículo ~${s.costoEstimado.toLocaleString("es-VE", {
+                                maximumFractionDigits: 2,
+                              })} USD`}
                           </p>
                           <ul className="text-xs text-muted-foreground">
                             {paradas.slice(0, 5).map((d) => (

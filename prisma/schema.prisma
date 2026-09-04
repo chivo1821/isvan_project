@@ -194,6 +194,13 @@ model Despacho {
   ruta        Ruta?   @relation(fields: [rutaId], references: [id])
   ordenEnRuta Int? // posicion de esta parada dentro de la ruta, calculada por el TSP
 
+  // Marcas de tiempo que pone el repartidor en la calle, para medir su
+  // rendimiento: cuando llego al cliente y cuando termino de entregar. La
+  // diferencia entre ambas es el tiempo de atencion de esa parada; entre la
+  // entrega anterior y esta llegada, el tiempo de traslado.
+  llegadaEn   DateTime?
+  entregadoEn DateTime?
+
   items         DespachoItem[]
   aprobaciones  DespachoAprobacion[]
   puntosEntrega RutaPunto[] // puntos de la ruta marcados como la parada de este despacho
@@ -244,6 +251,12 @@ model Ruta {
   creadoPor        Usuario    @relation(fields: [creadoPorId], references: [id])
   estado           EstadoRuta @default(PLANIFICADA)
   fechaCreacion    DateTime   @default(now())
+  // Cuando el vehiculo salio del almacen y cuando se entrego la ultima
+  // parada. Con estas dos y las marcas de cada Despacho se arma el reporte
+  // de rendimiento del viaje (duracion real vs estimada, tiempo hasta la
+  // primera parada, tiempo entre paradas).
+  iniciadaEn       DateTime?
+  completadaEn     DateTime?
   distanciaTotalKm Float?
   tiempoTotalMin   Int?
 

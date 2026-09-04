@@ -67,7 +67,7 @@ export function DetalleDespachoDialog({
           </div>
         </div>
 
-        <div className="max-h-64 overflow-y-auto rounded-lg border border-border">
+        <div className="max-h-64 overflow-auto rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">

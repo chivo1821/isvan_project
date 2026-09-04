@@ -61,7 +61,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // max-h + overflow: sin esto, en una pantalla chica un formulario
+          // largo se sale por arriba y por abajo (el dialogo esta centrado
+          // con -translate-y-1/2) y los botones del pie quedan
+          // inalcanzables. Con esto el contenido scrollea dentro del
+          // dialogo y el pie siempre se puede alcanzar.
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -107,7 +112,14 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        // sticky: al hacer scroll dentro del dialogo, los botones siguen a
+        // la vista en vez de quedar debajo del contenido. El offset va en
+        // -bottom-4 (no bottom-0) para compensar el -mb-4: con bottom-0 se
+        // quedaba pegado 1rem antes del borde y dejaba una franja del fondo
+        // del dialogo debajo de la barra. Fondo bg-popover (el mismo del
+        // dialogo, pero opaco) para que el contenido no se transparente por
+        // debajo al scrollear y no parezca una barra ajena.
+        "sticky -bottom-4 -mx-4 -mb-4 mt-auto flex flex-col-reverse gap-2 rounded-b-xl border-t bg-popover p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}

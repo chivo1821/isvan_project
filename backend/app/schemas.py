@@ -175,6 +175,9 @@ class Despacho(BaseModel):
     fechaEstimadaEntrega: Optional[datetime] = None
     rutaId: Optional[str] = None
     ordenEnRuta: Optional[int] = None
+    # Marcas que pone el repartidor en la calle (ver app/api/rutas.py).
+    llegadaEn: Optional[datetime] = None
+    entregadoEn: Optional[datetime] = None
     items: list[DespachoItem] = []
 
 
@@ -288,6 +291,9 @@ class Ruta(BaseModel):
     creadoPorId: str
     estado: str
     fechaCreacion: datetime
+    # Salida del almacen y fin del viaje (ver app/api/rutas.py).
+    iniciadaEn: Optional[datetime] = None
+    completadaEn: Optional[datetime] = None
     distanciaTotalKm: Optional[float] = None
     tiempoTotalMin: Optional[int] = None
     despachos: list[Despacho] = []
@@ -341,3 +347,27 @@ class PlanRutasRequest(BaseModel):
     # Vacio = el valor por defecto del servicio
     # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).
     radioMaxKm: Optional[float] = None
+
+
+# ---------- Reportes ----------
+
+
+class RendimientoConductor(BaseModel):
+    conductor: Optional[str] = None
+    placa: str
+    viajes: int
+    entregas: int
+    distanciaKm: float
+
+
+class ResumenRendimiento(BaseModel):
+    """Indicadores del reparto para el dashboard (ver app/api/reportes.py).
+    Los promedios son None mientras no haya paradas con las dos marcas."""
+
+    dias: int
+    entregas: int
+    kgEntregados: float
+    paradasMedidas: int
+    promedioAtencionMin: Optional[float] = None
+    promedioTrasladoMin: Optional[float] = None
+    porConductor: list[RendimientoConductor] = []

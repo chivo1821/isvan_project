@@ -149,15 +149,25 @@ export type RutaConDetalle = Omit<Ruta, "despachos"> & {
   vehiculo: Vehiculo;
   origen: Almacen;
   creadoPor: Usuario;
+  /**
+   * Quién maneja: el usuario REPARTIDOR que tiene ese vehículo asignado. Si
+   * no hay ninguno, se cae al nombre suelto que trae la ficha del vehículo.
+   */
+  conductor?: string | null;
   despachos: (Despacho & { destinoCliente: Cliente })[];
   puntos: RutaPunto[];
 };
 
 function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargarTodo>>): RutaConDetalle {
   const { almacenes, clientes, usuarios, vehiculos } = datos;
+  const vehiculo = vehiculos.find((v) => v.id === ruta.vehiculoId)!;
+  const repartidor = usuarios.find(
+    (u) => u.rol === "REPARTIDOR" && u.vehiculoAsignadoId === ruta.vehiculoId
+  );
   return {
     ...ruta,
-    vehiculo: vehiculos.find((v) => v.id === ruta.vehiculoId)!,
+    vehiculo,
+    conductor: repartidor?.nombre ?? vehiculo?.conductorNombre ?? null,
     origen: almacenes.find((a) => a.id === ruta.origenId)!,
     creadoPor: usuarios.find((u) => u.id === ruta.creadoPorId)!,
     despachos: [...ruta.despachos]
@@ -167,12 +177,28 @@ function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargar
   };
 }
 
+/** Solo lo que hace falta para pintar UNA ruta: la ruta con su trazado, el
+ * almacén, la flota, los clientes y los usuarios. No trae la lista completa
+ * de despachos, aprobaciones ni las demás rutas, que en el detalle no se
+ * usan — y que en un viaje de decenas de paradas hacían pesar cada refresco
+ * cientos de kB de más (se nota al marcar una llegada, ver
+ * modules/despachador/parada-acciones.tsx). */
+async function cargarParaUnaRuta() {
+  const [almacenes, clientes, usuarios, vehiculos] = await Promise.all([
+    getAlmacenesRaw(),
+    getClientesRaw(),
+    getUsuariosRaw(),
+    getVehiculosRaw(),
+  ]);
+  return { almacenes, clientes, usuarios, vehiculos, despachos: [], despachoAprobaciones: [], rutas: [] };
+}
+
 export async function getRutaConDetalle(id: string): Promise<RutaConDetalle | undefined> {
   // Pide la ruta puntual (única con el trazado completo) en vez de traer
   // todas las rutas con su geometría solo para quedarse con una.
   const [ruta, datos] = await Promise.all([
     getRutaRaw(id).catch(() => undefined),
-    cargarTodo(),
+    cargarParaUnaRuta(),
   ]);
   if (!ruta) return undefined;
   return armarRutaConDetalle(ruta, datos);

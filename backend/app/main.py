@@ -13,7 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 # motivo exacto de por que cayo al fallback mock) en la consola de uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from app.api import almacenes, auth, clientes, despachos, historial, rutas, usuarios, vehiculos
+from app.api import (
+    almacenes,
+    auth,
+    clientes,
+    despachos,
+    historial,
+    reportes,
+    rutas,
+    usuarios,
+    vehiculos,
+)
 from app.core.auth import get_current_user
 
 app = FastAPI(title="Gestion Logistica API")
@@ -49,6 +59,7 @@ ROUTERS_PROTEGIDOS = [
     vehiculos.router,
     despachos.router,
     rutas.router,
+    reportes.router,
     historial.router,
 ]
 
