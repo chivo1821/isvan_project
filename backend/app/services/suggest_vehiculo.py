@@ -8,6 +8,7 @@ derivarlo). Un solo almacen -> la cercania ya no es un criterio.
 
 from __future__ import annotations
 
+from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
 
 # Un vehiculo esta ocupado si ya esta asignado a una Ruta todavia activa.
@@ -31,8 +32,11 @@ def sugerir_vehiculos(despacho_ids: list[str]) -> list[dict]:
         peso_estimado_kg = round(sum(item["cantidad"] * item["pesoUnitarioKg"] for item in items))
         requiere_cadena_frio = any(item["requiereFrio"] for item in items)
 
+        # Con el chofer: al elegir vehiculo, el coordinador quiere saber
+        # quien va a manejar.
         cur.execute(
-            'SELECT v.* FROM "Vehiculo" v WHERE v."estado" = \'FUNCIONAL\' AND v."id" NOT IN ('
+            f'SELECT v.*, {CONDUCTOR_DEL_VEHICULO} AS "conductor" '
+            'FROM "Vehiculo" v WHERE v."estado" = \'FUNCIONAL\' AND v."id" NOT IN ('
             '  SELECT r."vehiculoId" FROM "Ruta" r WHERE r."estado" = ANY(%s)'
             ")",
             (list(RUTAS_ACTIVAS),),

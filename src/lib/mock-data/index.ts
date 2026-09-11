@@ -149,6 +149,8 @@ export type RutaConDetalle = Omit<Ruta, "despachos"> & {
   vehiculo: Vehiculo;
   origen: Almacen;
   creadoPor: Usuario;
+  /** Quién la reversó, si fue reversada (ver RutaConDetalle.canceladaEn). */
+  canceladaPor?: Usuario | null;
   /**
    * Quién maneja: el usuario REPARTIDOR que tiene ese vehículo asignado. Si
    * no hay ninguno, se cae al nombre suelto que trae la ficha del vehículo.
@@ -170,6 +172,7 @@ function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargar
     conductor: repartidor?.nombre ?? vehiculo?.conductorNombre ?? null,
     origen: almacenes.find((a) => a.id === ruta.origenId)!,
     creadoPor: usuarios.find((u) => u.id === ruta.creadoPorId)!,
+    canceladaPor: ruta.canceladaPorId ? (usuarios.find((u) => u.id === ruta.canceladaPorId) ?? null) : null,
     despachos: [...ruta.despachos]
       .sort((a, b) => (a.ordenEnRuta ?? 0) - (b.ordenEnRuta ?? 0))
       .map((d) => ({ ...d, destinoCliente: clientes.find((c) => c.id === d.destinoClienteId)! })),

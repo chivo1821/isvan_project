@@ -62,6 +62,7 @@ export const INICIO_POR_ROL: Record<RolUsuario, string> = {
   DESPACHOS: "/despachos",
   APROBADOR: "/despachos/aprobacion",
   REPARTIDOR: "/despachador",
+  VENDEDOR: "/vendedor",
 };
 
 export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
@@ -69,6 +70,7 @@ export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
   DESPACHOS: { label: "Despachos", tone: "neutral" },
   APROBADOR: { label: "Aprobador", tone: "warning" },
   REPARTIDOR: { label: "Repartidor", tone: "success" },
+  VENDEDOR: { label: "Vendedor", tone: "info" },
 };
 
 export const TIPO_VEHICULO_META: Record<TipoVehiculo, { label: string }> = {
@@ -109,6 +111,27 @@ export function formatHora(value: Date | string) {
     minute: "2-digit",
     timeZone: TIMEZONE,
   }).format(toLocalDate(value));
+}
+
+// Cifras de los indicadores de venta. Locale fijo (no el del navegador) por
+// la misma razón que TIMEZONE: el servidor y el navegador deben formatear
+// igual para no romper la hidratación.
+function numeroEsVe(valor: number, decimales: number) {
+  return valor.toLocaleString("es-VE", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+}
+
+export function formatUsd(valor: number | null | undefined, decimales = 0) {
+  if (valor == null) return "—";
+  return `${valor < 0 ? "-" : ""}$${numeroEsVe(Math.abs(valor), decimales)}`;
+}
+
+export function formatNumero(valor: number | null | undefined, decimales = 0) {
+  return valor == null ? "—" : numeroEsVe(valor, decimales);
+}
+
+/** `valor` es una fracción (0.4270 → "42,7 %"). */
+export function formatPct(valor: number | null | undefined, decimales = 1) {
+  return valor == null ? "—" : `${numeroEsVe(valor * 100, decimales)} %`;
 }
 
 export function formatDateTime(value: Date | string) {

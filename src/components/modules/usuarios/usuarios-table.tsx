@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AsignarRutasDialog } from "@/components/modules/usuarios/asignar-rutas-dialog";
 import { AsignarVehiculoDialog } from "@/components/modules/usuarios/asignar-vehiculo-dialog";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
 import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
@@ -108,6 +109,7 @@ export function UsuariosTable({
                         {u.rol === "REPARTIDOR" && (
                           <AsignarVehiculoDialog usuario={u} vehiculos={vehiculos} onAsignado={reemplazar} />
                         )}
+                        {u.rol === "VENDEDOR" && <AsignarRutasDialog usuario={u} />}
                         <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />
                       </div>
                     </TableCell>

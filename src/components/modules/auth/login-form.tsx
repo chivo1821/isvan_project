@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LogInIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Usuario } from "@/lib/mock-data";
+import { INICIO_POR_ROL } from "@/lib/constants";
+import type { RolUsuario, Usuario } from "@/lib/mock-data";
 
 const loginSchema = z.object({
   email: z.email("Ingresa un email válido"),
@@ -20,8 +21,19 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
+/** A dónde entra cada quien al iniciar sesión: directo a su módulo. Antes
+ * todos pasaban por "/" (el dashboard, solo ADMIN) y el layout los
+ * redirigía; pero Next renderiza la página junto con el layout, así que un
+ * VENDEDOR disparaba las consultas del dashboard, que la API le rechaza, y la
+ * pantalla se colgaba. "?from=" se respeta solo si ese rol puede estar ahí. */
+function destinoTrasLogin(rol: RolUsuario, from: string | null) {
+  const inicio = INICIO_POR_ROL[rol];
+  if (!from || from === "/" || !from.startsWith("/")) return inicio;
+  const moduloUnico = rol === "REPARTIDOR" || rol === "VENDEDOR";
+  return !moduloUnico || from.startsWith(inicio) ? from : inicio;
+}
+
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const {
@@ -35,14 +47,17 @@ export function LoginForm() {
 
   async function onSubmit(values: LoginValues) {
     setError(null);
+    let usuario: Usuario;
     try {
-      await apiPost<Usuario>("/auth/login", values);
-      const destino = searchParams.get("from") || "/";
-      router.push(destino);
-      router.refresh();
+      usuario = await apiPost<Usuario>("/auth/login", values);
     } catch {
       setError("Correo o contraseña incorrectos.");
+      return;
     }
+    // Carga completa, no router.push: la sesión recién creada tiene que
+    // llegar al layout del dashboard desde la primera request. Con push +
+    // refresh la navegación podía quedarse a medias hasta recargar con F5.
+    window.location.assign(destinoTrasLogin(usuario.rol, searchParams.get("from")));
   }
 
   return (

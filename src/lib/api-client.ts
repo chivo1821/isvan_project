@@ -90,6 +90,27 @@ export async function apiPostForm<T>(path: string, formData: FormData): Promise<
   return handle<T>(res, path);
 }
 
+export async function apiDelete<T = void>(path: string): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: await cookieHeader(),
+    cache: "no-store",
+  });
+  return handle<T>(res, path);
+}
+
+export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(await cookieHeader()) },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  return handle<T>(res, path);
+}
+
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "PATCH",

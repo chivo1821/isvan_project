@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
@@ -275,6 +275,43 @@ def _mapear_columnas(fila_encabezados: tuple) -> dict[str, int]:
     if "peso_unitario_kg" not in mapa and "litros" not in mapa:
         raise HTTPException(400, "Faltan columnas obligatorias en el Excel: peso_unitario_kg o litros")
     return mapa
+
+
+@router.get("/importar/plantilla")
+def descargar_plantilla_despachos():
+    """Plantilla con los encabezados del extracto de ventas que reconoce el
+    importador (ver ALIAS_COLUMNAS) y un documento de ejemplo con dos
+    productos, para armar el archivo sin tener que recordar el formato."""
+    libro = openpyxl.Workbook()
+    hoja = libro.active
+    hoja.title = "Despachos"
+    hoja.append(["ruta", "codigo cliente", "cliente", "num docum", "producto", "unidades", "litros"])
+    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "1237", "TIO RICO MANTECADO 1X3.6L", 2, 7.2])
+    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "1237", "MAGNUM ALMENDRAS 18X90ML", 18, 1.62])
+    for columna in hoja.columns:
+        letra = columna[0].column_letter
+        ancho = max(len(str(c.value)) for c in columna if c.value is not None)
+        hoja.column_dimensions[letra].width = max(10, ancho + 2)
+
+    notas = libro.create_sheet("Instrucciones")
+    for linea in [
+        ["Cada fila es un producto; las filas con el mismo «num docum» forman un despacho."],
+        ["Obligatorias: codigo cliente, num docum, producto, unidades y litros."],
+        ["«codigo cliente» tiene que existir en Clientes, en la empresa que elijas al importar."],
+        ["«litros» es el total de la fila y se toma como kilos (1 litro = 1 kg)."],
+        ["«ruta» es opcional: la ruta comercial del cliente. «cliente» es solo de referencia."],
+        ["Las filas con unidades en 0 o negativas (devoluciones) se ignoran."],
+    ]:
+        notas.append(linea)
+    notas.column_dimensions["A"].width = 90
+
+    buffer = io.BytesIO()
+    libro.save(buffer)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="plantilla_despachos.xlsx"'},
+    )
 
 
 @router.post(

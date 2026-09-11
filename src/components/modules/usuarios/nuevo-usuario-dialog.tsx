@@ -31,12 +31,12 @@ import { ROL_USUARIO_META, TIPO_VEHICULO_META } from "@/lib/constants";
 import type { Usuario, Vehiculo } from "@/lib/mock-data";
 import type { RolUsuario } from "@prisma/client";
 
-const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR"];
+const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"];
 
 const usuarioSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   email: z.email("Ingresa un email válido"),
-  rol: z.enum(["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR"], {
+  rol: z.enum(["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"], {
     error: "Selecciona un rol",
   }),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
@@ -174,6 +174,13 @@ export function NuevoUsuarioDialog({
                   Solo verá la ruta activa de este vehículo. Se puede asignar después desde la lista.
                 </p>
               </div>
+            )}
+
+            {rolElegido === "VENDEDOR" && (
+              <p className="text-xs text-muted-foreground">
+                Solo verá los despachos y los clientes de sus rutas de venta. Asígnaselas después desde la lista, con
+                el botón «Rutas».
+              </p>
             )}
           </div>
 

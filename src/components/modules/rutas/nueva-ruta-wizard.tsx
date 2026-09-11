@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangleIcon, PackageSearchIcon, RouteIcon, SparklesIcon } from "lucide-react";
+import { AlertTriangleIcon, PackageSearchIcon, RouteIcon, SparklesIcon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
@@ -55,6 +55,21 @@ function pesoTotal(despacho: Despacho) {
 
 function formatKg(kg: number) {
   return `${kg.toLocaleString("es-VE", { maximumFractionDigits: 0 })} kg`;
+}
+
+/** Quién manejaría el viaje: al elegir entre sugerencias el coordinador
+ * también decide con qué chofer sale. */
+function ChoferDelVehiculo({ conductor }: { conductor?: string | null }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm">
+      <UserIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      {conductor ? (
+        <span className="text-foreground">{conductor}</span>
+      ) : (
+        <span className="text-warning">Sin chofer asignado</span>
+      )}
+    </p>
+  );
 }
 
 export function NuevaRutaWizard({
@@ -243,6 +258,7 @@ export function NuevaRutaWizard({
                             {s.paradas} parada(s) · {formatKg(s.pesoKg)} ({s.usoCapacidadPct}% de{" "}
                             {formatKg(s.vehiculo.capacidadKg)})
                           </p>
+                          <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
                           <p className="text-sm text-muted-foreground">
                             ~{s.distanciaKmEstimada.toLocaleString("es-VE")} km · ~{s.tiempoMinEstimado} min
                             {s.costoEstimado != null &&
@@ -366,6 +382,7 @@ export function NuevaRutaWizard({
                           {TIPO_VEHICULO_META[s.vehiculo.tipo].label}
                         </span>
                       </div>
+                      <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
                       <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                         {s.motivos.map((motivo) => (
                           <li key={motivo}>✓ {motivo}</li>
