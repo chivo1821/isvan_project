@@ -104,7 +104,7 @@ export function VehiculosTable({
                     )}
                   </TableCell>
                   <TableCell>{almacen?.nombre ?? "—"}</TableCell>
-                  <TableCell>{vehiculo.conductorNombre ?? "—"}</TableCell>
+                  <TableCell>{vehiculo.conductor ?? <span className="text-muted-foreground">Sin chofer</span>}</TableCell>
                   <TableCell>
                     {puedeEditar ? (
                       <Select value={estado} onValueChange={(v) => cambiarEstado(vehiculo, v as EstadoVehiculo)}>

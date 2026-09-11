@@ -42,7 +42,7 @@ export default async function VehiculoDetallePage({ params }: PageProps<"/flota/
             <Attr label="Capacidad" value={`${vehiculo.capacidadKg.toLocaleString("es-VE")} kg`} />
             <Attr label="Cadena de frío" value={vehiculo.tieneRefrigeracion ? "Refrigerado" : "Sin refrigeración"} />
             <Attr label="Almacén base" value={almacenBase?.nombre ?? "—"} />
-            <Attr label="Conductor" value={vehiculo.conductorNombre ?? "Sin asignar"} />
+            <Attr label="Chofer" value={vehiculo.conductor ?? "Sin asignar"} />
             <Attr
               label="Última revisión"
               value={vehiculo.ultimaRevision ? formatDate(vehiculo.ultimaRevision) : "—"}

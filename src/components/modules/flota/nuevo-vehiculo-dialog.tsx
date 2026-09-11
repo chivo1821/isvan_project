@@ -39,7 +39,6 @@ const vehiculoSchema = z.object({
   tipo: z.enum(["CAMION_REFRIGERADO", "CAMIONETA", "MOTO"], { error: "Selecciona un tipo" }),
   capacidadKg: z.number({ error: "Ingresa la capacidad en kg" }).positive("Debe ser mayor a 0"),
   tieneRefrigeracion: z.boolean(),
-  conductorNombre: z.string().optional(),
 });
 
 type VehiculoFormValues = z.infer<typeof vehiculoSchema>;
@@ -65,7 +64,6 @@ export function NuevoVehiculoDialog({
       tipo: undefined,
       capacidadKg: undefined,
       tieneRefrigeracion: true,
-      conductorNombre: "",
     },
   });
 
@@ -76,7 +74,6 @@ export function NuevoVehiculoDialog({
         tipo: values.tipo,
         capacidadKg: values.capacidadKg,
         tieneRefrigeracion: values.tieneRefrigeracion,
-        conductorNombre: values.conductorNombre?.trim() || undefined,
       });
       onAdd(vehiculo);
       toast.success(`Vehículo ${vehiculo.placa} agregado`);
@@ -152,10 +149,9 @@ export function NuevoVehiculoDialog({
               {errors.capacidadKg && <p className="text-xs text-destructive">{errors.capacidadKg.message}</p>}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="conductorNombre">Conductor (opcional)</Label>
-              <Input id="conductorNombre" placeholder="Nombre del conductor" {...register("conductorNombre")} />
-            </div>
+            {/* El chofer ya no se escribe a mano: es el usuario repartidor al
+                que se le asigna el vehículo (Vehículos › Choferes). */}
+            <p className="text-xs text-muted-foreground">El chofer se asigna después, en Vehículos › Choferes.</p>
 
             <Controller
               control={control}

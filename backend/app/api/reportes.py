@@ -20,6 +20,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.core.auth import requiere_rol
+from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import ResumenRendimiento
@@ -75,12 +76,9 @@ def _minutos(desde, hasta) -> float | None:
     return round((hasta - desde).total_seconds() / 60, 1)
 
 
-# El conductor de un viaje es el usuario REPARTIDOR que tiene ese vehiculo
-# asignado; si no hay ninguno, el nombre suelto de la ficha del vehiculo.
-_CONDUCTOR = 'COALESCE(u."nombre", v."conductorNombre")'
-_JOIN_CONDUCTOR = (
-    'LEFT JOIN "Usuario" u ON u."vehiculoAsignadoId" = v."id" AND u."rol" = \'REPARTIDOR\''
-)
+# El conductor de un viaje es el chofer de su vehiculo (ver
+# app/core/conductor.py; la consulta tiene que tener el vehiculo como `v`).
+_CONDUCTOR = CONDUCTOR_DEL_VEHICULO
 
 
 @router.get("/clientes.xlsx")
@@ -126,9 +124,7 @@ def reporte_despachos():
             'JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
             'JOIN "Usuario" usr ON usr."id" = d."creadoPorId" '
             'LEFT JOIN "Ruta" r ON r."id" = d."rutaId" '
-            'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
-            f'{_JOIN_CONDUCTOR} '
-            'ORDER BY d."fechaCreacion" DESC, d."numero"',
+            'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '            'ORDER BY d."fechaCreacion" DESC, d."numero"',
             (),
         )
         despachos = cur.fetchall()
@@ -208,9 +204,7 @@ def reporte_rutas():
             'usr."nombre" AS "creadoPor" '
             'FROM "Ruta" r '
             'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
-            'JOIN "Usuario" usr ON usr."id" = r."creadoPorId" '
-            f'{_JOIN_CONDUCTOR} '
-            'ORDER BY r."fechaCreacion" DESC'
+            'JOIN "Usuario" usr ON usr."id" = r."creadoPorId" '            'ORDER BY r."fechaCreacion" DESC'
         )
         rutas = cur.fetchall()
 
@@ -315,11 +309,11 @@ def resumen_rendimiento():
             '       COUNT(d."id") FILTER (WHERE d."entregadoEn" IS NOT NULL) AS "entregas", '
             '       COALESCE(SUM(DISTINCT r."distanciaTotalKm"), 0) AS "km" '
             'FROM "Ruta" r '
-            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
-            f'{_JOIN_CONDUCTOR} '
-            'LEFT JOIN "Despacho" d ON d."rutaId" = r."id" '
+            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '            'LEFT JOIN "Despacho" d ON d."rutaId" = r."id" '
             'WHERE r."fechaCreacion" >= now() - %s::interval '
-            f'GROUP BY {_CONDUCTOR}, v."placa" '
+            # Por vehiculo: el chofer es una subconsulta sobre v."id", asi
+            # que el id tiene que estar en el GROUP BY.
+            'GROUP BY v."id", v."placa", v."conductorNombre" '
             'ORDER BY "entregas" DESC',
             (f"{DIAS_DE_RENDIMIENTO} days",),
         )

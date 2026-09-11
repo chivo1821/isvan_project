@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangleIcon, CheckCircle2Icon, UploadIcon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, DownloadIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
+import { API_URL, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
 import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,14 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
       helpText='Cada fila del Excel es un producto. El número de documento (factura/nota de entrega) agrupa las filas en un despacho por cliente — no el código de cliente, que se repite cuando un pedido tiene varios productos. Si el archivo trae la columna «ruta», esa ruta comercial se guarda en la ficha del cliente y se usa después para sugerir cómo armar los viajes.'
     >
       <div className="space-y-4">
+        <a
+          href={`${API_URL}/despachos/importar/plantilla`}
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
+        >
+          <DownloadIcon className="size-3.5" />
+          Descargar plantilla (.xlsx)
+        </a>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="empresa">¿De qué empresa son estos despachos?</Label>

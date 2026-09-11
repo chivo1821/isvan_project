@@ -26,6 +26,11 @@ const SEGMENT_LABELS: Record<string, string> = {
   seguimiento: "Seguimiento",
   despachador: "Despachador",
   usuarios: "Usuarios",
+  indicadores: "Indicadores de venta",
+  cargas: "Cargas",
+  choferes: "Choferes",
+  vendedor: "Mis despachos",
+  visitas: "Visitas",
 };
 
 function labelForSegment(segment: string) {
@@ -41,7 +46,9 @@ export function Topbar({
   const segments = pathname.split("/").filter(Boolean);
   // Solo ADMIN tiene "Inicio": para los demás roles el enlace a "/" los
   // devolvería a su propio módulo (ver (dashboard)/layout.tsx).
-  const esRepartidor = user.rol === "REPARTIDOR";
+  // Repartidor y vendedor tienen un solo módulo, que ya es la raíz de la
+  // miga: su primer segmento no se repite.
+  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR";
   const raiz =
     user.rol === "ADMIN"
       ? { href: "/", label: "Inicio" }
@@ -59,8 +66,8 @@ export function Topbar({
                 <Link href={raiz.href}>{raiz.label}</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
-            {(esRepartidor ? segments.slice(1) : segments).map((segment, index) => {
-              const desplazamiento = esRepartidor ? 1 : 0;
+            {(moduloUnico ? segments.slice(1) : segments).map((segment, index) => {
+              const desplazamiento = moduloUnico ? 1 : 0;
               const href = `/${segments.slice(0, index + 1 + desplazamiento).join("/")}`;
               const isLast = index + desplazamiento === segments.length - 1;
               return (

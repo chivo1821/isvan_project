@@ -52,6 +52,9 @@ export type Vehiculo = {
   ultimaRevision?: string | null;
   /** Costo operativo por km (USD) para estimar el costo de una ruta sugerida. */
   costoPorKm?: number | null;
+  /** Quién lo maneja hoy: el repartidor que lo tiene asignado o, en datos
+   * viejos, el nombre escrito en la ficha (ver backend/app/core/conductor.py). */
+  conductor?: string | null;
 };
 
 // El mismo codigo puede referirse a clientes distintos segun la empresa
@@ -145,6 +148,12 @@ export type Ruta = {
   fechaCreacion: string;
   distanciaTotalKm?: number | null;
   tiempoTotalMin?: number | null;
+  /** Reverso hecho por un ADMIN (ver backend POST /rutas/{id}/reversar). */
+  canceladaEn?: string | null;
+  canceladaPorId?: string | null;
+  motivoCancelacion?: string | null;
+  /** Números de los despachos que llevaba al reversarla (ya liberados). */
+  despachosAlCancelar?: string[] | null;
   despachos: Despacho[];
   puntos: RutaPunto[];
 };

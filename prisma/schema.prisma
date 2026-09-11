@@ -21,6 +21,7 @@ enum RolUsuario {
   DESPACHOS
   APROBADOR
   REPARTIDOR
+  VENDEDOR // ve los despachos de sus rutas de venta y registra sus visitas
 }
 
 enum Empresa {
@@ -63,6 +64,17 @@ enum EstadoVehiculo {
   FUERA_DE_SERVICIO
 }
 
+enum EstadoCargaVenta {
+  PENDIENTE // analizada, esperando que el ADMIN la confirme
+  CONFIRMADA // cuenta en los indicadores
+  REVERTIDA // deshecha; queda solo como registro
+}
+
+enum TipoMovimientoVenta {
+  VENTA // FA (factura) y NE (nota de entrega)
+  DEVOLUCION // DV y DN, con montos negativos
+}
+
 // ---------- Usuarios / autenticacion ----------
 
 model Usuario {
@@ -85,8 +97,13 @@ model Usuario {
 
   despachosCreados     Despacho[]           @relation("DespachosCreadosPor")
   aprobacionesDespacho DespachoAprobacion[]
-  rutasCreadas         Ruta[]
+  rutasCreadas         Ruta[]               @relation("RutasCreadas")
+  rutasCanceladas      Ruta[]               @relation("RutasCanceladas")
   sesiones             Sesion[]
+  cargasVenta          VentaCarga[]
+  // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
+  rutasVenta           VendedorRuta[]
+  visitas              Visita[]
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
@@ -248,7 +265,7 @@ model Ruta {
   origenId         String
   origen           Almacen    @relation(fields: [origenId], references: [id])
   creadoPorId      String
-  creadoPor        Usuario    @relation(fields: [creadoPorId], references: [id])
+  creadoPor        Usuario    @relation("RutasCreadas", fields: [creadoPorId], references: [id])
   estado           EstadoRuta @default(PLANIFICADA)
   fechaCreacion    DateTime   @default(now())
   // Cuando el vehiculo salio del almacen y cuando se entrego la ultima
@@ -259,6 +276,16 @@ model Ruta {
   completadaEn     DateTime?
   distanciaTotalKm Float?
   tiempoTotalMin   Int?
+
+  // Reverso (solo ADMIN, ver POST /rutas/{id}/reversar): la ruta queda
+  // CANCELADA y sus despachos vuelven a "Aprobado" sin ruta. Como al
+  // liberarlos se pierde Despacho.rutaId, los numeros que llevaba se
+  // guardan aca para que el historial siga diciendo que tenia.
+  canceladaEn         DateTime?
+  canceladaPorId      String?
+  canceladaPor        Usuario?  @relation("RutasCanceladas", fields: [canceladaPorId], references: [id])
+  motivoCancelacion   String?
+  despachosAlCancelar Json?
 
   despachos Despacho[]
   puntos    RutaPunto[]
@@ -280,4 +307,148 @@ model RutaPunto {
   descripcion      String?
   paradaDespachoId String?
   paradaDespacho   Despacho? @relation(fields: [paradaDespachoId], references: [id])
+}
+
+// ---------- Vendedores ----------
+
+// Rutas de venta (las del sistema de ventas: R1..R8, 10, 11, 12, 77) de un
+// usuario VENDEDOR. Sus clientes son los VentaCliente de esas rutas, y de ahi
+// salen los despachos que puede ver y los clientes que tiene que visitar.
+model VendedorRuta {
+  id        String  @id @default(cuid())
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresa   Empresa
+  ruta      String
+
+  @@unique([usuarioId, empresa, ruta])
+  @@index([empresa, ruta])
+}
+
+// Una visita del vendedor a un cliente. El estatus de la semana sale de
+// aca: sin visita -> por visitar; con llegada y sin salida -> en el
+// cliente; con salida -> atendido. Cada semana (ISO, hora de Caracas)
+// empieza de cero sin borrar nada: basta con filtrar por `semana`.
+model Visita {
+  id                String    @id @default(cuid())
+  vendedorId        String
+  vendedor          Usuario   @relation(fields: [vendedorId], references: [id])
+  empresa           Empresa
+  codigoCliente     String // codigo del sistema de ventas (VentaCliente.codigo)
+  semana            DateTime  @db.Date // lunes de la semana ISO de la llegada
+  // La unica toma de GPS de la visita: al empezar la encuesta.
+  llegadaEn         DateTime
+  llegadaLat        Float?
+  llegadaLng        Float?
+  llegadaPrecisionM Float?
+  // Distancia entre ese punto y el cliente (si esta en el maestro de
+  // logistica con coordenadas): lo que dice si de verdad fue.
+  distanciaClienteM Float?
+  salidaEn          DateTime?
+  observaciones     String?
+
+  @@index([vendedorId, semana])
+  @@index([empresa, codigoCliente])
+}
+
+// ---------- Indicadores de venta ----------
+//
+// Modulo aparte de la operacion logistica: el extracto de ventas de cada
+// empresa se sube por carga (mensual o diaria) y de ahi salen los
+// indicadores (ver backend/app/services/indicadores_venta.py). Todo va por
+// empresa: ISVAN y TRALOG tienen carteras y catalogos distintos.
+
+// Un archivo subido. Se analiza primero (PENDIENTE, sus filas ya quedan en
+// Venta pero no cuentan) y el ADMIN lo confirma despues de ver la
+// validacion. Revertirla la saca de los indicadores sin perder el registro.
+model VentaCarga {
+  id           String           @id @default(cuid())
+  empresa      Empresa
+  archivo      String
+  periodoDesde DateTime         @db.Date
+  periodoHasta DateTime         @db.Date
+  filas        Int
+  estado       EstadoCargaVenta @default(PENDIENTE)
+  subidaEn     DateTime         @default(now())
+  subidaPorId  String
+  subidaPor    Usuario          @relation(fields: [subidaPorId], references: [id])
+  confirmadaEn DateTime?
+  revertidaEn  DateTime?
+  // La validacion que se le mostro al ADMIN antes de confirmar, para poder
+  // revisarla despues desde el historial.
+  resumen      Json
+  // Clientes y productos tal como vienen en el archivo. Se aplican a
+  // VentaCliente/VentaProducto recien al confirmar: una carga pendiente no
+  // debe tocar los datos que ya se usan.
+  dimensiones  Json
+
+  ventas Venta[] @relation("VentasDeLaCarga")
+
+  @@index([empresa, estado])
+}
+
+// Cliente segun el sistema de ventas (dim_cliente). No es el Cliente de
+// logistica: el extracto trae clientes que no estan en el maestro de
+// despacho; el cruce entre ambos es por (empresa, codigo).
+model VentaCliente {
+  id          String  @id @default(cuid())
+  empresa     Empresa
+  codigo      String
+  nombre      String
+  tipo        String // TRADICIONAL | MODERNO | DISTRIBUIDORES
+  // Texto, no numero: conviven los formatos "R1".."R8" y "10", "11", "77".
+  ruta        String
+  listaPrecio String?
+
+  @@unique([empresa, codigo])
+  @@index([empresa, ruta])
+}
+
+// Producto segun el sistema de ventas (dim_producto). El costo es por CAJA
+// (columna "Pc" de la hoja "precio de compras"), nunca por unidad.
+model VentaProducto {
+  id              String   @id @default(cuid())
+  empresa         Empresa
+  codigo          BigInt
+  nombre          String
+  grupo           String
+  codigoProveedor String?
+  unidadesPorCaja Int?
+  litrosPorUnidad Decimal? @db.Decimal(12, 4)
+  costoCajaUsd    Decimal? @db.Decimal(14, 4)
+
+  @@unique([empresa, codigo])
+  @@index([empresa, grupo])
+}
+
+// Una fila del extracto: un producto dentro de un documento.
+model Venta {
+  id                    BigInt              @id @default(autoincrement())
+  empresa               Empresa
+  cargaId               String
+  carga                 VentaCarga          @relation("VentasDeLaCarga", fields: [cargaId], references: [id], onDelete: Cascade)
+  // Si una carga posterior cubre la misma fecha, esta fila deja de contar
+  // (el archivo nuevo manda en su periodo). Revertir esa carga la restaura.
+  reemplazadaPorCargaId String?
+  fecha                 DateTime            @db.Date
+  numDoc                String
+  codTipoDoc            String
+  tipoMovimiento        TipoMovimientoVenta
+  codigoCliente         String
+  codigoProducto        BigInt
+  // Decimales de sobra a proposito: ~5% de las filas trae cajas
+  // fraccionarias (12 unidades de una caja de 36 = 0.3333333333) y el costo
+  // es cajas x costo por caja; con 4 decimales los totales ya no cuadran al
+  // centavo con los del sistema de ventas.
+  cajas                 Decimal             @db.Decimal(20, 10)
+  unidades              Int
+  litros                Decimal             @db.Decimal(18, 6)
+  montoBs               Decimal             @db.Decimal(20, 4)
+  montoUsd              Decimal             @db.Decimal(20, 10)
+
+  @@index([empresa, fecha])
+  @@index([empresa, codigoCliente])
+  @@index([empresa, codigoProducto])
+  @@index([cargaId])
+  @@index([reemplazadaPorCargaId])
 }

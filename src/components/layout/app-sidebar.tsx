@@ -1,14 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
   Building2Icon,
+  ChevronRightIcon,
   ClipboardCheckIcon,
   IceCreamConeIcon,
   LayoutDashboardIcon,
+  MapPinCheckIcon,
   MapPinnedIcon,
   NavigationIcon,
+  PackageIcon,
   RouteIcon,
   TruckIcon,
   UsersIcon,
@@ -21,6 +26,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -37,6 +43,9 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   children?: NavLeaf[];
   roles?: RolUsuario[];
+  /** Activo solo en su ruta exacta, no en las que cuelgan de ella
+   * (/vendedor no debe marcarse cuando se está en /vendedor/visitas). */
+  exacto?: boolean;
 };
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -46,6 +55,15 @@ type NavGroup = { label: string; items: NavItem[] };
 const ROLES_OPERACION: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR"];
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    // Único módulo de un VENDEDOR (ver (dashboard)/layout.tsx y
+    // backend/app/api/vendedor.py).
+    label: "Ventas",
+    items: [
+      { label: "Mis despachos", href: "/vendedor", icon: PackageIcon, roles: ["VENDEDOR"], exacto: true },
+      { label: "Visitas", href: "/vendedor/visitas", icon: MapPinCheckIcon, roles: ["VENDEDOR"] },
+    ],
+  },
   {
     label: "Rutas y despachos",
     items: [
@@ -76,7 +94,16 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Clientes y flota",
     items: [
       { label: "Clientes", href: "/clientes", icon: Building2Icon, roles: ROLES_OPERACION },
-      { label: "Vehículos", href: "/flota", icon: ClipboardCheckIcon, roles: ROLES_OPERACION },
+      {
+        label: "Vehículos",
+        href: "/flota",
+        icon: ClipboardCheckIcon,
+        roles: ROLES_OPERACION,
+        children: [
+          { label: "Todos los vehículos", href: "/flota" },
+          { label: "Choferes", href: "/flota/choferes" },
+        ],
+      },
     ],
   },
   {
@@ -92,9 +119,55 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// Pantallas del bloque "Inicio", solo para ADMIN (la regla de verdad está
+// en (dashboard)/layout.tsx y en la API).
+const INICIO_HIJOS: NavLeaf[] = [
+  { label: "Resumen", href: "/" },
+  { label: "Indicadores de venta", href: "/indicadores" },
+];
+
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** "Inicio" desplegable: el enlace lleva al resumen y la flecha abre o
+ * cierra sus pantallas. */
+function InicioAdmin({ pathname }: { pathname: string }) {
+  const [abierto, setAbierto] = useState(true);
+  const activo = INICIO_HIJOS.some((hijo) => isActive(pathname, hijo.href));
+
+  return (
+    <CollapsiblePrimitive.Root open={abierto} onOpenChange={setAbierto} asChild>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={activo} tooltip="Inicio">
+          <Link href="/">
+            <LayoutDashboardIcon />
+            <span>Inicio</span>
+          </Link>
+        </SidebarMenuButton>
+        <CollapsiblePrimitive.Trigger asChild>
+          <SidebarMenuAction
+            className="transition-transform data-[state=open]:rotate-90"
+            aria-label={abierto ? "Cerrar Inicio" : "Abrir Inicio"}
+          >
+            <ChevronRightIcon />
+          </SidebarMenuAction>
+        </CollapsiblePrimitive.Trigger>
+        <CollapsiblePrimitive.Content>
+          <SidebarMenuSub>
+            {INICIO_HIJOS.map((hijo) => (
+              <SidebarMenuSubItem key={hijo.href}>
+                <SidebarMenuSubButton asChild isActive={isActive(pathname, hijo.href)}>
+                  <Link href={hijo.href}>{hijo.label}</Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsiblePrimitive.Content>
+      </SidebarMenuItem>
+    </CollapsiblePrimitive.Root>
+  );
 }
 
 function puedeVer(roles: RolUsuario[] | undefined, rol: RolUsuario) {
@@ -140,14 +213,7 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname === "/"} tooltip="Inicio">
-                    <Link href="/">
-                      <LayoutDashboardIcon />
-                      <span>Inicio</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <InicioAdmin pathname={pathname} />
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -159,7 +225,7 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const active = isActive(pathname, item.href);
+                  const active = item.exacto ? pathname === item.href : isActive(pathname, item.href);
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={active} tooltip={item.label}>

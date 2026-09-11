@@ -11,7 +11,7 @@ serializa los campos declarados en el modelo, asi que nunca sale en el JSON.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -42,6 +42,117 @@ class UsuarioCreate(BaseModel):
 class AsignarVehiculoRequest(BaseModel):
     # None = quitarle el vehiculo asignado.
     vehiculoAsignadoId: Optional[str] = None
+
+
+class RutaVenta(BaseModel):
+    """Una ruta del sistema de ventas (R1..R8, 10, 11...) dentro de su
+    empresa: los codigos se repiten entre ISVAN y TRALOG."""
+
+    empresa: Literal["ISVAN", "TRALOG"]
+    ruta: str
+
+
+class AsignarRutasVentaRequest(BaseModel):
+    # Reemplaza todas las rutas del vendedor; lista vacia = quitarselas.
+    rutas: list[RutaVenta]
+
+
+# ---------- Vendedores (ver app/api/vendedor.py) ----------
+
+
+class DespachoVendedor(BaseModel):
+    """Un despacho visto por el vendedor: solo lectura, lo justo para saber
+    si ya salio y si ya llego al cliente."""
+
+    id: str
+    numero: str
+    numeroDocumento: str
+    estado: str
+    fechaCreacion: datetime
+    llegadaEn: Optional[datetime] = None
+    entregadoEn: Optional[datetime] = None
+    rutaNumero: Optional[str] = None
+    rutaEstado: Optional[str] = None
+    empresa: str
+    clienteCodigo: str
+    clienteNombre: str
+    rutaVenta: str
+
+
+class DespachosVendedor(BaseModel):
+    # Sus rutas: vacia = todavia no se le asigno ninguna (y no ve nada).
+    rutas: list[RutaVenta]
+    despachos: list[DespachoVendedor]
+
+
+class Visita(BaseModel):
+    id: str
+    empresa: str
+    codigoCliente: str
+    semana: date
+    llegadaEn: datetime
+    llegadaLat: Optional[float] = None
+    llegadaLng: Optional[float] = None
+    llegadaPrecisionM: Optional[float] = None
+    distanciaClienteM: Optional[float] = None
+    salidaEn: Optional[datetime] = None
+    observaciones: Optional[str] = None
+
+
+class ClienteDeLaSemana(BaseModel):
+    empresa: str
+    codigo: str
+    nombre: str
+    ruta: str
+    # Coordenadas del maestro de logistica, si el cliente esta ahi y las
+    # tiene validas: sin ellas no sale en el mapa ni se mide la distancia.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    estatus: Literal["por_visitar", "en_cliente", "atendido"]
+    visitas: list[Visita] = []
+
+
+class VisitasSemana(BaseModel):
+    semana: date
+    rutas: list[RutaVenta]
+    clientes: list[ClienteDeLaSemana]
+    visitaAbierta: Optional[Visita] = None
+
+
+class IniciarVisitaRequest(BaseModel):
+    empresa: Literal["ISVAN", "TRALOG"]
+    codigoCliente: str
+    lat: float
+    lng: float
+    precisionM: Optional[float] = None
+
+
+class TerminarVisitaRequest(BaseModel):
+    observaciones: Optional[str] = None
+
+
+class RendimientoVendedor(BaseModel):
+    vendedorId: str
+    nombre: str
+    rutas: list[str]
+    clientesAsignados: int
+    clientesAtendidos: int
+    coberturaPct: Optional[float] = None
+    visitas: int
+    promedioMinEnCliente: Optional[float] = None
+    # Visitas cuya llegada quedo lejos del cliente (ver
+    # vendedor.DISTANCIA_MAX_AL_CLIENTE_M): senal de que no fue en persona.
+    visitasLejos: int
+    ultimaVisita: Optional[datetime] = None
+    # Venta neta (USD) del mes de sus rutas, del modulo de indicadores.
+    ventaNetaMes: Optional[float] = None
+
+
+class RendimientoVendedores(BaseModel):
+    semana: date
+    mesVenta: Optional[date] = None
+    distanciaMaxM: int
+    porVendedor: list[RendimientoVendedor]
 
 
 class LoginRequest(BaseModel):
@@ -83,6 +194,9 @@ class Vehiculo(BaseModel):
     conductorNombre: Optional[str] = None
     ultimaRevision: Optional[datetime] = None
     costoPorKm: Optional[float] = None
+    # Quien lo maneja hoy (ver app/core/conductor.py). Solo lectura: se
+    # cambia asignandole el vehiculo a un usuario repartidor.
+    conductor: Optional[str] = None
 
 
 class VehiculoCreate(BaseModel):
@@ -296,8 +410,18 @@ class Ruta(BaseModel):
     completadaEn: Optional[datetime] = None
     distanciaTotalKm: Optional[float] = None
     tiempoTotalMin: Optional[int] = None
+    # Reverso (ver POST /rutas/{id}/reversar): quien, cuando, por que y que
+    # despachos llevaba la ruta antes de liberarlos.
+    canceladaEn: Optional[datetime] = None
+    canceladaPorId: Optional[str] = None
+    motivoCancelacion: Optional[str] = None
+    despachosAlCancelar: Optional[list[str]] = None
     despachos: list[Despacho] = []
     puntos: list[RutaPunto] = []
+
+
+class ReversarRutaRequest(BaseModel):
+    motivo: str
 
 
 class RutaCreate(BaseModel):
