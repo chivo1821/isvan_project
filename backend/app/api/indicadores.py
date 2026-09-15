@@ -66,11 +66,12 @@ def _filtros(
     tipo_cliente: list[str] = Query(default=[]),
     cliente: list[str] = Query(default=[]),
     producto: list[int] = Query(default=[]),
+    tipo_documento: list[str] = Query(default=[]),
 ) -> iv.Filtros:
     _validar_empresa(empresa)
     if desde > hasta:
         raise HTTPException(400, "La fecha desde no puede ser posterior a la fecha hasta")
-    return iv.Filtros(empresa, desde, hasta, ruta, grupo, tipo_cliente, cliente, producto)
+    return iv.Filtros(empresa, desde, hasta, ruta, grupo, tipo_cliente, cliente, producto, tipo_documento)
 
 
 # Compartido con app/api/vendedor.py.
@@ -104,12 +105,18 @@ def opciones(empresa: str):
         )
         productos = cur.fetchall()
         cur.execute(
-            'SELECT MIN(v."fecha") AS "desde", MAX(v."fecha") AS "hasta" '
+            'SELECT MIN(v."fecha") AS "desde", MAX(v."fecha") AS "hasta", '
+            'ARRAY_AGG(DISTINCT v."codTipoDoc") AS "tiposDocumento" '
             'FROM "Venta" v JOIN "VentaCarga" c ON c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' '
             'WHERE v."empresa" = %s AND v."reemplazadaPorCargaId" IS NULL',
             (empresa,),
         )
         rango = cur.fetchone()
+        # Facturas y notas de entrega primero; despues las devoluciones.
+        orden_doc = {"FA": 0, "NE": 1, "DV": 2, "DN": 3}
+        tipos_documento = sorted(
+            (t for t in rango["tiposDocumento"] or [] if t), key=lambda t: (orden_doc.get(t, 9), t)
+        )
         cur.execute(
             "SELECT COUNT(*) FILTER (WHERE \"estado\" = 'CONFIRMADA') AS \"confirmadas\", "
             "COUNT(*) FILTER (WHERE \"estado\" = 'PENDIENTE') AS \"pendientes\" "
@@ -121,6 +128,7 @@ def opciones(empresa: str):
         "rutas": rutas,
         "grupos": grupos,
         "tiposCliente": tipos,
+        "tiposDocumento": tipos_documento,
         "clientes": clientes,
         "productos": productos,
         "fechaMin": rango["desde"],
@@ -147,6 +155,8 @@ def tablero(f: iv.Filtros = Depends(_filtros)):
             "alertas": _alertas(cur, f),
             "mapa": _mapa(cur, f),
             "brechas": _brechas(cur, f),
+            "activacion": iv.activacion(cur, f),
+            "opcionesDisponibles": iv.opciones_disponibles(cur, f),
         }
 
 
@@ -276,6 +286,42 @@ def _brechas(cur, f: iv.Filtros) -> dict:
     }
 
 
+# ---------- Cobertura ----------
+
+
+@router.get("/cobertura")
+def cobertura(empresa: str):
+    """Que dias tienen ventas vigentes y de que carga viene cada uno: el
+    control de meses, semanas y dias que ya estan cargados."""
+    _validar_empresa(empresa)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT v."fecha", v."cargaId", COUNT(*) AS "filas", COALESCE(SUM(v."montoUsd"), 0) AS "ventaNeta", '
+            f'{iv.SUMAS["documentos"]} AS "documentos" '
+            f'{iv.FUENTE_VIGENTE} '
+            'WHERE v."empresa" = %s AND v."reemplazadaPorCargaId" IS NULL '
+            'GROUP BY v."fecha", v."cargaId" ORDER BY v."fecha"',
+            (empresa,),
+        )
+        dias = [
+            {
+                "fecha": d["fecha"],
+                "cargaId": d["cargaId"],
+                "filas": d["filas"],
+                "ventaNeta": float(d["ventaNeta"]),
+                "documentos": d["documentos"],
+            }
+            for d in cur.fetchall()
+        ]
+        cur.execute(
+            'SELECT "id", "archivo", "periodoDesde", "periodoHasta", "confirmadaEn" FROM "VentaCarga" '
+            'WHERE "empresa" = %s AND "estado" = \'CONFIRMADA\' ORDER BY "confirmadaEn"',
+            (empresa,),
+        )
+        cargas = cur.fetchall()
+    return {"dias": dias, "cargas": cargas}
+
+
 # ---------- Cargas ----------
 
 _SELECT_CARGA = (
@@ -324,14 +370,19 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
     costos_previos = {int(r["codigo"]): r["costoCajaUsd"] for r in cur.fetchall()}
     cur.execute('SELECT "codigo" FROM "Cliente" WHERE "empresa" = %s', (empresa,))
     en_logistica = {r["codigo"] for r in cur.fetchall()}
+    # Una carga reemplaza solo los DIAS que trae (ver confirmar_carga): un
+    # archivo de marzo a agosto con huecos no borra lo que ya estaba cargado
+    # en los dias que no trae.
+    dias = sorted({f.fecha for f in filas})
     cur.execute(
         'SELECT c."id", c."archivo", c."periodoDesde", c."periodoHasta", '
-        'COUNT(v."id") AS "filasReemplazadas", COALESCE(SUM(v."montoUsd"), 0) AS "ventaReemplazada" '
+        'COUNT(v."id") AS "filasReemplazadas", COALESCE(SUM(v."montoUsd"), 0) AS "ventaReemplazada", '
+        'COUNT(DISTINCT v."fecha") AS "diasReemplazados" '
         'FROM "VentaCarga" c JOIN "Venta" v ON v."cargaId" = c."id" '
         'WHERE c."empresa" = %(empresa)s AND c."estado" = \'CONFIRMADA\' '
-        '  AND v."reemplazadaPorCargaId" IS NULL AND v."fecha" BETWEEN %(desde)s AND %(hasta)s '
+        '  AND v."reemplazadaPorCargaId" IS NULL AND v."fecha" = ANY(%(dias)s) '
         'GROUP BY c."id" ORDER BY c."periodoDesde"',
-        {"empresa": empresa, "desde": desde, "hasta": hasta},
+        {"empresa": empresa, "dias": dias},
     )
     solapes = [
         {
@@ -341,9 +392,31 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
             "periodoHasta": s["periodoHasta"].isoformat(),
             "filasReemplazadas": s["filasReemplazadas"],
             "ventaReemplazada": float(s["ventaReemplazada"]),
+            "diasReemplazados": s["diasReemplazados"],
         }
         for s in cur.fetchall()
     ]
+    cur.execute(
+        f'SELECT v."fecha", COUNT(*) AS "filas", COALESCE(SUM(v."montoUsd"), 0) AS "ventaNeta", '
+        'MAX(c."archivo") AS "archivo", BOOL_OR(v."fecha" = ANY(%(dias)s)) AS "enArchivo" '
+        f'{iv.FUENTE_VIGENTE} '
+        'WHERE v."empresa" = %(empresa)s AND v."reemplazadaPorCargaId" IS NULL '
+        '  AND v."fecha" BETWEEN %(desde)s AND %(hasta)s '
+        'GROUP BY v."fecha" ORDER BY v."fecha"',
+        {"empresa": empresa, "dias": dias, "desde": desde, "hasta": hasta},
+    )
+    dias_cargados = cur.fetchall()
+    reemplazados = {d["fecha"] for d in dias_cargados if d["enArchivo"]}
+    conservados = [
+        {"fecha": d["fecha"].isoformat(), "filas": d["filas"], "ventaNeta": float(d["ventaNeta"]), "archivo": d["archivo"]}
+        for d in dias_cargados
+        if not d["enArchivo"]
+    ]
+    por_mes: dict[str, dict] = {}
+    for dia in dias:
+        mes = por_mes.setdefault(dia.strftime("%Y-%m"), {"mes": dia.strftime("%Y-%m"), "dias": 0, "diasNuevos": 0, "diasReemplazados": 0})
+        mes["dias"] += 1
+        mes["diasReemplazados" if dia in reemplazados else "diasNuevos"] += 1
 
     def costo_de(codigo: int) -> float | None:
         propio = extracto.productos[codigo]["costoCajaUsd"]
@@ -392,6 +465,8 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
 
     return {
         "hoja": extracto.hoja,
+        "conEncabezado": extracto.con_encabezado,
+        "columnas": extracto.columnas,
         "otrasHojasConFormato": extracto.otras_hojas_con_formato,
         "fuenteCosto": extracto.fuente_costo,
         "filasLeidas": len(filas),
@@ -408,9 +483,21 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
             "cajas": sum(f.cajas for f in filas),
             "unidades": sum(f.unidades for f in filas),
         },
-        "documentos": len({f.num_doc for f in filas}),
+        # Tipo + numero: cada tipo de documento lleva su propia numeracion.
+        "documentos": len({(f.cod_tipo_doc, f.num_doc) for f in filas}),
+        "facturas": len({f.num_doc for f in filas if f.cod_tipo_doc == "FA"}),
+        "notasEntrega": len({f.num_doc for f in filas if f.cod_tipo_doc == "NE"}),
         "clientes": len(extracto.clientes),
         "solapes": solapes,
+        "cobertura": {
+            "diasEnArchivo": len(dias),
+            "diasNuevos": len(dias) - len(reemplazados),
+            "diasReemplazados": len(reemplazados),
+            "meses": list(por_mes.values()),
+            # Dias dentro del periodo del archivo que ya tenian ventas y que el
+            # archivo no trae: se conservan tal cual.
+            "diasConservados": conservados,
+        },
         "clientesNuevos": {
             "total": len(clientes_nuevos),
             "muestra": [
@@ -536,11 +623,15 @@ def confirmar_carga(carga_id: str):
     periodo y actualiza clientes y productos con lo que trae el archivo."""
     with get_connection() as conn, conn.cursor() as cur:
         carga = _carga_para_actualizar(cur, carga_id, "PENDIENTE")
+        # El archivo nuevo manda en los DIAS que trae, no en todo su rango:
+        # si viene con huecos (marzo y agosto, sin abril a julio), lo que ya
+        # estaba cargado en esos dias se conserva.
         cur.execute(
             'UPDATE "Venta" v SET "reemplazadaPorCargaId" = %(id)s FROM "VentaCarga" c '
             'WHERE c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' AND v."empresa" = %(empresa)s '
-            '  AND v."reemplazadaPorCargaId" IS NULL AND v."fecha" BETWEEN %(desde)s AND %(hasta)s',
-            {"id": carga_id, "empresa": carga["empresa"], "desde": carga["periodoDesde"], "hasta": carga["periodoHasta"]},
+            '  AND v."reemplazadaPorCargaId" IS NULL '
+            '  AND v."fecha" IN (SELECT DISTINCT n."fecha" FROM "Venta" n WHERE n."cargaId" = %(id)s)',
+            {"id": carga_id, "empresa": carga["empresa"]},
         )
         reemplazadas = cur.rowcount
         _aplicar_dimensiones(cur, carga["empresa"], carga["dimensiones"])
@@ -602,13 +693,13 @@ def revertir_carga(carga_id: str):
         carga = _carga_para_actualizar(cur, carga_id, "CONFIRMADA")
         cur.execute('DELETE FROM "Venta" WHERE "cargaId" = %s', (carga_id,))
         # Las filas que esta carga habia reemplazado vuelven a contar... salvo
-        # que otra carga confirmada DESPUES que la suya tambien cubra esa
-        # fecha: entonces pasan a estar reemplazadas por esa otra.
+        # que otra carga confirmada DESPUES que la suya tambien traiga ese dia:
+        # entonces pasan a estar reemplazadas por esa otra.
         cur.execute(
             'UPDATE "Venta" r SET "reemplazadaPorCargaId" = ('
             '  SELECT c2."id" FROM "VentaCarga" c2 '
             '  WHERE c2."empresa" = r."empresa" AND c2."estado" = \'CONFIRMADA\' AND c2."id" <> %(id)s '
-            '    AND r."fecha" BETWEEN c2."periodoDesde" AND c2."periodoHasta" '
+            '    AND EXISTS (SELECT 1 FROM "Venta" x WHERE x."cargaId" = c2."id" AND x."fecha" = r."fecha") '
             '    AND c2."confirmadaEn" > (SELECT c1."confirmadaEn" FROM "VentaCarga" c1 WHERE c1."id" = r."cargaId") '
             '  ORDER BY c2."confirmadaEn" DESC LIMIT 1'
             ') WHERE r."reemplazadaPorCargaId" = %(id)s',

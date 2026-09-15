@@ -5,6 +5,7 @@ import { formatNumero, formatPct, formatUsd } from "@/lib/constants";
 import {
   formatFecha,
   formatMes,
+  type ActivacionClientes,
   type Indicadores,
   type ResumenIndicadores,
   type Variacion,
@@ -96,7 +97,15 @@ export function textoComparacion(c: ResumenIndicadores["comparacion"]) {
  * contra el período anterior. La primera fila va en el orden en que se
  * llega a los números, de izquierda a derecha: bruta menos devoluciones da
  * la neta, y neta menos costo da el margen. */
-export function KpiGrid({ actual, variacion }: { actual: Indicadores; variacion: Variacion | null }) {
+export function KpiGrid({
+  actual,
+  variacion,
+  activacion,
+}: {
+  actual: Indicadores;
+  variacion: Variacion | null;
+  activacion?: ActivacionClientes;
+}) {
   const v = variacion ?? {};
   const pctSinCosto = actual.ventaNeta ? actual.ventaSinCosto / actual.ventaNeta : null;
 
@@ -166,13 +175,29 @@ export function KpiGrid({ actual, variacion }: { actual: Indicadores; variacion:
         label="Clientes atendidos"
         valor={formatNumero(actual.clientes)}
         cambio={<CambioContraAnterior valor={v.clientes} sentido="sube-bien" />}
-        detalle={`${formatNumero(actual.cadenas)} cadenas`}
+        detalle={
+          activacion && activacion.cartera > 0 ? (
+            <>
+              de {formatNumero(activacion.cartera)} en cartera ({formatPct(activacion.pctActivacion)})
+              <span className="block">
+                {formatNumero(activacion.noAtendidos)} sin compra · {formatNumero(actual.cadenas)} cadenas
+              </span>
+            </>
+          ) : (
+            `${formatNumero(actual.cadenas)} cadenas`
+          )
+        }
       />
       <Kpi
         label="Ticket promedio"
         valor={formatUsd(actual.ticketPromedio, 2)}
         cambio={<CambioContraAnterior valor={v.ticketPromedio} sentido="sube-bien" />}
-        detalle={`${formatNumero(actual.documentos)} documentos`}
+        detalle={
+          <span className="block">
+            {formatNumero(actual.facturas)} facturas · {formatNumero(actual.notasEntrega)} notas de entrega
+            {actual.documentosDevolucion > 0 && ` · ${formatNumero(actual.documentosDevolucion)} devoluciones`}
+          </span>
+        }
       />
     </div>
   );

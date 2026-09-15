@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangleIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiDelete, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
+import { ApiError, apiDelete, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
 import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +19,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatNumero } from "@/lib/constants";
-import { EMPRESAS, type CargaVenta, type Empresa, type PreviewCarga } from "@/lib/indicadores";
-import { ResumenValidacion } from "./resumen-validacion";
+import {
+  EMPRESAS,
+  esColumnasFaltantes,
+  type CargaVenta,
+  type ColumnasFaltantes,
+  type Empresa,
+  type PreviewCarga,
+} from "@/lib/indicadores";
+import { ResumenValidacion, TablaColumnas } from "./resumen-validacion";
 
 // Límite de Vercel por request (el backend valida lo mismo). Revisarlo
 // antes de subir ahorra esperar la subida entera para enterarse.
@@ -40,6 +47,9 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
   const [resultado, setResultado] = useState<PreviewCarga | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
+  // Archivo sin encabezado al que le falta una columna: no es un fallo de la
+  // carga, es un dato que el archivo no trae. Se muestra aparte y claro.
+  const [faltantes, setFaltantes] = useState<ColumnasFaltantes | null>(null);
 
   const pendiente = resultado?.carga?.estado === "PENDIENTE" ? resultado.carga : null;
 
@@ -62,6 +72,7 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
   async function analizar() {
     if (!archivo) return;
     setErrorGeneral(null);
+    setFaltantes(null);
     if (archivo.size > TAMANO_MAXIMO_BYTES) {
       setErrorGeneral(
         `El archivo pesa ${formatNumero(archivo.size / 1_000_000, 1)} MB y el máximo es 4,5 MB. Sube un libro solo con la hoja de ventas («data») y la de costos («precio de compras»), sin las tablas dinámicas.`
@@ -77,9 +88,14 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
       formData.append("archivo", archivo);
       setResultado(await apiPostForm<PreviewCarga>("/indicadores/cargas/preview", formData));
     } catch (err) {
-      const motivo = mensajeDeError(err, "No se pudo analizar el archivo");
-      setErrorGeneral(motivo);
-      toast.error("No se pudo analizar el archivo", { description: motivo });
+      if (err instanceof ApiError && esColumnasFaltantes(err.datos)) {
+        setFaltantes(err.datos);
+        toast.warning("Al archivo le falta una columna", { description: err.datos.columnasFaltantes.join(", ") });
+      } else {
+        const motivo = mensajeDeError(err, "No se pudo analizar el archivo");
+        setErrorGeneral(motivo);
+        toast.error("No se pudo analizar el archivo", { description: motivo });
+      }
     } finally {
       setAnalizando(false);
     }
@@ -95,7 +111,7 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
       toast.success(`Carga confirmada: ${formatNumero(carga.filas)} filas`, {
         description:
           carga.filasReemplazadas > 0
-            ? `Reemplazó ${formatNumero(carga.filasReemplazadas)} filas de cargas anteriores en su período.`
+            ? `Reemplazó ${formatNumero(carga.filasReemplazadas)} filas de cargas anteriores en los días que trae el archivo.`
             : undefined,
       });
       setResultado(null);
@@ -144,9 +160,10 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
         <DialogHeader>
           <DialogTitle>Cargar ventas</DialogTitle>
           <DialogDescription>
-            El extracto del sistema de ventas tal como sale: el mensual (hojas «data» y «precio de compras») o un
-            extracto diario. Primero se valida; las cifras cuentan recién al confirmar. Si el período se solapa con una
-            carga anterior, el archivo nuevo manda en su período.
+            El extracto del sistema de ventas tal como sale, con o sin encabezado y en cualquier orden de columnas: sin
+            encabezado, cada columna se reconoce por su contenido. Tiene que traer todas las columnas obligatorias,
+            incluido el tipo de cliente; el costo va en la hoja «precio de compras». Primero se valida; las cifras cuentan
+            recién al confirmar. Cada carga reemplaza solo los días que trae: para agregar meses no hace falta volver a subir los que ya están.
           </DialogDescription>
         </DialogHeader>
 
@@ -187,6 +204,7 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
                 setArchivo(e.target.files?.[0] ?? null);
                 setResultado(null);
                 setErrorGeneral(null);
+                setFaltantes(null);
               }}
               className="flex h-8 w-full rounded-lg border border-input bg-transparent text-sm file:mr-2 file:h-8 file:border-0 file:bg-muted file:px-2.5 file:text-sm file:font-medium disabled:opacity-50"
             />
@@ -203,6 +221,37 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
             <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
             <span>{errorGeneral}</span>
           </p>
+        )}
+
+        {faltantes && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+            <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className="font-medium text-foreground">
+                {faltantes.columnasFaltantes.length === 1
+                  ? `Falta la columna «${faltantes.columnasFaltantes[0]}»`
+                  : `Faltan ${faltantes.columnasFaltantes.length} columnas: ${faltantes.columnasFaltantes.join(", ")}`}
+              </p>
+              <p className="text-muted-foreground">
+                El archivo no se cargó.{" "}
+                {faltantes.columnasReconocidas.length > 0 &&
+                  `Las otras ${formatNumero(faltantes.columnasReconocidas.length)} columnas obligatorias sí se reconocieron. `}
+                Agrega la que falta, en cualquier posición, y vuelve a subirlo.
+                {faltantes.columnasFaltantes.includes("tipo de cliente") &&
+                  " Valores del tipo de cliente: TRADICIONAL, MODERNO o DISTRIBUIDORES."}
+              </p>
+              {faltantes.columnasReconocidas.length > 0 && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none hover:text-foreground">
+                    Ver las columnas que se reconocieron
+                  </summary>
+                  <div className="mt-2">
+                    <TablaColumnas columnas={faltantes.columnasReconocidas} />
+                  </div>
+                </details>
+              )}
+            </div>
+          </div>
         )}
 
         {resultado && resultado.totalErrores > 0 && (
