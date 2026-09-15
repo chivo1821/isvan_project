@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon } from "lucide-react";
 import { formatNumero, formatPct, formatUsd } from "@/lib/constants";
-import { formatFecha, type ResumenValidacion as Resumen } from "@/lib/indicadores";
+import { formatFecha, formatMes, type ColumnaLeida, type ResumenValidacion as Resumen } from "@/lib/indicadores";
 import { cn } from "@/lib/utils";
 
 type Nivel = "ok" | "aviso" | "info";
@@ -41,6 +41,37 @@ function Dato({ label, valor, detalle }: { label: string; valor: string; detalle
   );
 }
 
+/** Qué columna del archivo se tomó para cada dato, con ejemplos. */
+export function TablaColumnas({ columnas }: { columnas: ColumnaLeida[] }) {
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40 text-left text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 font-medium">Col.</th>
+            <th className="px-2 py-1.5 font-medium">Dato</th>
+            <th className="px-2 py-1.5 font-medium">Ejemplos del archivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {columnas.map((c) => (
+            <tr key={c.columna} className="border-t border-border">
+              <td className="px-2 py-1.5 font-medium text-foreground tabular-nums">{c.columna}</td>
+              <td className="px-2 py-1.5 whitespace-nowrap text-foreground">
+                {c.campo}
+                {c.encabezado && <span className="text-muted-foreground"> («{c.encabezado}»)</span>}
+              </td>
+              <td className="max-w-72 truncate px-2 py-1.5 text-muted-foreground" title={c.ejemplos.join(" · ")}>
+                {c.ejemplos.join(" · ")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function listaCorta(items: string[], maximo = 8) {
   return items.length <= maximo ? items.join(", ") : `${items.slice(0, maximo).join(", ")} y ${items.length - maximo} más`;
 }
@@ -68,22 +99,70 @@ export function ResumenValidacion({ resumen: r }: { resumen: Resumen }) {
           detalle={`${formatPct(t.ventaBruta ? t.devoluciones / t.ventaBruta : null, 2)} de la bruta`}
         />
         <Dato label="Cajas · unidades" valor={formatNumero(t.cajas, 2)} detalle={`${formatNumero(t.unidades)} unidades`} />
-        <Dato label="Documentos · clientes" valor={formatNumero(r.documentos)} detalle={`${formatNumero(r.clientes)} clientes`} />
+        <Dato
+          label="Documentos · clientes"
+          valor={formatNumero(r.documentos)}
+          detalle={
+            r.facturas != null && r.notasEntrega != null
+              ? `${formatNumero(r.facturas)} facturas · ${formatNumero(r.notasEntrega)} notas de entrega · ${formatNumero(r.clientes)} clientes`
+              : `${formatNumero(r.clientes)} clientes`
+          }
+        />
       </div>
 
       <ul className="space-y-2">
+        {r.columnas && r.conEncabezado === false && (
+          // Sin encabezado, las columnas se reconocieron por su contenido: es
+          // lo primero que conviene comprobar antes de confirmar.
+          <Chequeo nivel="info" titulo="El archivo no trae encabezado: así se reconoció cada columna">
+            <p>Revisa que los ejemplos correspondan a cada dato. Las columnas que no aparecen no se usan.</p>
+            <TablaColumnas columnas={r.columnas} />
+          </Chequeo>
+        )}
+
+        {r.cobertura && (
+          <Chequeo
+            nivel="info"
+            titulo={`${formatNumero(r.cobertura.diasEnArchivo)} días con ventas: ${formatNumero(r.cobertura.diasNuevos)} nuevos y ${formatNumero(r.cobertura.diasReemplazados)} que ya estaban cargados`}
+          >
+            <p>
+              Cada carga reemplaza solo los días que trae; el resto de lo cargado no se toca.{" "}
+              {r.cobertura.meses
+                .map(
+                  (m) =>
+                    `${formatMes(`${m.mes}-01`)}: ${formatNumero(m.dias)} días` +
+                    (m.diasReemplazados ? ` (${formatNumero(m.diasReemplazados)} reemplazan)` : "")
+                )
+                .join(" · ")}
+            </p>
+          </Chequeo>
+        )}
+
         {r.solapes.length > 0 ? (
-          <Chequeo nivel="aviso" titulo="Se solapa con cargas anteriores: el archivo nuevo manda en su período">
+          <Chequeo nivel="aviso" titulo="Reemplaza días de cargas anteriores">
             {r.solapes.map((s) => (
               <p key={s.cargaId}>
-                «{s.archivo}» ({formatFecha(s.periodoDesde)} – {formatFecha(s.periodoHasta)}): se reemplazan{" "}
-                {formatNumero(s.filasReemplazadas)} filas ({formatUsd(s.ventaReemplazada)}). Revertir esta carga las
+                «{s.archivo}»: se reemplazan{" "}
+                {s.diasReemplazados != null && `${formatNumero(s.diasReemplazados)} días, `}
+                {formatNumero(s.filasReemplazadas)} filas ({formatUsd(s.ventaReemplazada)}). Revertir esta carga los
                 devuelve.
               </p>
             ))}
           </Chequeo>
         ) : (
-          <Chequeo nivel="ok" titulo="No se solapa con cargas anteriores" />
+          <Chequeo nivel="ok" titulo="No reemplaza días de cargas anteriores" />
+        )}
+
+        {r.cobertura && r.cobertura.diasConservados.length > 0 && (
+          <Chequeo
+            nivel="aviso"
+            titulo={`${formatNumero(r.cobertura.diasConservados.length)} días del período del archivo ya tenían ventas y el archivo no los trae: se conservan`}
+          >
+            <p>
+              {listaCorta(r.cobertura.diasConservados.map((d) => formatFecha(d.fecha)), 12)}. Si el archivo debía
+              traerlos, revisa el extracto antes de confirmar.
+            </p>
+          </Chequeo>
         )}
 
         {r.otrasHojasConFormato.length > 0 && (
@@ -221,6 +300,14 @@ export function ResumenValidacion({ resumen: r }: { resumen: Resumen }) {
         Hoja leída: «{r.hoja}». Costo por caja:{" "}
         {r.fuenteCosto ?? "el archivo no trae costos, se usan los ya cargados de cargas anteriores"}.
       </p>
+      {r.columnas && r.conEncabezado !== false && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none hover:text-foreground">Ver qué columna se usó para cada dato</summary>
+          <div className="mt-2">
+            <TablaColumnas columnas={r.columnas} />
+          </div>
+        </details>
+      )}
     </div>
   );
 }

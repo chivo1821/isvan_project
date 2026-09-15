@@ -18,7 +18,13 @@ export type Indicadores = {
   ventaSinCosto: number;
   clientes: number;
   cadenas: number;
+  /** Tipo + número: cada tipo de documento lleva su propia numeración. */
   documentos: number;
+  /** Facturas y notas de entrega: la base del ticket promedio. */
+  documentosVenta: number;
+  facturas: number;
+  notasEntrega: number;
+  documentosDevolucion: number;
   /** Fracción 0..1. */
   pctDevolucion: number | null;
   precioLitro: number | null;
@@ -58,6 +64,8 @@ export type OpcionesIndicadores = {
   productos: { codigo: string; nombre: string; grupo: string }[];
   fechaMin: string | null;
   fechaMax: string | null;
+  /** Códigos de tipo de documento con ventas (FA, NE, DV, DN). */
+  tiposDocumento: string[];
   cargasConfirmadas: number;
   cargasPendientes: number;
 };
@@ -119,6 +127,44 @@ export type BrechasClientes = {
 
 /** Respuesta de GET /indicadores/tablero: todo lo de la página en una
  * sola llamada. */
+export type ClienteActivacion = {
+  codigo: string;
+  nombre: string;
+  ruta: string;
+  tipo: string;
+  ultimaCompra: string | null;
+  diasSinCompra: number | null;
+  ventaPeriodo: number;
+  ventaAnterior: number;
+  documentos: number;
+};
+
+/** "atendidos", los grupos por tiempo sin compra ("menos2", "de2a4",
+ * "de4a8", "mas8") y "nunca" (solo con filtros de grupo, producto o
+ * documento). */
+export type ListaActivacion = {
+  clave: string;
+  etiqueta: string;
+  total: number;
+  clientes: ClienteActivacion[];
+};
+
+export type ActivacionClientes = {
+  cartera: number;
+  atendidos: number;
+  noAtendidos: number;
+  /** Fracción 0..1; null si la cartera está vacía. */
+  pctActivacion: number | null;
+  comparacion: { desde: string; hasta: string };
+  listas: ListaActivacion[];
+};
+
+/** GET /indicadores/cobertura: días con ventas vigentes y su carga. */
+export type CoberturaVentas = {
+  dias: { fecha: string; cargaId: string; filas: number; ventaNeta: number; documentos: number }[];
+  cargas: { id: string; archivo: string; periodoDesde: string; periodoHasta: string; confirmadaEn: string }[];
+};
+
 export type TableroIndicadores = {
   resumen: ResumenIndicadores;
   serie: Record<Granularidad, PuntoSerie[]>;
@@ -126,6 +172,19 @@ export type TableroIndicadores = {
   alertas: AlertasIndicadores;
   mapa: DatosMapaVentas;
   brechas: BrechasClientes;
+  activacion: ActivacionClientes;
+  /** Valores con ventas en el período según los demás filtros (ver
+   * opciones_disponibles en el backend). */
+  opcionesDisponibles: OpcionesDisponibles;
+};
+
+export type OpcionesDisponibles = {
+  rutas: string[];
+  grupos: string[];
+  tiposCliente: string[];
+  clientes: string[];
+  productos: string[];
+  tiposDocumento: string[];
 };
 
 // ---------- Cargas ----------
@@ -150,8 +209,31 @@ export type CargaVenta = {
 
 /** Validación de un archivo antes de confirmarlo (§6 del documento del
  * cliente). Se guarda con la carga para poder revisarla después. */
+export type ColumnaLeida = {
+  campo: string;
+  /** Letra de la columna en Excel. */
+  columna: string;
+  /** Título de la columna; null si el archivo vino sin encabezado. */
+  encabezado: string | null;
+  ejemplos: string[];
+};
+
+/** Detalle del 400 cuando a un archivo sin encabezado le falta una columna. */
+export type ColumnasFaltantes = {
+  mensaje: string;
+  columnasFaltantes: string[];
+  columnasReconocidas: ColumnaLeida[];
+};
+
+export function esColumnasFaltantes(datos: unknown): datos is ColumnasFaltantes {
+  return !!datos && typeof datos === "object" && Array.isArray((datos as ColumnasFaltantes).columnasFaltantes);
+}
+
 export type ResumenValidacion = {
   hoja: string;
+  /** Opcionales: las cargas anteriores a esta versión no los guardaban. */
+  conEncabezado?: boolean;
+  columnas?: ColumnaLeida[];
   otrasHojasConFormato: string[];
   fuenteCosto: string | null;
   filasLeidas: number;
@@ -169,6 +251,9 @@ export type ResumenValidacion = {
     unidades: number;
   };
   documentos: number;
+  /** Opcionales: las cargas anteriores a esta versión no los guardaban. */
+  facturas?: number;
+  notasEntrega?: number;
   clientes: number;
   solapes: {
     cargaId: string;
@@ -177,7 +262,18 @@ export type ResumenValidacion = {
     periodoHasta: string;
     filasReemplazadas: number;
     ventaReemplazada: number;
+    /** Opcional: las cargas viejas no lo guardaban. */
+    diasReemplazados?: number;
   }[];
+  /** Opcional: las cargas anteriores a esta versión no la guardaban. */
+  cobertura?: {
+    diasEnArchivo: number;
+    diasNuevos: number;
+    diasReemplazados: number;
+    meses: { mes: string; dias: number; diasNuevos: number; diasReemplazados: number }[];
+    /** Días del período del archivo que ya tenían ventas y que el archivo no trae: se conservan. */
+    diasConservados: { fecha: string; filas: number; ventaNeta: number; archivo: string }[];
+  };
   clientesNuevos: { total: number; muestra: { codigo: string; nombre: string; tipo: string; ruta: string }[] };
   productosNuevos: { total: number; muestra: { codigo: string; nombre: string; grupo: string }[] };
   productosSinCosto: { total: number; ventaNeta: number; productos: ProductoAlerta[] };
@@ -269,6 +365,8 @@ export type FiltrosIndicadores = {
   clientes: string[];
   /** Códigos de producto (SKU). */
   productos: string[];
+  /** Códigos de tipo de documento (FA, NE, DV, DN). */
+  tiposDocumento: string[];
 };
 
 export type SearchParams = Record<string, string | string[] | undefined>;
@@ -306,6 +404,7 @@ export function leerFiltros(params: SearchParams, opciones: OpcionesIndicadores,
     tipos: lista(params.tipo),
     clientes: lista(params.cliente),
     productos: lista(params.producto),
+    tiposDocumento: lista(params.doc),
   };
 }
 
@@ -317,6 +416,7 @@ export function queryApi(f: FiltrosIndicadores): string {
   f.tipos.forEach((t) => q.append("tipo_cliente", t));
   f.clientes.forEach((c) => q.append("cliente", c));
   f.productos.forEach((p) => q.append("producto", p));
+  f.tiposDocumento.forEach((d) => q.append("tipo_documento", d));
   return q.toString();
 }
 
@@ -328,5 +428,13 @@ export function queryPagina(f: FiltrosIndicadores): string {
   f.tipos.forEach((t) => q.append("tipo", t));
   f.clientes.forEach((c) => q.append("cliente", c));
   f.productos.forEach((p) => q.append("producto", p));
+  f.tiposDocumento.forEach((d) => q.append("doc", d));
   return q.toString();
 }
+
+export const TIPO_DOCUMENTO_META: Record<string, string> = {
+  FA: "Factura",
+  NE: "Nota de entrega",
+  DV: "Devolución (DV)",
+  DN: "Devolución (DN)",
+};

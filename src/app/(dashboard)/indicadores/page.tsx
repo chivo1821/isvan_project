@@ -3,6 +3,7 @@ import { BarChart3Icon, HistoryIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ActivacionClientes } from "@/components/modules/indicadores/activacion-clientes";
 import { AlertasCalidad } from "@/components/modules/indicadores/alertas-calidad";
 import { BarraFiltros } from "@/components/modules/indicadores/barra-filtros";
 import { BrechasClientes } from "@/components/modules/indicadores/brechas-clientes";
@@ -44,7 +45,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
             <Button variant="outline" asChild>
               <Link href={`/indicadores/cargas?empresa=${empresa}`}>
                 <HistoryIcon />
-                Cargas
+                Cargas y cobertura
               </Link>
             </Button>
             <CargarVentasDialog empresa={empresa} />
@@ -52,7 +53,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
         }
       />
 
-      <BarraFiltros filtros={filtros} opciones={opciones} />
+      <BarraFiltros filtros={filtros} opciones={opciones} disponibles={tablero?.opcionesDisponibles} />
 
       {!tablero ? (
         <Card>
@@ -73,7 +74,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
               <p className="text-xs text-muted-foreground">
                 Cambios {textoComparacion(tablero.resumen.comparacion)}.
               </p>
-              <KpiGrid actual={actual} variacion={tablero.resumen.variacion} />
+              <KpiGrid actual={actual} variacion={tablero.resumen.variacion} activacion={tablero.activacion} />
             </div>
           ) : (
             <Card>
@@ -96,6 +97,9 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
           </div>
 
           <BrechasClientes brechas={tablero.brechas} />
+          {/* key: al cambiar los filtros, las listas vuelven a la primera
+              pestaña y al primer tramo. */}
+          <ActivacionClientes key={queryApi(filtros)} activacion={tablero.activacion} />
         </>
       )}
     </div>

@@ -27,7 +27,11 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly path: string,
-    readonly detalle: string
+    readonly detalle: string,
+    /** El `detail` tal cual lo mandó la API, para los errores que traen
+     * datos además del mensaje (p. ej. las columnas que le faltan a un
+     * Excel). */
+    readonly datos?: unknown
   ) {
     super(`${status} en ${path}${detalle ? `: ${detalle}` : ""}`);
     this.name = "ApiError";
@@ -45,13 +49,18 @@ export function mensajeDeError(err: unknown, respaldo: string): string {
 async function handle<T>(res: Response, path: string): Promise<T> {
   if (!res.ok) {
     let detalle = "";
+    let datos: unknown;
     try {
       const body = await res.json();
-      detalle = body?.detail ?? "";
+      datos = body?.detail;
+      // El detalle suele ser texto; algunos endpoints mandan un objeto con
+      // "mensaje" y datos aparte.
+      if (typeof datos === "string") detalle = datos;
+      else if (datos && typeof datos === "object" && "mensaje" in datos) detalle = String(datos.mensaje);
     } catch {
       // respuesta sin JSON, se ignora
     }
-    throw new ApiError(res.status, path, detalle);
+    throw new ApiError(res.status, path, detalle, datos);
   }
   if (res.status === 204) return undefined as T;
   return res.json();

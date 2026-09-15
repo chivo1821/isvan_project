@@ -22,7 +22,8 @@ from datetime import date, timedelta
 @dataclass
 class Filtros:
     """Los filtros del modulo: periodo, ruta, grupo de producto, tipo de
-    cliente, cliente y producto (SKU). Listas vacias = sin filtrar."""
+    cliente, cliente, producto (SKU) y tipo de documento. Listas vacias =
+    sin filtrar."""
 
     empresa: str
     desde: date
@@ -32,6 +33,7 @@ class Filtros:
     tipos_cliente: list[str] = field(default_factory=list)
     clientes: list[str] = field(default_factory=list)
     productos: list[int] = field(default_factory=list)
+    tipos_documento: list[str] = field(default_factory=list)
 
 
 # Solo cuentan las filas de cargas CONFIRMADAS que ninguna carga posterior
@@ -45,6 +47,13 @@ FUENTE = """
     LEFT JOIN "VentaProducto" vp ON vp."empresa" = v."empresa" AND vp."codigo" = v."codigoProducto"
 """
 
+
+# Solo las filas de cargas confirmadas, sin los cruces con cliente y producto:
+# para contar dias y filas no hacen falta.
+FUENTE_VIGENTE = """
+    FROM "Venta" v
+    JOIN "VentaCarga" c ON c."id" = v."cargaId" AND c."estado" = 'CONFIRMADA'
+"""
 
 def where(f: Filtros) -> tuple[str, dict]:
     condiciones = [
@@ -68,6 +77,9 @@ def where(f: Filtros) -> tuple[str, dict]:
     if f.productos:
         condiciones.append('v."codigoProducto" = ANY(%(productos)s)')
         params["productos"] = f.productos
+    if f.tipos_documento:
+        condiciones.append('v."codTipoDoc" = ANY(%(tipos_documento)s)')
+        params["tipos_documento"] = f.tipos_documento
     return "WHERE " + " AND ".join(condiciones), params
 
 
@@ -84,6 +96,8 @@ def orden_ruta(ruta: str):
 # pero sin devoluciones (o sin productos con costo) la suma vale 0, no NULL.
 # Si el periodo no tiene ninguna fila, "filas" = 0 y el periodo entero es
 # None (ver calcular).
+_DOCUMENTO_DISTINTO = """COUNT(DISTINCT v."codTipoDoc" || '-' || v."numDoc")"""
+
 SUMAS: dict[str, str] = {
     "filas": "COUNT(*)",
     "ventaNeta": 'COALESCE(SUM(v."montoUsd"), 0)',
@@ -104,7 +118,15 @@ SUMAS: dict[str, str] = {
     # Una cadena con varias sucursales tiene un codigo por sucursal y un
     # mismo nombre: por nombre se cuentan cadenas, por codigo tiendas.
     "cadenas": 'COUNT(DISTINCT vc."nombre")',
-    "documentos": 'COUNT(DISTINCT v."numDoc")',
+    # Un documento es tipo + numero: cada tipo lleva su propia numeracion y
+    # la factura 100 y la nota de entrega 100 son documentos distintos (de
+    # clientes distintos). Contar solo el numero los juntaba: en jun-ago eran
+    # 1.590 numeros pero 2.676 documentos.
+    "documentos": _DOCUMENTO_DISTINTO,
+    "documentosVenta": f"{_DOCUMENTO_DISTINTO} FILTER (WHERE v.\"tipoMovimiento\" = 'VENTA')",
+    "facturas": """COUNT(DISTINCT v."numDoc") FILTER (WHERE v."codTipoDoc" = 'FA')""",
+    "notasEntrega": """COUNT(DISTINCT v."numDoc") FILTER (WHERE v."codTipoDoc" = 'NE')""",
+    "documentosDevolucion": f"{_DOCUMENTO_DISTINTO} FILTER (WHERE v.\"tipoMovimiento\" = 'DEVOLUCION')",
 }
 SELECT_SUMAS = ", ".join(f'{expr} AS "{nombre}"' for nombre, expr in SUMAS.items())
 
@@ -130,7 +152,9 @@ def completar(fila: dict) -> dict:
     # muestra siempre junto a "venta sin costo".
     r["margen"] = r["ventaNeta"] - r["costo"]
     r["margenPct"] = _div(r["margen"], r["ventaNeta"])
-    r["ticketPromedio"] = _div(r["ventaNeta"], r["documentos"])
+    # Venta por documento de venta (facturas y notas de entrega): una
+    # devolucion no es una compra y no debe bajar el promedio.
+    r["ticketPromedio"] = _div(r["ventaNeta"], r["documentosVenta"])
     return r
 
 
@@ -356,6 +380,157 @@ def productos_del_periodo(cur, f: Filtros) -> list[dict]:
         {**p, "codigo": str(p["codigo"]), "ventaNeta": float(p["ventaNeta"]), "costo": float(p["costo"])}
         for p in cur.fetchall()
     ]
+
+
+# ---------- Opciones de los filtros ----------
+
+# Filtro -> (valor que muestra la lista, campo de Filtros que lo filtra).
+_OPCIONES_FILTRO: dict[str, tuple[str, str]] = {
+    "rutas": ('vc."ruta"', "rutas"),
+    "grupos": ('vp."grupo"', "grupos"),
+    "tiposCliente": ('vc."tipo"', "tipos_cliente"),
+    "clientes": ('v."codigoCliente"', "clientes"),
+    "productos": ('v."codigoProducto"::text', "productos"),
+    "tiposDocumento": ('v."codTipoDoc"', "tipos_documento"),
+}
+
+
+def opciones_disponibles(cur, f: Filtros) -> dict[str, list[str]]:
+    """Para cada filtro, los valores que tienen ventas en el periodo con los
+    DEMAS filtros aplicados (el propio no: si no, al elegir R3 la lista de
+    rutas quedaria solo con R3 y no se podria sumar otra). Con la ruta R3
+    elegida, la lista de productos trae solo los que se vendieron en R3."""
+    disponibles: dict[str, list[str]] = {}
+    for clave, (valor, campo) in _OPCIONES_FILTRO.items():
+        condicion, params = where(replace(f, **{campo: []}))
+        cur.execute(f'SELECT DISTINCT {valor} AS "valor" {FUENTE} {condicion}', params)
+        disponibles[clave] = sorted(str(r["valor"]) for r in cur.fetchall() if r["valor"] is not None)
+    return disponibles
+
+
+# ---------- Activacion de clientes ----------
+#
+# La cartera son los clientes del sistema de ventas que ya habian comprado
+# alguna vez al cierre del periodo (un cliente cuya primera compra es
+# posterior todavia no era cliente). Sobre ella se aplican los filtros que
+# son del cliente: ruta, tipo de cliente y cliente.
+#
+# Un cliente esta atendido si tuvo movimiento en el periodo con TODOS los
+# filtros: con un grupo o un producto elegido, la activacion es "por marca".
+# Asi el numero de atendidos es exactamente el de "Clientes atendidos".
+#
+# A los no atendidos se los agrupa por el tiempo desde su ultima compra
+# (con los mismos filtros), contado hasta el ultimo dia del periodo.
+
+# (clave, etiqueta, dias minimos sin comprar, dias maximos o None)
+GRUPOS_INACTIVIDAD: list[tuple[str, str, int, int | None]] = [
+    ("menos2", "menos de 2 semanas", 0, 13),
+    ("de2a4", "2 a 4 semanas", 14, 27),
+    ("de4a8", "4 a 8 semanas", 28, 55),
+    ("mas8", "más de 8 semanas", 56, None),
+]
+_DESDE_SIEMPRE = date(1900, 1, 1)
+
+
+def _grupo_de_inactividad(dias: int) -> str:
+    return next(
+        clave
+        for clave, _, minimo, maximo in GRUPOS_INACTIVIDAD
+        if dias >= minimo and (maximo is None or dias <= maximo)
+    )
+
+
+def activacion(cur, f: Filtros) -> dict:
+    desde_ant, hasta_ant, _ = periodo_anterior(f.desde, f.hasta)
+    condicion, params = where(replace(f, desde=_DESDE_SIEMPRE))
+    params.update(periodo_desde=f.desde, periodo_hasta=f.hasta, ant_desde=desde_ant, ant_hasta=hasta_ant)
+
+    cartera = ['vc."empresa" = %(empresa)s']
+    if f.rutas:
+        cartera.append('vc."ruta" = ANY(%(rutas)s)')
+    if f.tipos_cliente:
+        cartera.append('vc."tipo" = ANY(%(tipos)s)')
+    if f.clientes:
+        cartera.append('vc."codigo" = ANY(%(clientes)s)')
+
+    en_periodo = 'v."fecha" BETWEEN %(periodo_desde)s AND %(periodo_hasta)s'
+    cur.execute(
+        f"""
+        WITH movimientos AS (
+            SELECT v."codigoCliente" AS "codigo",
+                   MAX(v."fecha") AS "ultimaCompra",
+                   COALESCE(SUM(v."montoUsd") FILTER (WHERE {en_periodo}), 0) AS "ventaPeriodo",
+                   COALESCE(SUM(v."montoUsd") FILTER (
+                       WHERE v."fecha" BETWEEN %(ant_desde)s AND %(ant_hasta)s), 0) AS "ventaAnterior",
+                   {_DOCUMENTO_DISTINTO} FILTER (WHERE {en_periodo}) AS "documentos"
+            {FUENTE} {condicion}
+            GROUP BY v."codigoCliente"
+        )
+        SELECT vc."codigo", vc."nombre", vc."ruta", vc."tipo",
+               m."ultimaCompra", m."ventaPeriodo", m."ventaAnterior", m."documentos"
+        FROM "VentaCliente" vc
+        LEFT JOIN movimientos m ON m."codigo" = vc."codigo"
+        WHERE {" AND ".join(cartera)}
+          AND EXISTS (
+              SELECT 1 FROM "Venta" v2
+              JOIN "VentaCarga" c2 ON c2."id" = v2."cargaId" AND c2."estado" = 'CONFIRMADA'
+              WHERE v2."empresa" = vc."empresa" AND v2."codigoCliente" = vc."codigo"
+                AND v2."reemplazadaPorCargaId" IS NULL AND v2."fecha" <= %(hasta)s
+          )
+        """,
+        params,
+    )
+
+    atendidos: list[dict] = []
+    por_grupo: dict[str, list[dict]] = {clave: [] for clave, *_ in GRUPOS_INACTIVIDAD}
+    nunca: list[dict] = []
+    for fila in cur.fetchall():
+        ultima = fila["ultimaCompra"]
+        cliente = {
+            "codigo": fila["codigo"],
+            "nombre": fila["nombre"],
+            "ruta": fila["ruta"],
+            "tipo": fila["tipo"],
+            "ultimaCompra": ultima,
+            "diasSinCompra": (f.hasta - ultima).days if ultima else None,
+            "ventaPeriodo": float(fila["ventaPeriodo"] or 0),
+            "ventaAnterior": float(fila["ventaAnterior"] or 0),
+            "documentos": fila["documentos"] or 0,
+        }
+        if ultima is None:
+            nunca.append(cliente)
+        elif ultima >= f.desde:
+            atendidos.append(cliente)
+        else:
+            por_grupo[_grupo_de_inactividad(cliente["diasSinCompra"])].append(cliente)
+
+    atendidos.sort(key=lambda c: (-c["ventaPeriodo"], c["nombre"]))
+    listas = [{"clave": "atendidos", "etiqueta": "Atendidos", "clientes": atendidos}]
+    for clave, etiqueta, *_ in GRUPOS_INACTIVIDAD:
+        # Primero los que mas compraban en el periodo anterior: son los que
+        # mas conviene recuperar.
+        clientes = sorted(por_grupo[clave], key=lambda c: (-c["ventaAnterior"], c["diasSinCompra"], c["nombre"]))
+        listas.append({"clave": clave, "etiqueta": f"Sin compra hace {etiqueta}", "clientes": clientes})
+    if nunca:
+        # Solo pasa con filtros de grupo, producto o documento: clientes de la
+        # cartera que nunca compraron eso.
+        listas.append(
+            {
+                "clave": "nunca",
+                "etiqueta": "Nunca compraron con estos filtros",
+                "clientes": sorted(nunca, key=lambda c: c["nombre"]),
+            }
+        )
+
+    total = sum(len(lista["clientes"]) for lista in listas)
+    return {
+        "cartera": total,
+        "atendidos": len(atendidos),
+        "noAtendidos": total - len(atendidos),
+        "pctActivacion": _div(len(atendidos), total),
+        "comparacion": {"desde": desde_ant, "hasta": hasta_ant},
+        "listas": [{**lista, "total": len(lista["clientes"])} for lista in listas],
+    }
 
 
 # ---------- Cruce con logistica ----------

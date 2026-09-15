@@ -26,8 +26,10 @@ import {
   inicioDeMes,
   queryPagina,
   sumarMeses,
+  TIPO_DOCUMENTO_META,
   type Empresa,
   type FiltrosIndicadores,
+  type OpcionesDisponibles,
   type OpcionesIndicadores,
 } from "@/lib/indicadores";
 import { cn } from "@/lib/utils";
@@ -140,6 +142,14 @@ function comoOpciones(valores: string[]): OpcionFiltro[] {
   return valores.map((valor) => ({ valor, etiqueta: valor }));
 }
 
+/** Deja solo las opciones con ventas según los demás filtros. Lo ya elegido
+ * se mantiene siempre, aunque ya no coincida, para poder quitarlo. */
+function soloDisponibles(opciones: OpcionFiltro[], disponibles: string[] | undefined, seleccion: string[]) {
+  if (!disponibles) return opciones;
+  const permitidas = new Set([...disponibles, ...seleccion]);
+  return opciones.filter((o) => permitidas.has(o.valor));
+}
+
 function paraBuscar(texto: string) {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
@@ -153,12 +163,15 @@ function FiltroMultiple({
   opciones,
   seleccion,
   onCambiar,
+  acotadas = false,
 }: {
   etiqueta: string;
   todos: string;
   opciones: OpcionFiltro[];
   seleccion: string[];
   onCambiar: (valores: string[]) => void;
+  /** Si la lista ya viene acotada por los demás filtros (se avisa arriba). */
+  acotadas?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [borrador, setBorrador] = useState<string[]>(seleccion);
@@ -209,7 +222,14 @@ function FiltroMultiple({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className={cn("max-h-80 overflow-y-auto", conBuscador ? "w-80" : "w-60")}>
-        <DropdownMenuLabel>{etiqueta}</DropdownMenuLabel>
+        <DropdownMenuLabel>
+          {etiqueta}
+          {acotadas && (
+            <span className="block text-xs font-normal text-muted-foreground">
+              Solo las que tienen ventas con el período y los demás filtros
+            </span>
+          )}
+        </DropdownMenuLabel>
         {conBuscador && (
           <div className="px-1 pb-1">
             <Input
@@ -250,7 +270,9 @@ function FiltroMultiple({
           </DropdownMenuCheckboxItem>
         ))}
         {visibles.length === 0 && (
-          <p className="px-2 py-3 text-center text-sm text-muted-foreground">Sin coincidencias</p>
+          <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+            {opciones.length === 0 ? "Nada con ventas con los filtros actuales" : "Sin coincidencias"}
+          </p>
         )}
         {ordenadas.length > visibles.length && (
           <p className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -278,7 +300,18 @@ function FiltroMultiple({
 /** Los filtros del módulo (período, ruta, grupo, tipo de cliente, cliente y
  * producto) y la empresa. Viven en la URL: la página se vuelve a calcular en el
  * servidor con cada cambio, y el enlace se puede compartir tal cual. */
-export function BarraFiltros({ filtros, opciones }: { filtros: FiltrosIndicadores; opciones: OpcionesIndicadores }) {
+export function BarraFiltros({
+  filtros,
+  opciones,
+  disponibles,
+}: {
+  filtros: FiltrosIndicadores;
+  opciones: OpcionesIndicadores;
+  /** Sin datos (todavía no hay cargas) las listas muestran todo. */
+  disponibles?: OpcionesDisponibles | null;
+}) {
+  const d = disponibles ?? undefined;
+  const acotadas = !!disponibles;
   const router = useRouter();
   const [actualizando, startTransition] = useTransition();
 
@@ -293,7 +326,7 @@ export function BarraFiltros({ filtros, opciones }: { filtros: FiltrosIndicadore
   }
 
   const hayFiltros =
-    filtros.rutas.length + filtros.grupos.length + filtros.tipos.length + filtros.clientes.length + filtros.productos.length >
+    filtros.rutas.length + filtros.grupos.length + filtros.tipos.length + filtros.clientes.length + filtros.productos.length + filtros.tiposDocumento.length >
     0;
 
   return (
@@ -319,51 +352,80 @@ export function BarraFiltros({ filtros, opciones }: { filtros: FiltrosIndicadore
       <FiltroMultiple
         etiqueta="Ruta"
         todos="Todas las rutas"
-        opciones={comoOpciones(opciones.rutas)}
+        opciones={soloDisponibles(comoOpciones(opciones.rutas), d?.rutas, filtros.rutas)}
+        acotadas={acotadas}
         seleccion={filtros.rutas}
         onCambiar={(rutas) => aplicar({ rutas })}
       />
       <FiltroMultiple
         etiqueta="Grupo"
         todos="Todos los grupos"
-        opciones={comoOpciones(opciones.grupos)}
+        opciones={soloDisponibles(comoOpciones(opciones.grupos), d?.grupos, filtros.grupos)}
+        acotadas={acotadas}
         seleccion={filtros.grupos}
         onCambiar={(grupos) => aplicar({ grupos })}
       />
       <FiltroMultiple
         etiqueta="Tipo de cliente"
         todos="Todos los tipos de cliente"
-        opciones={comoOpciones(opciones.tiposCliente)}
+        opciones={soloDisponibles(comoOpciones(opciones.tiposCliente), d?.tiposCliente, filtros.tipos)}
+        acotadas={acotadas}
         seleccion={filtros.tipos}
         onCambiar={(tipos) => aplicar({ tipos })}
       />
       <FiltroMultiple
         etiqueta="Cliente"
         todos="Todos los clientes"
-        opciones={opciones.clientes.map((c) => ({
-          valor: c.codigo,
-          etiqueta: c.nombre,
-          detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
-        }))}
+        opciones={soloDisponibles(
+          opciones.clientes.map((c) => ({
+            valor: c.codigo,
+            etiqueta: c.nombre,
+            detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
+          })),
+          d?.clientes,
+          filtros.clientes
+        )}
+        acotadas={acotadas}
         seleccion={filtros.clientes}
         onCambiar={(clientes) => aplicar({ clientes })}
       />
       <FiltroMultiple
         etiqueta="Producto"
         todos="Todos los productos"
-        opciones={opciones.productos.map((p) => ({
-          valor: p.codigo,
-          etiqueta: p.nombre,
-          detalle: `SKU ${p.codigo} · ${p.grupo}`,
-        }))}
+        opciones={soloDisponibles(
+          opciones.productos.map((p) => ({
+            valor: p.codigo,
+            etiqueta: p.nombre,
+            detalle: `SKU ${p.codigo} · ${p.grupo}`,
+          })),
+          d?.productos,
+          filtros.productos
+        )}
+        acotadas={acotadas}
         seleccion={filtros.productos}
         onCambiar={(productos) => aplicar({ productos })}
+      />
+      <FiltroMultiple
+        etiqueta="Tipo de documento"
+        todos="Todos los documentos"
+        opciones={soloDisponibles(
+          opciones.tiposDocumento.map((codigo) => ({
+            valor: codigo,
+            etiqueta: TIPO_DOCUMENTO_META[codigo] ?? codigo,
+            detalle: codigo,
+          })),
+          d?.tiposDocumento,
+          filtros.tiposDocumento
+        )}
+        acotadas={acotadas}
+        seleccion={filtros.tiposDocumento}
+        onCambiar={(tiposDocumento) => aplicar({ tiposDocumento })}
       />
       {hayFiltros && (
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => aplicar({ rutas: [], grupos: [], tipos: [], clientes: [], productos: [] })}
+          onClick={() => aplicar({ rutas: [], grupos: [], tipos: [], clientes: [], productos: [], tiposDocumento: [] })}
         >
           <XIcon />
           Limpiar filtros
