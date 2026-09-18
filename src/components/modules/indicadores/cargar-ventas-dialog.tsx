@@ -27,7 +27,8 @@ import {
   type Empresa,
   type PreviewCarga,
 } from "@/lib/indicadores";
-import { ResumenValidacion, TablaColumnas } from "./resumen-validacion";
+import { TablaColumnas } from "@/components/shared/tabla-columnas";
+import { ResumenValidacion } from "./resumen-validacion";
 
 // Límite de Vercel por request (el backend valida lo mismo). Revisarlo
 // antes de subir ahorra esperar la subida entera para enterarse.

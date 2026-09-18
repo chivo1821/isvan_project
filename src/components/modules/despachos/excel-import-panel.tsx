@@ -4,13 +4,15 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangleIcon, CheckCircle2Icon, DownloadIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
-import { API_URL, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
+import { API_URL, ApiError, apiPost, apiPostForm, mensajeDeError } from "@/lib/api-client";
 import { ErroresFilaList } from "@/components/shared/errores-fila-list";
 import { NumberedCard } from "@/components/shared/numbered-card";
+import { TablaColumnas, type ColumnaLeida } from "@/components/shared/tabla-columnas";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { esColumnasFaltantes, type ColumnasFaltantes } from "@/lib/indicadores";
 import type { Almacen, Despacho, Empresa } from "@/lib/mock-data";
 
 type ItemPreview = { descripcion: string; cantidad: number; pesoUnitarioKg: number; requiereFrio: boolean };
@@ -24,7 +26,13 @@ type GrupoPreview = {
   items: ItemPreview[];
 };
 type ErrorFila = { fila: number; columna?: string | null; motivo: string };
-type PreviewResponse = { grupos: GrupoPreview[]; errores: ErrorFila[] };
+type PreviewResponse = {
+  grupos: GrupoPreview[];
+  errores: ErrorFila[];
+  /** False si el archivo vino sin encabezado: las columnas se reconocieron por su contenido. */
+  conEncabezado: boolean;
+  columnas: ColumnaLeida[];
+};
 
 export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; creadoPorId: string }) {
   const router = useRouter();
@@ -37,11 +45,15 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
   // Ver la nota en importar-clientes-dialog.tsx: los fallos que no son "fila
   // con error" se muestran fijos, no solo en un toast que se desvanece.
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
+  // Archivo sin encabezado al que le falta una columna: no es un fallo de
+  // la carga, es un dato que el archivo no trae (ver cargar-ventas-dialog).
+  const [faltantes, setFaltantes] = useState<ColumnasFaltantes | null>(null);
 
   function reiniciar() {
     setArchivo(null);
     setResultado(null);
     setErrorGeneral(null);
+    setFaltantes(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -50,6 +62,7 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
     setAnalizando(true);
     setResultado(null);
     setErrorGeneral(null);
+    setFaltantes(null);
     try {
       const formData = new FormData();
       formData.append("empresa", empresa);
@@ -60,9 +73,14 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
         toast.info("El archivo no tiene filas para importar");
       }
     } catch (err) {
-      const motivo = mensajeDeError(err, "No se pudo analizar el archivo");
-      setErrorGeneral(motivo);
-      toast.error("No se pudo analizar el archivo", { description: motivo });
+      if (err instanceof ApiError && esColumnasFaltantes(err.datos)) {
+        setFaltantes(err.datos);
+        toast.warning("Al archivo le falta una columna", { description: err.datos.columnasFaltantes.join(", ") });
+      } else {
+        const motivo = mensajeDeError(err, "No se pudo analizar el archivo");
+        setErrorGeneral(motivo);
+        toast.error("No se pudo analizar el archivo", { description: motivo });
+      }
     } finally {
       setAnalizando(false);
     }
@@ -94,7 +112,7 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
     <NumberedCard
       number={1}
       title="Importar Excel del día"
-      helpText='Cada fila del Excel es un producto. El número de documento (factura/nota de entrega) agrupa las filas en un despacho por cliente — no el código de cliente, que se repite cuando un pedido tiene varios productos. Si el archivo trae la columna «ruta», esa ruta comercial se guarda en la ficha del cliente y se usa después para sugerir cómo armar los viajes.'
+      helpText='Cada fila del Excel es un producto. El número de documento (factura/nota de entrega) agrupa las filas en un despacho por cliente — no el código de cliente, que se repite cuando un pedido tiene varios productos. Si el archivo trae la columna «ruta», esa ruta comercial se guarda en la ficha del cliente y se usa después para sugerir cómo armar los viajes. El encabezado es opcional: el reporte que sale del sistema de ventas, sin encabezado y en cualquier orden de columnas, se lee igual porque cada columna se reconoce por su contenido.'
     >
       <div className="space-y-4">
         <a
@@ -153,8 +171,48 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
           </p>
         )}
 
+        {faltantes && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+            <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className="font-medium text-foreground">
+                {faltantes.columnasFaltantes.length === 1
+                  ? `Falta la columna «${faltantes.columnasFaltantes[0]}»`
+                  : `Faltan ${faltantes.columnasFaltantes.length} columnas: ${faltantes.columnasFaltantes.join(", ")}`}
+              </p>
+              <p className="text-muted-foreground">
+                El archivo no se analizó. Para armar los despachos hacen falta el código de cliente, el número de
+                documento, el producto, las unidades y los litros. Agrega la que falta, en cualquier posición, y vuelve
+                a subirlo.
+              </p>
+              {faltantes.columnasReconocidas.length > 0 && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none hover:text-foreground">
+                    Ver las columnas que se reconocieron
+                  </summary>
+                  <div className="mt-2">
+                    <TablaColumnas columnas={faltantes.columnasReconocidas} />
+                  </div>
+                </details>
+              )}
+            </div>
+          </div>
+        )}
+
         {resultado && (
           <div className="space-y-4 border-t border-border pt-4">
+            {!resultado.conEncabezado && resultado.columnas.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-border p-3">
+                <p className="text-sm font-medium text-foreground">
+                  El archivo no trae encabezado: así se reconoció cada columna
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Revisa que los ejemplos correspondan a cada dato antes de confirmar. Las demás columnas del archivo no
+                  se usan.
+                </p>
+                <TablaColumnas columnas={resultado.columnas} />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <span className="flex items-center gap-1.5 text-success">
                 <CheckCircle2Icon className="size-4" />

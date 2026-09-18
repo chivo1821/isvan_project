@@ -17,7 +17,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.permisos import es_repartidor, vehiculo_asignado
-from app.core.excel_utils import mapear_columnas, valor_a_texto
+from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
+from app.services.ventas_import import ALIAS_COLUMNAS as ALIAS_VENTAS
+from app.services.ventas_import import describir_columnas, reconocer_columnas
 from app.core.numero import siguiente_numero, siguientes_numeros
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
@@ -277,6 +279,59 @@ def _mapear_columnas(fila_encabezados: tuple) -> dict[str, int]:
     return mapa
 
 
+# El reporte que el cliente baja de su sistema viene SIN encabezado (el mismo
+# formato que usa el modulo de indicadores). Cuando no hay encabezado, las
+# columnas se reconocen por su contenido con el lector de ventas, pidiendole
+# solo lo que un despacho necesita. Los nombres de campo de aquel modulo se
+# traducen a los de este.
+CAMPOS_SIN_ENCABEZADO = {
+    "codigo_cliente": "codigo_cliente",
+    "num_doc": "numero_documento",
+    "producto": "descripcion_item",
+    "unidades": "cantidad",
+    "litros": "litros",
+    "ruta": "ruta",
+}
+REQUERIDOS_SIN_ENCABEZADO = ["codigo_cliente", "num_doc", "producto", "unidades", "litros"]
+
+# Nombres de columna que reconoce el importador, para saber si la primera
+# fila es un encabezado o ya son datos.
+_ENCABEZADOS_CONOCIDOS = {alias for alias_columna in ALIAS_COLUMNAS.values() for alias in alias_columna} | {
+    alias for alias_columna in ALIAS_VENTAS.values() for alias in alias_columna
+}
+
+
+def _sin_ceros(codigo: str) -> str:
+    """"000324" -> "324": el reporte del sistema rellena con ceros a la
+    izquierda y el resto de la app guarda el codigo sin ellos (igual que en
+    app/services/ventas_import.py)."""
+    return codigo.lstrip("0") or ("0" if codigo else "")
+
+
+def _parece_encabezado(fila: tuple) -> bool:
+    nombres = {normalizar_encabezado(v) for v in fila if v is not None}
+    return len(nombres & _ENCABEZADOS_CONOCIDOS) >= 3
+
+
+def _columnas_del_archivo(filas: list[tuple]) -> tuple[dict[str, int], int, bool, list[dict]]:
+    """(mapa de columnas, primera fila de datos, trae encabezado, que columna
+    se uso para cada dato)."""
+    if _parece_encabezado(filas[0]):
+        mapa = _mapear_columnas(filas[0])
+        return mapa, 1, True, describir_columnas(filas[1:], _nombres_de_ventas(mapa), filas[0])
+    mapa_ventas = reconocer_columnas(filas, REQUERIDOS_SIN_ENCABEZADO)
+    usadas = {campo: indice for campo, indice in mapa_ventas.items() if campo in CAMPOS_SIN_ENCABEZADO}
+    mapa = {CAMPOS_SIN_ENCABEZADO[campo]: indice for campo, indice in usadas.items()}
+    return mapa, 0, False, describir_columnas(filas, usadas, None)
+
+
+def _nombres_de_ventas(mapa: dict[str, int]) -> dict[str, int]:
+    """El mapa de este importador con los nombres de campo del lector de
+    ventas, que es el que sabe como llamarlos en pantalla."""
+    equivalente = {destino: origen for origen, destino in CAMPOS_SIN_ENCABEZADO.items()}
+    return {equivalente[campo]: indice for campo, indice in mapa.items() if campo in equivalente}
+
+
 @router.get("/importar/plantilla")
 def descargar_plantilla_despachos():
     """Plantilla con los encabezados del extracto de ventas que reconoce el
@@ -296,6 +351,7 @@ def descargar_plantilla_despachos():
     notas = libro.create_sheet("Instrucciones")
     for linea in [
         ["Cada fila es un producto; las filas con el mismo «num docum» forman un despacho."],
+        ["El encabezado es opcional: sin el, cada columna se reconoce por su contenido."],
         ["Obligatorias: codigo cliente, num docum, producto, unidades y litros."],
         ["«codigo cliente» tiene que existir en Clientes, en la empresa que elijas al importar."],
         ["«litros» es el total de la fila y se toma como kilos (1 litro = 1 kg)."],
@@ -332,7 +388,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
     if not filas:
         raise HTTPException(400, "El archivo esta vacio")
 
-    mapa = _mapear_columnas(filas[0])
+    mapa, primera_fila_de_datos, con_encabezado, columnas = _columnas_del_archivo(filas)
     errores: list[dict] = []
     filas_validas: list[dict] = []
 
@@ -346,7 +402,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
         cur.execute('SELECT "numeroDocumento" FROM "Despacho"')
         documentos_ya_importados = {r["numeroDocumento"] for r in cur.fetchall()}
 
-        for n, fila in enumerate(filas[1:], start=2):
+        for n, fila in enumerate(filas[primera_fila_de_datos:], start=primera_fila_de_datos + 1):
             if fila is None or all(v is None for v in fila):
                 continue  # fila vacia, se ignora
 
@@ -355,7 +411,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                 return fila[idx] if idx is not None and idx < len(fila) else None
 
             codigo_cliente = valor_a_texto(val("codigo_cliente"))
-            numero_documento = valor_a_texto(val("numero_documento"))
+            numero_documento = _sin_ceros(valor_a_texto(val("numero_documento")))
             descripcion = str(val("descripcion_item") or "").strip()
             cantidad_raw = val("cantidad")
             ruta_comercial = valor_a_texto(val("ruta")) or None
@@ -408,7 +464,10 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
 
             cliente = None
             if error is None:
-                cliente = clientes_por_codigo.get(codigo_cliente)
+                # El reporte del sistema rellena los codigos con ceros
+                # ("000324"); el maestro de clientes los tiene como "324". Se
+                # prueba primero tal cual, por si un codigo empieza con cero.
+                cliente = clientes_por_codigo.get(codigo_cliente) or clientes_por_codigo.get(_sin_ceros(codigo_cliente))
                 if not cliente:
                     error = ("codigo_cliente", f'No existe el cliente "{codigo_cliente}" en {empresa}')
                 elif sin_ubicacion(cliente["lat"], cliente["lng"]):
@@ -464,7 +523,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
         })
 
     errores.sort(key=lambda e: e["fila"])
-    return {"grupos": grupos, "errores": errores}
+    return {"grupos": grupos, "errores": errores, "conEncabezado": con_encabezado, "columnas": columnas}
 
 
 @router.post(

@@ -360,9 +360,20 @@ class ImportarExcelGrupoPreview(BaseModel):
     items: list[ImportarExcelItemPreview]
 
 
+class ColumnaLeida(BaseModel):
+    campo: str
+    columna: str
+    encabezado: Optional[str] = None
+    ejemplos: list[str] = []
+
+
 class ImportarExcelPreviewResponse(BaseModel):
     grupos: list[ImportarExcelGrupoPreview]
     errores: list[ImportarExcelFilaError]
+    # False si el archivo vino sin encabezado y las columnas se reconocieron
+    # por su contenido.
+    conEncabezado: bool = True
+    columnas: list[ColumnaLeida] = []
 
 
 class ImportarExcelConfirmarRequest(BaseModel):
