@@ -2,6 +2,10 @@
 // las de backend/app/api/indicadores.py; las definiciones de cada
 // indicador, las de backend/app/services/indicadores_venta.py.
 
+import type { ColumnaLeida } from "@/components/shared/tabla-columnas";
+
+export type { ColumnaLeida };
+
 export type Empresa = "ISVAN" | "TRALOG";
 export const EMPRESAS: Empresa[] = ["ISVAN", "TRALOG"];
 
@@ -209,15 +213,6 @@ export type CargaVenta = {
 
 /** Validación de un archivo antes de confirmarlo (§6 del documento del
  * cliente). Se guarda con la carga para poder revisarla después. */
-export type ColumnaLeida = {
-  campo: string;
-  /** Letra de la columna en Excel. */
-  columna: string;
-  /** Título de la columna; null si el archivo vino sin encabezado. */
-  encabezado: string | null;
-  ejemplos: string[];
-};
-
 /** Detalle del 400 cuando a un archivo sin encabezado le falta una columna. */
 export type ColumnasFaltantes = {
   mensaje: string;

@@ -329,9 +329,14 @@ def _determina(a: _Columna, b: _Columna) -> float:
     return sum(1 for s in pares.values() if len(s) == 1) / len(pares) if pares else 0.0
 
 
-def reconocer_columnas(filas: list[tuple]) -> dict[str, int]:
+def reconocer_columnas(filas: list[tuple], campos_requeridos: list[str] | None = None) -> dict[str, int]:
     """Campo -> indice de columna, para una hoja sin encabezado. Lanza 400
-    con la lista de lo que no se pudo reconocer si falta algo obligatorio."""
+    con la lista de lo que no se pudo reconocer si falta algo obligatorio.
+
+    `campos_requeridos` permite pedir menos: la importacion de despachos usa
+    el mismo extracto de ventas pero solo necesita cliente, documento,
+    producto, unidades y litros (ver app/api/despachos.py)."""
+    campos_requeridos = campos_requeridos if campos_requeridos is not None else CAMPOS_REQUERIDOS
     muestra = [f for f in filas if f and any(v is not None and _texto(v) for v in f)][:FILAS_PARA_RECONOCER]
     if not muestra:
         raise HTTPException(400, "La hoja de ventas esta vacia")
@@ -561,7 +566,7 @@ def reconocer_columnas(filas: list[tuple]) -> dict[str, int]:
                 asignar("proveedor", c)
                 break
 
-    faltantes = [campo for campo in CAMPOS_REQUERIDOS if campo not in mapa]
+    faltantes = [campo for campo in campos_requeridos if campo not in mapa]
     if faltantes:
         nombres = [NOMBRE_CAMPO[c] for c in faltantes]
         # Detalle estructurado: la pantalla muestra primero lo que falta y deja
@@ -571,8 +576,12 @@ def reconocer_columnas(filas: list[tuple]) -> dict[str, int]:
             400,
             {
                 "mensaje": (
-                    f"Falta {'la columna obligatoria' if len(nombres) == 1 else 'las columnas obligatorias'}: "
-                    f"{', '.join(nombres)}. Agrégala al archivo (en cualquier posición) y vuelve a subirlo."
+                    (
+                        f"Falta la columna obligatoria: {nombres[0]}. Agrégala al archivo"
+                        if len(nombres) == 1
+                        else f"Faltan {len(nombres)} columnas obligatorias: {', '.join(nombres)}. Agrégalas al archivo"
+                    )
+                    + " (en cualquier posición) y vuelve a subirlo."
                 ),
                 "columnasFaltantes": nombres,
                 "columnasReconocidas": describir_columnas(muestra, mapa, None),
