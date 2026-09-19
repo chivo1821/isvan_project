@@ -12,16 +12,17 @@ puede abarcar miles de filas.
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import date, datetime
 
 import openpyxl
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.core.auth import requiere_rol
 from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
+from app.services import delivery as dl
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import ResumenRendimiento
 
@@ -249,6 +250,61 @@ def reporte_rutas():
         filas,
     )
     return _como_adjunto(libro, "rutas")
+
+
+@router.get("/delivery.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
+def reporte_delivery(desde: date, hasta: date):
+    """Los pagos de delivery del periodo: una hoja con el total por
+    motorizado y otra con el detalle de cada entrega. Solo ADMIN, como el
+    resto del modulo (ver app/api/delivery.py)."""
+    if desde > hasta:
+        raise HTTPException(400, "La fecha desde no puede ser posterior a la fecha hasta")
+    with get_connection() as conn, conn.cursor() as cur:
+        paradas = dl.paradas_pagables(cur, desde, hasta)
+        por_motorizado = dl.resumen_por_motorizado(paradas)
+
+    libro = openpyxl.Workbook()
+    libro.active.title = "Por motorizado"
+    _escribir_hoja(
+        libro.active,
+        ["Motorizado", "Moto(s)", "Entregas", "Documentos", "Km", "Total USD", "Pendiente USD", "Pagado USD"],
+        [
+            [
+                m["conductor"] or "Sin chofer asignado",
+                ", ".join(m["placas"]),
+                m["entregas"],
+                m["despachos"],
+                m["km"],
+                m["totalUsd"],
+                m["pendienteUsd"],
+                m["liquidadoUsd"],
+            ]
+            for m in por_motorizado
+        ],
+    )
+    _escribir_hoja(
+        libro.create_sheet("Detalle"),
+        ["Fecha", "Motorizado", "Moto", "Ruta", "Cod. cliente", "Cliente", "Ciudad", "Documentos",
+         "Km", "Rango", "Monto USD", "Estado"],
+        [
+            [
+                p["fecha"],
+                p["conductor"] or "Sin chofer asignado",
+                p["placa"],
+                p["rutaNumero"],
+                p["clienteCodigo"],
+                p["clienteNombre"],
+                p["ciudad"],
+                p["numeros"],
+                p["km"],
+                p["rango"],
+                p["montoUsd"],
+                "Pagado" if p["liquidada"] else "Pendiente",
+            ]
+            for p in paradas
+        ],
+    )
+    return _como_adjunto(libro, f"delivery_{desde}_a_{hasta}")
 
 
 # Ventana de los indicadores del dashboard: lo suficientemente corta para

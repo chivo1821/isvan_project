@@ -19,7 +19,7 @@ permisos por rol).
 | Frontend | [Next.js 16](https://nextjs.org) (App Router, TypeScript), [shadcn/ui](https://ui.shadcn.com), Tailwind CSS v4, React Hook Form + Zod, Leaflet/React-Leaflet para mapas |
 | Backend | [FastAPI](https://fastapi.tiangolo.com) (Python), acceso a datos con `psycopg` + SQL plano (sin ORM en Python) |
 | Base de datos | PostgreSQL — [Prisma](https://www.prisma.io) es la fuente de verdad del esquema y las migraciones (no se usa `prisma-client-py`; ver la nota en `prisma/schema.prisma`) |
-| Rutas / mapas | [SuperMap iServer](https://www.supermap.com) (Transportation Analyst — FindPath y FindTSPPaths), con reemplazo automático a una ruta sintética si el servicio no responde |
+| Rutas / mapas | **PostGIS + pgRouting sobre la red vial guardada en la base** (ver «Red vial» más abajo). Como respaldo, [SuperMap iServer](https://www.supermap.com) y, si tampoco responde, una estimación en línea recta |
 | Hosting | [Vercel](https://vercel.com) (frontend + backend como dos servicios bajo un dominio, ver `vercel.json`) + [Neon](https://neon.tech) (PostgreSQL administrado) |
 
 ## Dependencias principales
@@ -57,7 +57,8 @@ Copia `.env.example` a `.env` en la raíz del proyecto y completa:
 | `DATABASE_URL` | Cadena de conexión de Postgres (local o Neon) |
 | `NEXT_PUBLIC_API_URL` | URL del backend FastAPI (`http://localhost:8000` en dev) |
 | `ALLOWED_ORIGINS` | Orígenes permitidos por CORS (el dominio del frontend) |
-| `NETWORK_ANALYST_URL` | Servicio SuperMap iServer para rutas reales (opcional — sin esto, cae a una ruta sintética) |
+| `MOTOR_RUTAS` | Qué calcula las rutas: `auto` (por defecto: la red vial de la base y, si no, SuperMap), `bd` o `iserver` |
+| `NETWORK_ANALYST_URL` | Servicio SuperMap iServer, ya solo como respaldo (opcional) |
 | `NETWORK_ANALYST_WEIGHT_FIELD` | Campo de peso/costo del dataset de red (`time` por defecto) |
 | `COOKIE_SECURE` | `false` en dev (HTTP), `true` en producción (HTTPS) — la cookie de sesión lo exige |
 
@@ -163,6 +164,98 @@ de build/deploy más allá de `git push`.
   apunte a uno u otro.
 - No se sube ninguna credencial al repo — todo vía variables de entorno
   (`.env` local, Environment Variables en el dashboard de Vercel).
+
+## Red vial (cálculo de rutas)
+
+Las rutas y sus trazados se calculan con **PostGIS + pgRouting** sobre la red
+vial guardada en la propia base, sin depender de ningún servicio externo. La
+red de Venezuela son ~1,1 millones de tramos y ocupa **~490 MB** (383 MB de
+tramos + 110 MB de nodos).
+
+Se arma **una sola vez en local** y después se copia a las demás bases:
+
+```bash
+backend/.venv/Scripts/python.exe backend/scripts/cargar_red_vial.py "C:/ruta/redes_venezuela.shp"
+```
+
+El script acepta shapefile, GeoPackage, GeoJSON o un CSV con la geometría en
+WKT; convierte con `ogr2ogr`, carga, **parte las vías en sus cruces** (el
+shapefile de OpenStreetMap no las corta, y sin ese paso la red queda en
+fragmentos y no aparece ninguna ruta), arma los nodos y deja un resumen en la
+tabla `RedVialCarga`.
+
+La velocidad de cada tramo **no** sale del dato original (OpenStreetMap trae
+`maxspeed` en pocas vías): se asigna por tipo de vía con la tabla
+`VELOCIDAD_POR_TIPO`, al inicio del script, que es donde se ajusta.
+
+Al final el script hace `VACUUM FULL`: armar la red deja la tabla inflada al
+triple (cada `UPDATE` de `source`/`target` reescribe la fila entera, y las
+versiones viejas se quedan ocupando lugar). Compactarla ahorró 703 MB en la
+carga nacional: 1.227 MB de base pasaron a 525 MB.
+
+### Llevar la red a otra base (Neon)
+
+Armar la red son varios minutos de CPU y casi millón y medio de escrituras en
+una sola transacción: contra una base remota se corta a la mitad y no queda
+nada, así que `cargar_red_vial.py` se niega a correr fuera de local. La red ya
+construida se copia con:
+
+```bash
+backend/.venv/Scripts/python.exe backend/scripts/copiar_red_vial.py --origen "postgresql://...@localhost:5433/gestion_logistica" --destino "postgresql://...@ep-xxx.neon.tech/neondb?sslmode=require"
+```
+
+Va por lotes de 50.000 tramos, confirma cada uno y **se puede volver a correr
+las veces que haga falta**: retoma donde quedó. Antes hay que aplicar las
+migraciones en el destino (`npx prisma migrate deploy`), que son las que crean
+las extensiones y las tablas.
+
+| Opción | Qué hace |
+|---|---|
+| `--sin-indices` | Borra los índices del destino durante la carga y los recrea al final (más rápido con el GIST) |
+| `--simplificar 3` | Quita vértices del dibujo con 3 m de tolerancia sin mover los extremos, así que la topología y los costos siguen valiendo. Medido sobre la red nacional ahorra solo ~65 MB de 478, y el tramo más afectado se acorta 50 m: rara vez vale la pena |
+
+Ojo con el plan de Neon: en el **Free** son 0,5 GB por proyecto y la red
+nacional sola son ~490 MB. Al pasarse del límite, el compute se suspende y el
+endpoint deja de aceptar conexiones (el síntoma es `server closed the
+connection unexpectedly` ya al conectar, sin llegar a autenticar).
+
+### Recortar la red a la zona de reparto
+
+Cuando el espacio está contado, en vez de subir el país entero se copia la red
+de los estados donde se reparte, más las troncales de todo el país para que un
+cliente lejano siga teniendo ruta por carretera:
+
+```bash
+backend/.venv/Scripts/python.exe backend/scripts/copiar_red_vial.py --origen "postgresql://...@localhost:5433/gestion_logistica" --destino "postgresql://...@ep-xxx.neon.tech/neondb?sslmode=require" --vaciar --sin-indices --zona "C:/ruta/ESTADO_4326.shp" --estados "Distrito Capital,Miranda,La Guaira,Carabobo,Aragua" --troncales
+```
+
+`--zona` acepta cualquier archivo de polígonos que lea GDAL; busca sola la
+columna con los nombres y entiende los alias de siempre (La Guaira/Vargas,
+Distrito Capital/Distrito Federal). `--margen` (5 km por defecto) agranda la
+zona para no cortar una vía justo en el límite. Con `--medir` dice cuánto
+ocuparía sin tocar el destino.
+
+Medido sobre la red de Venezuela, con los cinco estados del centro-norte:
+
+| | Tramos | Tamaño |
+|---|---|---|
+| Red nacional | 1.087.372 | 478 MB |
+| Zona (5 estados, margen 5 km) | 247.210 | 102 MB |
+| Zona + troncales del país | 287.115 | **120 MB** |
+| Zona + troncales y secundarias | 301.473 | 127 MB |
+
+Las troncales cuestan 18 MB y con ellas las rutas largas siguen saliendo
+(Caracas → Maracaibo 697 km contra 668 de la red completa, y Barquisimeto,
+Maturín, San Cristóbal y Mérida casi idénticas); las secundarias ya no cambian
+ningún resultado. Las rutas urbanas dan exactamente los mismos kilómetros que
+con la red nacional, y se calculan más rápido porque hay menos grafo.
+
+Un cliente fuera de la zona y lejos de una troncal simplemente no engancha con
+la red: `ruta_entre` devuelve `None` y el llamador usa su respaldo, como con
+cualquier punto mal georreferenciado.
+
+Cada ruta calculada queda en `RutaCalculada` y no se vuelve a resolver; las
+distancias del pago de delivery se guardan además en `DistanciaCliente`.
 
 ## Documentación adicional
 

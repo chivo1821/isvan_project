@@ -27,6 +27,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   despachador: "Despachador",
   usuarios: "Usuarios",
   indicadores: "Indicadores de venta",
+  delivery: "Delivery en moto",
   cargas: "Cargas y cobertura",
   choferes: "Choferes",
   vendedor: "Mis despachos",

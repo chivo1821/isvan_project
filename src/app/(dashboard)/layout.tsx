@@ -14,7 +14,7 @@ const INICIO_REPARTIDOR = "/despachador";
 const INICIO_VENDEDOR = "/vendedor";
 
 /** Pantallas solo para ADMIN, además del dashboard ("/"). */
-const RUTAS_SOLO_ADMIN = ["/indicadores"];
+const RUTAS_SOLO_ADMIN = ["/indicadores", "/delivery"];
 
 function esSoloAdmin(ruta: string) {
   return ruta === "/" || RUTAS_SOLO_ADMIN.some((r) => ruta === r || ruta.startsWith(`${r}/`));

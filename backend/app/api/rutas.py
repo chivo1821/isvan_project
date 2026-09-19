@@ -28,6 +28,7 @@ from app.schemas import (
     SugerenciaVehiculoRequest,
 )
 from app.services.plan_rutas import sugerir_plan_rutas
+from app.services.delivery import guardar_distancias_de_ruta
 from app.services.route_analysis import MINUTOS_POR_PARADA, LatLng, calcular_mejor_ruta_multi
 from app.services.suggest_vehiculo import sugerir_vehiculos
 
@@ -239,6 +240,10 @@ def crear_ruta(data: RutaCreate):
         )
 
         _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
+        # Si es una moto, se dejan calculadas las distancias almacen->cliente
+        # que usa el pago de delivery (ver app/services/delivery.py): asi el
+        # reporte de pagos no depende del servicio de rutas en el momento.
+        guardar_distancias_de_ruta(cur, ruta_id)
         conn.commit()
 
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
@@ -344,6 +349,10 @@ def recalcular_ruta(ruta_id: str):
             raise HTTPException(400, f'No existe el almacen de origen "{ruta["origenId"]}" en la base de datos.')
 
         _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
+        # Si es una moto, se dejan calculadas las distancias almacen->cliente
+        # que usa el pago de delivery (ver app/services/delivery.py): asi el
+        # reporte de pagos no depende del servicio de rutas en el momento.
+        guardar_distancias_de_ruta(cur, ruta_id)
         conn.commit()
 
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))

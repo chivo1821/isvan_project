@@ -1,6 +1,11 @@
 """Calculo de rutas contra el servicio de Transportation Analyst de SuperMap
 iServer, con dos analisis:
 
+El motor por defecto es la red vial guardada en la base (PostGIS +
+pgRouting, ver app/services/red_vial.py); el iServer queda como respaldo y,
+si tampoco esta, se estima en linea recta por un factor. Se elige con
+MOTOR_RUTAS en el .env.
+
 - Tramo simple (origen -> destino): _consultar_iserver() / calcular_mejor_ruta()
   — endpoint .../path.json (FindPath). Port original de
   src/lib/route-analysis/{common,find-path}.ts.
@@ -41,6 +46,13 @@ VELOCIDAD_PROMEDIO_KMH = 45
 # estimada de un viaje de 10 paradas se quedaba corta por mas de dos horas.
 MINUTOS_POR_PARADA = 15
 
+# Que motor calcula las rutas:
+#   "auto"    (por defecto) la red vial de la base, si no el iServer, si no
+#             la estimacion en linea recta;
+#   "bd"      solo la red vial (ver app/services/red_vial.py);
+#   "iserver" solo SuperMap, como antes.
+MOTOR_RUTAS = (os.environ.get("MOTOR_RUTAS") or "auto").lower()
+
 NETWORK_ANALYST_URL = (os.environ.get("NETWORK_ANALYST_URL") or "").rstrip("/")
 NETWORK_ANALYST_WEIGHT_FIELD = os.environ.get("NETWORK_ANALYST_WEIGHT_FIELD", "time")
 NETWORK_ANALYST_TIMEOUT_S = 20.0
@@ -67,6 +79,10 @@ class RutaResultado:
     geometry: list[tuple[float, float]]  # [(lng, lat), ...]
     distancia_km: float
     tiempo_min: int
+    # De donde salio: "red_vial" (pgRouting sobre la red en la base),
+    # "iserver" (SuperMap) o "estimada" (linea recta por un factor). Lo usa
+    # el pago de delivery para avisar cuando una distancia no es real.
+    fuente: str = "estimada"
 
 
 # Mismas rutas "de ejemplo" que src/lib/mock-data/rutas-optimizadas.ts —
@@ -84,6 +100,18 @@ RUTAS_PRECALCULADAS: dict[str, RutaResultado] = {
         tiempo_min=260,
     ),
 }
+
+
+def _usa(motor: str) -> bool:
+    return MOTOR_RUTAS in ("auto", motor)
+
+
+def _red_vial():
+    """Import perezoso: red_vial importa de este modulo (LatLng, haversine),
+    asi que traerlo arriba seria un import circular."""
+    from app.services import red_vial
+
+    return red_vial
 
 
 def _generar_ruta_sintetica(origen: LatLng, destino: LatLng) -> RutaResultado:
@@ -104,6 +132,7 @@ def _generar_ruta_sintetica(origen: LatLng, destino: LatLng) -> RutaResultado:
         geometry=[(origen.lng, origen.lat), (perp_lng, perp_lat), (destino.lng, destino.lat)],
         distancia_km=distancia_km,
         tiempo_min=tiempo_min,
+        fuente="estimada",
     )
 
 
@@ -191,11 +220,18 @@ def _consultar_iserver(origen: LatLng, destino: LatLng) -> RutaResultado | None:
     )
     tiempo_min = max(1, round(path.get("weight") or 0))
 
-    return RutaResultado(geometry=geometry, distancia_km=round(distancia_km, 1), tiempo_min=tiempo_min)
+    return RutaResultado(
+        geometry=geometry, distancia_km=round(distancia_km, 1), tiempo_min=tiempo_min, fuente="iserver"
+    )
 
 
 def calcular_mejor_ruta(despacho_id: str, origen: LatLng, destino: LatLng) -> RutaResultado:
-    real = _consultar_iserver(origen, destino)
+    if _usa("bd"):
+        en_base = _red_vial().ruta_entre(origen, destino)
+        if en_base:
+            return en_base
+
+    real = _consultar_iserver(origen, destino) if _usa("iserver") else None
     if real:
         return real
 
@@ -352,15 +388,15 @@ def _consultar_iserver_tsp(origen: LatLng, paradas: list[LatLng]) -> tuple[RutaM
 
 
 def _ruta_multi_encadenada(
-    origen: LatLng, paradas: list[LatLng]
+    origen: LatLng, paradas: list[LatLng], orden: list[int] | None = None
 ) -> tuple[RutaMultiResultado, list[int], list[int]]:
-    """Fallback cuando el TSP real no esta disponible: decide el orden con
-    la heuristica de vecino mas cercano y encadena tramos de dos puntos
-    (calcular_mejor_ruta, con su propio fallback sintetico si tampoco hay
-    NETWORK_ANALYST_URL). Aca si se conocen los limites exactos entre
-    tramos, asi que indices_parada se arma directo (sin necesidad de buscar
-    el punto mas cercano)."""
-    orden = orden_vecino_mas_cercano(origen, paradas)
+    """Encadena tramos de dos puntos con calcular_mejor_ruta (que resuelve
+    cada tramo con la red vial de la base, el iServer o la estimacion, en ese
+    orden). El orden de visita puede venir dado —por tiempo real de red, ver
+    red_vial.orden_por_costo—; si no, se decide por distancia en linea recta.
+    Aca si se conocen los limites exactos entre tramos, asi que
+    indices_parada se arma directo."""
+    orden = orden if orden is not None else orden_vecino_mas_cercano(origen, paradas)
 
     geometry: list[tuple[float, float]] = [(origen.lng, origen.lat)]
     distancia_km = 0.0
@@ -425,11 +461,17 @@ def calcular_mejor_ruta_multi(
     """
     ubicaciones, indices_por_ubicacion = _agrupar_paradas_por_ubicacion(paradas)
 
-    real = _consultar_iserver_tsp(origen, ubicaciones)
-    if real:
-        resultado, orden_ubicaciones = real
+    orden_por_red = _red_vial().orden_por_costo(origen, ubicaciones) if _usa("bd") else None
+    if orden_por_red is not None:
+        # La red vial decide el orden por tiempo real y cada tramo se calcula
+        # sobre ella, asi que el trazado ya sale por calles.
+        resultado, orden_ubicaciones, _ = _ruta_multi_encadenada(origen, ubicaciones, orden_por_red)
     else:
-        resultado, orden_ubicaciones, _ = _ruta_multi_encadenada(origen, ubicaciones)
+        real = _consultar_iserver_tsp(origen, ubicaciones) if _usa("iserver") else None
+        if real:
+            resultado, orden_ubicaciones = real
+        else:
+            resultado, orden_ubicaciones, _ = _ruta_multi_encadenada(origen, ubicaciones)
 
     # El trazado viene combinado, sin limites explicitos entre tramos: cada
     # parada se ubica por el punto de la geometria mas cercano a sus
