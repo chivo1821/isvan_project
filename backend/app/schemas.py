@@ -495,6 +495,25 @@ class RendimientoConductor(BaseModel):
     distanciaKm: float
 
 
+class RangoTabuladorDelivery(BaseModel):
+    """Un rango del tabulador: hasta hastaKm se pagan montoUsd. El ultimo va
+    sin tope (hastaKm = None)."""
+
+    hastaKm: Optional[float] = None
+    montoUsd: float
+
+
+class TabuladorDeliveryUpdate(BaseModel):
+    rangos: list[RangoTabuladorDelivery]
+
+
+class LiquidacionDeliveryCreate(BaseModel):
+    repartidorId: str
+    desde: date
+    hasta: date
+    nota: Optional[str] = None
+
+
 class ResumenRendimiento(BaseModel):
     """Indicadores del reparto para el dashboard (ver app/api/reportes.py).
     Los promedios son None mientras no haya paradas con las dos marcas."""

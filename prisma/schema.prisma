@@ -101,6 +101,10 @@ model Usuario {
   rutasCanceladas      Ruta[]               @relation("RutasCanceladas")
   sesiones             Sesion[]
   cargasVenta          VentaCarga[]
+  tabuladorDelivery    TabuladorDelivery[]         @relation("TabuladorDeliveryActualizadoPor")
+  liquidacionesDelivery LiquidacionDelivery[]      @relation("LiquidacionesDelivery")
+  liquidacionesCreadas  LiquidacionDelivery[]      @relation("LiquidacionesDeliveryCreadasPor")
+  redesViales           RedVialCarga[]             @relation("RedVialCargadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta           VendedorRuta[]
   visitas              Visita[]
@@ -133,6 +137,7 @@ model Almacen {
   despachosOrigen Despacho[] @relation("DespachoOrigen")
   vehiculos       Vehiculo[]
   rutas           Ruta[]
+  distanciasCliente DistanciaCliente[]
 }
 
 model Vehiculo {
@@ -182,6 +187,8 @@ model Cliente {
   rutaComercial String?
 
   despachos Despacho[] @relation("DespachoDestino")
+  distanciasAlmacen DistanciaCliente[]
+  paradasLiquidadas LiquidacionDeliveryParada[]
 
   @@unique([empresa, codigo])
 }
@@ -289,6 +296,7 @@ model Ruta {
 
   despachos Despacho[]
   puntos    RutaPunto[]
+  paradasLiquidadas LiquidacionDeliveryParada[]
 }
 
 // Waypoints de la geometria de una Ruta multi-parada, usados tanto para
@@ -451,4 +459,164 @@ model Venta {
   @@index([empresa, codigoProducto])
   @@index([cargaId])
   @@index([reemplazadaPorCargaId])
+}
+
+
+// ---------- Delivery (pago a motorizados) ----------
+//
+// A los motorizados se les paga por entrega segun la distancia del almacen
+// al cliente, con un tabulador por rangos. El modulo solo mira las rutas de
+// vehiculos MOTO y las paradas con marca de entrega; ver
+// backend/app/services/delivery.py.
+
+// Un rango del tabulador: "hasta hastaKm se pagan montoUsd". El ultimo va
+// sin tope (hastaKm = null) y atrapa todo lo que quede por encima.
+model TabuladorDelivery {
+  id               String   @id @default(cuid())
+  orden            Int      @unique
+  hastaKm          Float?
+  montoUsd         Decimal  @db.Decimal(10, 2)
+  actualizadoEn    DateTime @default(now())
+  actualizadoPorId String?
+  actualizadoPor   Usuario? @relation("TabuladorDeliveryActualizadoPor", fields: [actualizadoPorId], references: [id])
+}
+
+// Distancia del almacen al cliente (ida, por vialidad). Se calcula una vez
+// y se guarda: el pago no depende del orden del viaje ni de que el servicio
+// de rutas responda en el momento del reporte.
+model DistanciaCliente {
+  id           String   @id @default(cuid())
+  almacenId    String
+  almacen      Almacen  @relation(fields: [almacenId], references: [id])
+  clienteId    String
+  cliente      Cliente  @relation(fields: [clienteId], references: [id])
+  km           Float
+  // "iserver" (red vial real) o "estimada" (linea recta por un factor).
+  fuente       String
+  calculadoEn  DateTime @default(now())
+
+  @@unique([almacenId, clienteId])
+}
+
+// Un pago cerrado a un motorizado por un periodo. Congela lo que se le pago:
+// cambiar el tabulador despues no altera una liquidacion hecha.
+model LiquidacionDelivery {
+  id           String   @id @default(cuid())
+  repartidorId String
+  repartidor   Usuario  @relation("LiquidacionesDelivery", fields: [repartidorId], references: [id])
+  desde        DateTime @db.Date
+  hasta        DateTime @db.Date
+  entregas     Int
+  totalUsd     Decimal  @db.Decimal(12, 2)
+  creadoEn     DateTime @default(now())
+  creadoPorId  String
+  creadoPor    Usuario  @relation("LiquidacionesDeliveryCreadasPor", fields: [creadoPorId], references: [id])
+  nota         String?
+
+  paradas LiquidacionDeliveryParada[]
+
+  @@index([repartidorId, desde])
+}
+
+// Cada parada pagada en una liquidacion. El unique (ruta, cliente) es lo que
+// impide pagar dos veces la misma entrega.
+model LiquidacionDeliveryParada {
+  id            String              @id @default(cuid())
+  liquidacionId String
+  liquidacion   LiquidacionDelivery @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+  rutaId        String
+  ruta          Ruta                @relation(fields: [rutaId], references: [id])
+  clienteId     String
+  cliente       Cliente             @relation(fields: [clienteId], references: [id])
+  entregadoEn   DateTime
+  km            Float
+  montoUsd      Decimal             @db.Decimal(10, 2)
+  // El rango del tabulador con el que se pago, tal como se mostro.
+  rango         String
+
+  @@unique([rutaId, clienteId])
+  @@index([liquidacionId])
+}
+
+
+// ---------- Red vial (calculo de rutas en la base) ----------
+//
+// La red vial de Venezuela (OpenStreetMap) vive en la base y pgRouting
+// calcula sobre ella los trazados y las distancias, en vez del iServer de
+// SuperMap. Ver backend/app/services/red_vial.py y el cargador
+// backend/scripts/cargar_red_vial.py.
+//
+// Las columnas de geometria son de PostGIS, que Prisma no modela: van como
+// Unsupported. El backend las consulta con SQL directo, asi que no hace
+// falta mas.
+
+// Un tramo de calle entre dos cruces. source/target son los nodos que
+// conectan; costoMin es el tiempo en minutos que cuesta recorrerlo, y
+// costoMinInverso vale -1 en los tramos de un solo sentido (asi es como
+// pgRouting bloquea la direccion contraria).
+model RedVialTramo {
+  id              BigInt  @id @default(autoincrement())
+  osmId           String?
+  source          Int?
+  target          Int?
+  costoMin        Float
+  costoMinInverso Float
+  longitudM       Float
+  velocidadKmh    Float
+  /// Clase de via de OpenStreetMap: motorway, primary, residential...
+  tipo            String
+  nombre          String?
+  /// "B" doble sentido, "F" solo en el sentido de la linea, "T" solo al reves.
+  sentido         String
+  geom            Unsupported("geometry(LineString, 4326)")
+
+  @@index([source])
+  @@index([target])
+  @@index([geom], type: Gist)
+}
+
+// Los cruces de la red. Los calcula el cargador con pgr_extractVertices a
+// partir de los extremos de cada tramo.
+model RedVialNodo {
+  id   BigInt                                @id
+  geom Unsupported("geometry(Point, 4326)")
+
+  @@index([geom], type: Gist)
+}
+
+// Que red esta montada: de que archivo salio y como quedo. Sirve para saber
+// con que datos se estan calculando las rutas.
+model RedVialCarga {
+  id                 String   @id @default(cuid())
+  archivo            String
+  tramos             Int
+  nodos              Int
+  /// Tramos del archivo que no se cargaron (peatonales, escaleras, senderos).
+  tramosDescartados  Int
+  /// Tramos sin velocidad en el dato original: se les asigno una por tipo de via.
+  tramosSinVelocidad Int
+  /// Resumen del chequeo: extension cubierta, componentes conexos, avisos.
+  resumen            Json
+  cargadoEn          DateTime @default(now())
+  cargadoPorId       String?
+  cargadoPor         Usuario? @relation("RedVialCargadaPor", fields: [cargadoPorId], references: [id])
+}
+
+// Cache de rutas ya calculadas: la misma consulta no se vuelve a resolver
+// contra la red. Las coordenadas se guardan redondeadas (ver
+// DECIMALES_CACHE en backend/app/services/red_vial.py).
+model RutaCalculada {
+  id           String   @id @default(cuid())
+  perfil       String   @default("vehiculo")
+  origenLat    Float
+  origenLng    Float
+  destinoLat   Float
+  destinoLng   Float
+  distanciaKm  Float
+  tiempoMin    Int
+  /// El trazado como [[lng, lat], ...], listo para dibujar.
+  geometria    Json
+  calculadoEn  DateTime @default(now())
+
+  @@unique([perfil, origenLat, origenLng, destinoLat, destinoLng])
 }

@@ -13,8 +13,15 @@ dos repartidores asignados duplicaba sus filas en los listados.
 
 from __future__ import annotations
 
-CONDUCTOR_DEL_VEHICULO = (
-    'COALESCE((SELECT u."nombre" FROM "Usuario" u '
+_REPARTIDOR_ASIGNADO = (
+    'SELECT u."%s" FROM "Usuario" u '
     "WHERE u.\"vehiculoAsignadoId\" = v.\"id\" AND u.\"rol\" = 'REPARTIDOR' AND u.\"activo\" "
-    'ORDER BY u."nombre" LIMIT 1), v."conductorNombre")'
+    'ORDER BY u."nombre" LIMIT 1'
 )
+
+CONDUCTOR_DEL_VEHICULO = f'COALESCE(({_REPARTIDOR_ASIGNADO % "nombre"}), v."conductorNombre")'
+
+# El usuario al que se le paga el delivery (ver app/services/delivery.py):
+# sin repartidor asignado no hay a quien liquidarle, y el nombre suelto de la
+# ficha del vehiculo no sirve para eso.
+REPARTIDOR_DEL_VEHICULO = f'({_REPARTIDOR_ASIGNADO % "id"})' 

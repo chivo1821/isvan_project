@@ -9,15 +9,18 @@ import { Button } from "@/components/ui/button";
  * pone el backend, sin tener que armar un blob a mano. */
 export function DescargarReporteButton({
   reporte,
+  query,
   children = "Descargar Excel",
 }: {
   /** Nombre del archivo en la API, p. ej. "clientes" -> /reportes/clientes.xlsx */
-  reporte: "clientes" | "despachos" | "rutas";
+  reporte: "clientes" | "despachos" | "rutas" | "delivery";
+  /** Parámetros del reporte, p. ej. el período del pago de delivery. */
+  query?: string;
   children?: React.ReactNode;
 }) {
   return (
     <Button asChild variant="outline">
-      <a href={`${API_URL}/reportes/${reporte}.xlsx`}>
+      <a href={`${API_URL}/reportes/${reporte}.xlsx${query ? `?${query}` : ""}`}>
         <DownloadIcon />
         {children}
       </a>

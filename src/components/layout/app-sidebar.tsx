@@ -124,6 +124,7 @@ const NAV_GROUPS: NavGroup[] = [
 const INICIO_HIJOS: NavLeaf[] = [
   { label: "Resumen", href: "/" },
   { label: "Indicadores de venta", href: "/indicadores" },
+  { label: "Delivery en moto", href: "/delivery" },
 ];
 
 function isActive(pathname: string, href: string) {
