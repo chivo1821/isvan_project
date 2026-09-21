@@ -18,9 +18,9 @@ const EXPLICACION: Record<string, string> = {
   atendidos: "Compraron en el período con los filtros elegidos. Ordenados por venta neta.",
   menos2:
     "No compraron en el período, pero su última compra fue hace menos de 2 semanas (pasa cuando el período es corto).",
-  de2a4: "Su última compra fue hace 2 a 4 semanas, contado hasta el último día del período.",
-  de4a8: "Su última compra fue hace 4 a 8 semanas, contado hasta el último día del período.",
-  mas8: "Llevan más de 8 semanas sin comprar, contado hasta el último día del período.",
+  de2a4: "Su última compra fue hace 2 a 4 semanas.",
+  de4a8: "Su última compra fue hace 4 a 8 semanas.",
+  mas8: "Llevan más de 8 semanas sin comprar.",
   nunca:
     "Son clientes de la cartera que nunca compraron lo que marcan los filtros de grupo, producto o tipo de documento.",
 };
@@ -134,7 +134,7 @@ export function ActivacionClientes({ activacion }: { activacion: Activacion }) {
             <CardTitle>Activación de clientes</CardTitle>
             <p className="text-sm text-muted-foreground">
               Cartera: clientes con alguna compra hasta el final del período, con los filtros de ruta, tipo de cliente
-              y cliente. Los días sin compra se cuentan hasta el último día del período.
+              y cliente. Los días sin compra se cuentan hasta hoy o, si el período ya terminó, hasta su último día.
             </p>
           </div>
           <div className="relative w-full sm:w-64">

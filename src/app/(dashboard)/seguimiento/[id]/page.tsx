@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckIcon, MapPinIcon, PauseIcon, TruckIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { AutoRefresco } from "@/components/shared/auto-refresco";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
 
   return (
     <div className="space-y-6">
+      <AutoRefresco versionPath={`/rutas/seguimiento/version?ruta=${encodeURIComponent(ruta.id)}`} />
       <PageHeader
         title={`Seguimiento — ${ruta.numero}`}
         subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} · ${ruta.despachos.length} parada(s)`}

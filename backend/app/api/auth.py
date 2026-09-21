@@ -35,7 +35,10 @@ def _set_session_cookie(response: Response, token: str) -> None:
 @router.post("/login", response_model=Usuario)
 def login(data: LoginRequest, response: Response):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Usuario" WHERE "email" = %s', (data.email,))
+        # data.email ya viene normalizado (ver Correo en schemas.py); se
+        # normaliza tambien el guardado para que sigan entrando los usuarios
+        # creados antes de esto con alguna mayuscula o espacio.
+        cur.execute('SELECT * FROM "Usuario" WHERE lower(trim("email")) = %s', (data.email,))
         usuario = cur.fetchone()
         if not usuario or not usuario["activo"] or not verify_password(data.password, usuario["passwordHash"]):
             raise HTTPException(401, "Correo o contraseña incorrectos")

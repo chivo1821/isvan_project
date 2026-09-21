@@ -9,13 +9,13 @@ from __future__ import annotations
 import io
 import re
 import uuid
-from datetime import datetime
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc
 from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
 from app.services.ventas_import import ALIAS_COLUMNAS as ALIAS_VENTAS
@@ -556,7 +556,7 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
         # cientos de documentos y la base en otra region se pasaba del tiempo
         # limite de la funcion serverless (error 500 en produccion).
         numeros = siguientes_numeros(cur, "Despacho", "D", 4, len(data.grupos))
-        ahora = datetime.now()
+        ahora = ahora_utc()
 
         filas_despacho = []
         filas_item = []

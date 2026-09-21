@@ -7,12 +7,13 @@ aca — ver docs/PLAN.md, seccion "Rutas multi-parada"."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc
 from app.core.numero import siguiente_numero
 from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.ubicacion import sin_ubicacion
@@ -130,6 +131,48 @@ def listar_rutas(usuario: dict = Depends(get_current_user)):
         else:
             cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
         return _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
+
+
+@router.get("/seguimiento/version")
+def version_seguimiento(ruta: str | None = None):
+    """Una huella de lo que muestra el panel de seguimiento, para que la
+    pantalla se refresque sola solo cuando algo cambio.
+
+    El panel pregunta esto cada pocos segundos: son ~50 bytes, contra los
+    ~800 KB de recargar la pagina entera, que con el plan Free de Neon (5 GB
+    de transferencia al mes) agotarian la cuota en un par de dias de panel
+    abierto. Por eso la huella cubre solo lo que cada pantalla muestra:
+
+    - Vista general (sin ruta): las rutas activas, su estado, vehiculo y
+      numero de paradas. No las marcas de llegada y entrega, que ahi no se
+      ven: si no, se recargaria con cada una (~120 al dia).
+    - Detalle (con ruta): esa ruta aunque ya este cerrada, con las marcas de
+      cada parada.
+
+    Un recalculo se nota en la distancia y el tiempo de la ruta, sin mirar
+    RutaPunto, que no tiene indice por ruta."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH rutas AS (
+                SELECT * FROM "Ruta"
+                WHERE CASE WHEN %(ruta)s::text IS NULL THEN "estado" IN ('PLANIFICADA', 'EN_TRANSITO')
+                           ELSE "id" = %(ruta)s END
+            )
+            SELECT md5(COALESCE(string_agg(fila, '|' ORDER BY fila), '')) AS version FROM (
+                SELECT concat_ws(',', r."id", r."estado", r."vehiculoId", r."iniciadaEn", r."completadaEn",
+                                 r."canceladaEn", r."distanciaTotalKm", r."tiempoTotalMin",
+                                 (SELECT COUNT(*) FROM "Despacho" d WHERE d."rutaId" = r."id")) AS fila
+                FROM rutas r
+                UNION ALL
+                SELECT concat_ws(',', d."id", d."estado", d."ordenEnRuta", d."llegadaEn", d."entregadoEn")
+                FROM "Despacho" d
+                WHERE %(ruta)s::text IS NOT NULL AND d."rutaId" = %(ruta)s
+            ) t
+            """,
+            {"ruta": ruta},
+        )
+        return {"version": cur.fetchone()["version"]}
 
 
 @router.get("/{ruta_id}", response_model=Ruta)
@@ -290,7 +333,7 @@ def _calcular_y_guardar_trazado(cur, ruta_id: str, despachos: list[dict], almace
     # seguimiento-detalle-map.tsx); se inserta en lote para que no sea lenta
     # con geometrias grandes.
     cur.execute('DELETE FROM "RutaPunto" WHERE "rutaId" = %s', (ruta_id,))
-    ahora = datetime.now()
+    ahora = ahora_utc()
     n = len(resultado.geometry)
     filas = []
     for i, (lng, lat) in enumerate(resultado.geometry):
@@ -411,7 +454,7 @@ def reversar_ruta(
         cur.execute(
             'UPDATE "Ruta" SET "estado" = \'CANCELADA\', "canceladaEn" = %s, "canceladaPorId" = %s, '
             '"motivoCancelacion" = %s, "despachosAlCancelar" = %s WHERE "id" = %s',
-            (datetime.now(), usuario["id"], motivo, Jsonb([d["numero"] for d in despachos]), ruta_id),
+            (ahora_utc(), usuario["id"], motivo, Jsonb([d["numero"] for d in despachos]), ruta_id),
         )
         # El trazado ya no sirve: los despachos se van a otro viaje.
         cur.execute('DELETE FROM "RutaPunto" WHERE "rutaId" = %s', (ruta_id,))
@@ -445,7 +488,7 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
 
         cur.execute(
             'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',
-            (datetime.now(), ruta_id),
+            (ahora_utc(), ruta_id),
         )
         cur.execute('UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "rutaId" = %s', (ruta_id,))
         conn.commit()
@@ -480,7 +523,7 @@ def marcar_llegada_a_parada(ruta_id: str, despacho_id: str, usuario: dict = Depe
         if despacho["llegadaEn"] is not None:
             raise HTTPException(400, "La llegada a este cliente ya estaba marcada")
 
-        cur.execute('UPDATE "Despacho" SET "llegadaEn" = %s WHERE "id" = %s', (datetime.now(), despacho_id))
+        cur.execute('UPDATE "Despacho" SET "llegadaEn" = %s WHERE "id" = %s', (ahora_utc(), despacho_id))
         conn.commit()
 
         return _sin_trazado(cur, ruta_id)
@@ -518,7 +561,7 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
 
         cur.execute(
             'UPDATE "Despacho" SET "estado" = \'ENTREGADO\', "entregadoEn" = %s WHERE "id" = %s',
-            (datetime.now(), despacho_id),
+            (ahora_utc(), despacho_id),
         )
         cur.execute(
             'UPDATE "RutaPunto" SET "estado" = \'entregado\' WHERE "rutaId" = %s AND "paradaDespachoId" = %s',
@@ -532,7 +575,7 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
         if cur.fetchone()["pendientes"] == 0:
             cur.execute(
                 'UPDATE "Ruta" SET "estado" = \'COMPLETADA\', "completadaEn" = %s WHERE "id" = %s',
-                (datetime.now(), ruta_id),
+                (ahora_utc(), ruta_id),
             )
 
         conn.commit()

@@ -11,12 +11,36 @@ serializa los campos declarados en el modelo, asi que nunca sale en el JSON.
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Literal, Optional
+from datetime import date, datetime, timezone
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
+
+
+def en_utc(valor: datetime) -> datetime:
+    return valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor
+
+
+# Un instante guardado en UTC sin zona (ver app/core/fechas.py). Sale en el
+# JSON con su zona ("...Z"): sin ella el navegador lo toma como hora local y
+# lo muestra 4 horas corrido (las 11:00 de Caracas se veian como 15:00).
+# Las fechas de calendario guardadas a medianoche (ultimaRevision,
+# fechaEstimadaEntrega) no son instantes y siguen como datetime.
+Instante = Annotated[datetime, AfterValidator(en_utc)]
+
 
 # ---------- Usuarios / autenticacion ----------
+
+
+def _normalizar_correo(valor: str) -> str:
+    return valor.strip().lower()
+
+
+# El correo con el que se entra: sin espacios y en minusculas, tanto al
+# crear el usuario como al hacer login. Si no, "Juan@..." y "juan@..." son
+# dos correos distintos y el usuario ve "contraseña incorrecta" sin saber
+# por que.
+Correo = Annotated[str, AfterValidator(_normalizar_correo)]
 
 
 class Usuario(BaseModel):
@@ -33,7 +57,7 @@ class Usuario(BaseModel):
 
 class UsuarioCreate(BaseModel):
     nombre: str
-    email: str
+    email: Correo
     rol: str
     password: str
     vehiculoAsignadoId: Optional[str] = None
@@ -68,9 +92,9 @@ class DespachoVendedor(BaseModel):
     numero: str
     numeroDocumento: str
     estado: str
-    fechaCreacion: datetime
-    llegadaEn: Optional[datetime] = None
-    entregadoEn: Optional[datetime] = None
+    fechaCreacion: Instante
+    llegadaEn: Optional[Instante] = None
+    entregadoEn: Optional[Instante] = None
     rutaNumero: Optional[str] = None
     rutaEstado: Optional[str] = None
     empresa: str
@@ -90,12 +114,12 @@ class Visita(BaseModel):
     empresa: str
     codigoCliente: str
     semana: date
-    llegadaEn: datetime
+    llegadaEn: Instante
     llegadaLat: Optional[float] = None
     llegadaLng: Optional[float] = None
     llegadaPrecisionM: Optional[float] = None
     distanciaClienteM: Optional[float] = None
-    salidaEn: Optional[datetime] = None
+    salidaEn: Optional[Instante] = None
     observaciones: Optional[str] = None
 
 
@@ -143,7 +167,7 @@ class RendimientoVendedor(BaseModel):
     # Visitas cuya llegada quedo lejos del cliente (ver
     # vendedor.DISTANCIA_MAX_AL_CLIENTE_M): senal de que no fue en persona.
     visitasLejos: int
-    ultimaVisita: Optional[datetime] = None
+    ultimaVisita: Optional[Instante] = None
     # Venta neta (USD) del mes de sus rutas, del modulo de indicadores.
     ventaNetaMes: Optional[float] = None
 
@@ -156,7 +180,7 @@ class RendimientoVendedores(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: Correo
     password: str
 
 
@@ -285,13 +309,13 @@ class Despacho(BaseModel):
     destinoClienteId: str
     creadoPorId: str
     estado: str
-    fechaCreacion: datetime
+    fechaCreacion: Instante
     fechaEstimadaEntrega: Optional[datetime] = None
     rutaId: Optional[str] = None
     ordenEnRuta: Optional[int] = None
     # Marcas que pone el repartidor en la calle (ver app/api/rutas.py).
-    llegadaEn: Optional[datetime] = None
-    entregadoEn: Optional[datetime] = None
+    llegadaEn: Optional[Instante] = None
+    entregadoEn: Optional[Instante] = None
     items: list[DespachoItem] = []
 
 
@@ -308,7 +332,7 @@ class DespachoAprobacion(BaseModel):
     usuarioId: str
     accion: str
     comentario: Optional[str] = None
-    fecha: datetime
+    fecha: Instante
 
 
 class DespachoAprobacionCreate(BaseModel):
@@ -403,7 +427,7 @@ class RutaPunto(BaseModel):
     lat: float
     lng: float
     estado: str
-    timestamp: datetime
+    timestamp: Instante
     descripcion: Optional[str] = None
     paradaDespachoId: Optional[str] = None
 
@@ -415,15 +439,15 @@ class Ruta(BaseModel):
     origenId: str
     creadoPorId: str
     estado: str
-    fechaCreacion: datetime
+    fechaCreacion: Instante
     # Salida del almacen y fin del viaje (ver app/api/rutas.py).
-    iniciadaEn: Optional[datetime] = None
-    completadaEn: Optional[datetime] = None
+    iniciadaEn: Optional[Instante] = None
+    completadaEn: Optional[Instante] = None
     distanciaTotalKm: Optional[float] = None
     tiempoTotalMin: Optional[int] = None
     # Reverso (ver POST /rutas/{id}/reversar): quien, cuando, por que y que
     # despachos llevaba la ruta antes de liberarlos.
-    canceladaEn: Optional[datetime] = None
+    canceladaEn: Optional[Instante] = None
     canceladaPorId: Optional[str] = None
     motivoCancelacion: Optional[str] = None
     despachosAlCancelar: Optional[list[str]] = None

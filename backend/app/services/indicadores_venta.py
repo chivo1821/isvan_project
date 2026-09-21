@@ -16,6 +16,8 @@ import re
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
+from app.core.fechas import hoy_caracas
+
 # ---------- Filtros ----------
 
 
@@ -420,7 +422,9 @@ def opciones_disponibles(cur, f: Filtros) -> dict[str, list[str]]:
 # Asi el numero de atendidos es exactamente el de "Clientes atendidos".
 #
 # A los no atendidos se los agrupa por el tiempo desde su ultima compra
-# (con los mismos filtros), contado hasta el ultimo dia del periodo.
+# (con los mismos filtros), contado hasta el ultimo dia del periodo o hasta
+# hoy, lo que llegue antes: con el mes en curso seleccionado, el ultimo dia
+# del periodo todavia no ha pasado y contarlo inflaria los dias sin compra.
 
 # (clave, etiqueta, dias minimos sin comprar, dias maximos o None)
 GRUPOS_INACTIVIDAD: list[tuple[str, str, int, int | None]] = [
@@ -454,6 +458,7 @@ def activacion(cur, f: Filtros) -> dict:
         cartera.append('vc."codigo" = ANY(%(clientes)s)')
 
     en_periodo = 'v."fecha" BETWEEN %(periodo_desde)s AND %(periodo_hasta)s'
+    corte = min(f.hasta, hoy_caracas())
     cur.execute(
         f"""
         WITH movimientos AS (
@@ -492,7 +497,9 @@ def activacion(cur, f: Filtros) -> dict:
             "ruta": fila["ruta"],
             "tipo": fila["tipo"],
             "ultimaCompra": ultima,
-            "diasSinCompra": (f.hasta - ultima).days if ultima else None,
+            # max(0): una venta fechada despues de hoy (error de carga) no debe
+            # dar dias negativos.
+            "diasSinCompra": max((corte - ultima).days, 0) if ultima else None,
             "ventaPeriodo": float(fila["ventaPeriodo"] or 0),
             "ventaAnterior": float(fila["ventaAnterior"] or 0),
             "documentos": fila["documentos"] or 0,
