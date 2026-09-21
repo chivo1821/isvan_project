@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/layout/page-header";
+import { AutoRefresco } from "@/components/shared/auto-refresco";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   SeguimientoOverview,
@@ -24,6 +25,7 @@ export default async function SeguimientoPage() {
 
   return (
     <div className="space-y-6">
+      <AutoRefresco versionPath="/rutas/seguimiento/version" />
       <PageHeader
         title="Seguimiento"
         subtitle="Ubicación de las rutas activas (planificadas listas para salir y en tránsito)"

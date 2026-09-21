@@ -37,6 +37,12 @@ def crear_usuario(data: UsuarioCreate):
         # El vehiculo solo tiene sentido para un repartidor; para cualquier
         # otro rol se ignora aunque venga en el request.
         vehiculo_id = data.vehiculoAsignadoId if data.rol == "REPARTIDOR" else None
+        # El correo llega normalizado (Correo en schemas.py); se compara contra
+        # los guardados normalizados para no dejar entrar un duplicado que
+        # solo difiera en mayusculas de un usuario antiguo.
+        cur.execute('SELECT 1 FROM "Usuario" WHERE lower(trim("email")) = %s', (data.email,))
+        if cur.fetchone():
+            raise HTTPException(409, "Ya existe un usuario con ese correo")
         cur.execute(
             'INSERT INTO "Usuario" ("id", "nombre", "email", "passwordHash", "rol", "activo", "vehiculoAsignadoId") '
             "VALUES (%s, %s, %s, %s, %s, true, %s) RETURNING *",

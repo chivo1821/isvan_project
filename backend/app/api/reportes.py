@@ -22,6 +22,7 @@ from openpyxl.utils import get_column_letter
 from app.core.auth import requiere_rol
 from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
+from app.core.fechas import a_caracas, hoy_caracas
 from app.services import delivery as dl
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import ResumenRendimiento
@@ -47,7 +48,9 @@ def _escribir_hoja(hoja, encabezados: list[str], filas: list[list]) -> None:
         celda.font = _LETRA_ENCABEZADO
         celda.alignment = Alignment(vertical="center")
     for fila in filas:
-        hoja.append(fila)
+        # Las horas estan guardadas en UTC; en el Excel van en hora de
+        # Caracas. Solo las fechas con hora: una fecha sola (date) no se toca.
+        hoja.append([a_caracas(v) if isinstance(v, datetime) else v for v in fila])
 
     hoja.freeze_panes = "A2"
     if filas:
@@ -63,7 +66,7 @@ def _escribir_hoja(hoja, encabezados: list[str], filas: list[list]) -> None:
 def _como_adjunto(libro, nombre: str) -> Response:
     buffer = io.BytesIO()
     libro.save(buffer)
-    fecha = datetime.now().strftime("%Y-%m-%d")
+    fecha = hoy_caracas().strftime("%Y-%m-%d")
     return Response(
         content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

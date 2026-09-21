@@ -29,6 +29,7 @@ from psycopg.types.json import Jsonb
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
+from app.schemas import en_utc
 from app.services import indicadores_venta as iv
 from app.services.ventas_import import ExtractoVentas, leer_extracto
 
@@ -333,12 +334,24 @@ _SELECT_CARGA = (
 )
 
 
+_INSTANTES_CARGA = ("subidaEn", "confirmadaEn", "revertidaEn")
+
+
+def _horas_en_utc(carga: dict) -> dict:
+    """Estas filas no pasan por un modelo de schemas.py, asi que se les pone
+    la zona a mano (ver Instante alli): sin ella el navegador corre la hora."""
+    for campo in _INSTANTES_CARGA:
+        if carga.get(campo) is not None:
+            carga[campo] = en_utc(carga[campo])
+    return carga
+
+
 def _obtener_carga(cur, carga_id: str) -> dict:
     cur.execute(_SELECT_CARGA + 'WHERE c."id" = %s', (carga_id,))
     carga = cur.fetchone()
     if not carga:
         raise HTTPException(404, "Carga no encontrada")
-    return carga
+    return _horas_en_utc(carga)
 
 
 @router.get("/cargas")
@@ -346,7 +359,7 @@ def listar_cargas(empresa: str):
     _validar_empresa(empresa)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(_SELECT_CARGA + 'WHERE c."empresa" = %s ORDER BY c."subidaEn" DESC', (empresa,))
-        return cur.fetchall()
+        return [_horas_en_utc(carga) for carga in cur.fetchall()]
 
 
 @router.get("/cargas/{carga_id}")

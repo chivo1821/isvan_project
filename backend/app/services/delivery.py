@@ -154,7 +154,11 @@ def guardar_distancias_de_ruta(cur, ruta_id: str) -> None:
 # Una fila por (ruta, cliente) con entrega marcada en una ruta de moto. La
 # fecha del pago es la de la ultima entrega de esa parada, en hora de
 # Venezuela.
-_FECHA_ENTREGA = "(d.\"entregadoEn\" AT TIME ZONE 'America/Caracas')::date"
+# entregadoEn esta en UTC sin zona (ver app/core/fechas.py): primero se le
+# dice que es UTC y despues se pasa a Caracas. Con un solo AT TIME ZONE se
+# leia como si ya fuera hora de Caracas, y toda entrega desde las 16:00
+# quedaba con la fecha del dia siguiente.
+_FECHA_ENTREGA = "(d.\"entregadoEn\" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Caracas')::date"
 
 _PARADAS = f"""
     SELECT r."id" AS "rutaId", r."numero" AS "rutaNumero", r."origenId",

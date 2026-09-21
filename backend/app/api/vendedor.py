@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import calendar
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc, hoy_caracas
 from app.core.permisos import rutas_del_vendedor
 from app.core.ubicacion import sin_ubicacion
 from app.schemas import (
@@ -39,11 +40,6 @@ from app.services.route_analysis import LatLng, haversine_km
 
 router = APIRouter(prefix="/vendedor", tags=["vendedor"])
 
-# Venezuela no tiene horario de verano desde 2016: la hora de Caracas es
-# UTC-4 fija. Se calcula asi, y no con zoneinfo, para no depender de la
-# base de zonas horarias (en Windows no viene instalada).
-_DESFASE_CARACAS = timedelta(hours=-4)
-
 # Despachos que ve el vendedor: los de los ultimos dias, mas cualquiera que
 # siga abierto aunque sea mas viejo.
 DIAS_DESPACHOS = 30
@@ -58,10 +54,6 @@ DISTANCIA_MAX_AL_CLIENTE_M = 300
 # El filtro por las rutas del vendedor, como "EMPRESA|RUTA" = ANY(...): una
 # sola condicion para cualquier cantidad de rutas y de las dos empresas.
 _ES_DE_SUS_RUTAS = "(vc.\"empresa\"::text || '|' || vc.\"ruta\") = ANY(%s)"
-
-
-def hoy_caracas() -> date:
-    return (datetime.now(timezone.utc) + _DESFASE_CARACAS).date()
 
 
 def lunes_de(dia: date) -> date:
@@ -224,7 +216,7 @@ def iniciar_visita(data: IniciarVisitaRequest, usuario: dict = Depends(requiere_
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (
                 f"vis-{uuid.uuid4().hex[:10]}", usuario["id"], data.empresa, codigo, lunes_de(hoy_caracas()),
-                datetime.now(), data.lat, data.lng, data.precisionM, distancia_m,
+                ahora_utc(), data.lat, data.lng, data.precisionM, distancia_m,
             ),
         )
         visita = cur.fetchone()
@@ -251,7 +243,7 @@ def terminar_visita(
         observaciones = (data.observaciones or "").strip() or None
         cur.execute(
             'UPDATE "Visita" SET "salidaEn" = %s, "observaciones" = %s WHERE "id" = %s RETURNING *',
-            (datetime.now(), observaciones, visita_id),
+            (ahora_utc(), observaciones, visita_id),
         )
         actualizada = cur.fetchone()
         conn.commit()

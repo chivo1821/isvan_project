@@ -6,7 +6,7 @@ import { PlusIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { apiPost } from "@/lib/api-client";
+import { apiPost, mensajeDeError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -81,7 +81,7 @@ export function NuevoUsuarioDialog({
       setOpen(false);
     } catch (err) {
       toast.error("No se pudo agregar el usuario", {
-        description: err instanceof Error ? err.message : undefined,
+        description: mensajeDeError(err, "Revisa los datos e inténtalo de nuevo"),
       });
     }
   }

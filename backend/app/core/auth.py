@@ -13,12 +13,13 @@ import hashlib
 import os
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import bcrypt
 from fastapi import Cookie, Depends, HTTPException
 
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc
 
 SESSION_COOKIE_NAME = "sesion_id"
 SESSION_TTL = timedelta(hours=12)
@@ -44,7 +45,7 @@ def crear_sesion(cur, usuario_id: str) -> str:
     """Crea la fila en Sesion y devuelve el token crudo (va en la cookie);
     solo su hash queda en la BD."""
     token = secrets.token_urlsafe(32)
-    expira_en = datetime.now() + SESSION_TTL
+    expira_en = ahora_utc() + SESSION_TTL
     cur.execute(
         'INSERT INTO "Sesion" ("id", "usuarioId", "tokenHash", "expiraEn") VALUES (%s, %s, %s, %s)',
         (f"ses-{uuid.uuid4().hex[:16]}", usuario_id, _hash_token(token), expira_en),

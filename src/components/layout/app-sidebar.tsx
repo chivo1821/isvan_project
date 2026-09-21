@@ -202,7 +202,6 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
                 </span>
                 <span className="flex flex-col">
                   <span className="text-sm font-semibold">Gestión Logística</span>
-                  <span className="text-xs text-muted-foreground">Helados &amp; Pizzas</span>
                 </span>
               </Link>
             </SidebarMenuButton>
