@@ -9,7 +9,8 @@ import { getUsuarioActual } from "@/lib/session";
 
 export default async function RutasPage() {
   const [rutasSinOrdenar, usuarioActual] = await Promise.all([getRutasConDetalle(), getUsuarioActual()]);
-  const rutas = rutasSinOrdenar.sort((a, b) => (a.fechaCreacion < b.fechaCreacion ? 1 : -1));
+  // La salida más lejana primero: arriba lo planificado a futuro.
+  const rutas = rutasSinOrdenar.sort((a, b) => b.salidaProgramada.localeCompare(a.salidaProgramada));
   const puedeCrear = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
   const puedeDescargar = usuarioActual != null && usuarioActual.rol !== "REPARTIDOR";
 

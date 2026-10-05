@@ -169,9 +169,52 @@ export type CoberturaVentas = {
   cargas: { id: string; archivo: string; periodoDesde: string; periodoHasta: string; confirmadaEn: string }[];
 };
 
+/** Un mes del gráfico de proyección: la venta real contra la meta cargada.
+ * `ventaNeta` es null en un mes futuro (todavía no hay dato, no es cero) y
+ * `meta` es null en un mes sin meta cargada. */
+export type PuntoProyeccion = {
+  periodo: string;
+  ventaNeta: number | null;
+  meta: number | null;
+  cumplimientoPct: number | null;
+  /** El mes en curso, con datos hasta hoy: no es un incumplimiento. */
+  parcial: boolean;
+};
+
+export type Proyeccion = {
+  /** false cuando hay filtros que la meta no distingue (cliente, producto,
+   * grupo, tipo de cliente o tipo de documento): comparar mentiría. */
+  aplica: boolean;
+  filtrosAjenos: string[];
+  puntos: PuntoProyeccion[];
+  periodo: {
+    meta: number | null;
+    venta: number;
+    cumplimientoPct: number | null;
+    /** El período corta algún mes por la mitad y su meta se repartió por días. */
+    prorrateada: boolean;
+  } | null;
+};
+
+export type MetaVenta = { ruta: string; mes: string; montoUsd: number; actualizadoEn: string };
+export type MetasAnio = { anio: number; rutas: string[]; metas: MetaVenta[] };
+
+/** Metas propuestas a partir del histórico (no es un pronóstico: son ventas
+ * reales). Cada mes trae su propia propuesta, calculada con los meses
+ * cerrados anteriores a él, así que los meses no salen todos iguales. */
+export type BaseSugerencia = "media" | "ultimo";
+export type MesSugerido = {
+  mes: string;
+  /** Los meses cerrados de los que salió la propuesta de ese mes. */
+  ventana: string[];
+  rutas: { ruta: string; sugerido: number }[];
+};
+export type SugerenciaMetas = { base: BaseSugerencia; ventana: number; meses: MesSugerido[] };
+
 export type TableroIndicadores = {
   resumen: ResumenIndicadores;
   serie: Record<Granularidad, PuntoSerie[]>;
+  proyeccion: Proyeccion;
   desgloses: Record<Dimension, Desglose>;
   alertas: AlertasIndicadores;
   mapa: DatosMapaVentas;
@@ -181,6 +224,16 @@ export type TableroIndicadores = {
    * opciones_disponibles en el backend). */
   opcionesDisponibles: OpcionesDisponibles;
 };
+
+/** El tablero del VENDEDOR: el mismo, filtrado a sus rutas en el backend y
+ * sin las brechas con logística (comparan contra clientes de todas las rutas). */
+export type TableroIndicadoresVendedor = Omit<TableroIndicadores, "brechas"> & { brechas: null };
+
+/** Opciones de los filtros del VENDEDOR, ya limitadas a sus rutas. Sin rutas
+ * asignadas solo llega `empresas: []`. */
+export type OpcionesIndicadoresVendedor =
+  | { empresas: [] }
+  | (OpcionesIndicadores & { empresas: Empresa[]; empresa: Empresa });
 
 export type OpcionesDisponibles = {
   rutas: string[];

@@ -24,6 +24,7 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-chart-meta: var(--chart-meta);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -88,6 +89,13 @@
   --chart-3: #2e9e5b;
   --chart-4: #1f8fd6;
   --chart-5: #8a7a68;
+  /* Línea de meta del gráfico de proyección. No sale de --chart-N porque
+     necesita contraste contra la venta (--chart-1) en los DOS modos, y en
+     oscuro los --chart-N siguen siendo los grises por defecto de shadcn.
+     Validado con el script de la guía de visualización: en claro pasa las
+     cinco comprobaciones contra la venta (ΔE 24,3 protan) y en oscuro
+     mantiene 15,6 de separación y más de 3:1 de contraste con el fondo. */
+  --chart-meta: #1f8fd6;
   --radius: 0.75rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #2b2118;
@@ -123,6 +131,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --chart-meta: #5aabe8;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

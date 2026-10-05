@@ -4,9 +4,10 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
+import { GraficoProyeccion } from "@/components/modules/indicadores/proyeccion-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatNumero, formatPct, formatUsd } from "@/lib/constants";
 import {
   finDeMes,
@@ -16,6 +17,7 @@ import {
   queryPagina,
   type FiltrosIndicadores,
   type Granularidad,
+  type Proyeccion,
   type PuntoSerie,
 } from "@/lib/indicadores";
 import { cn } from "@/lib/utils";
@@ -277,20 +279,32 @@ function GraficoMargen({ puntos, onElegir }: PropsGrafico) {
   );
 }
 
-/** Evolución por mes o por semana ISO: la venta neta y el margen, uno al
- * lado del otro y siempre sobre los mismos períodos. Muestran una ventana de
- * contexto (ver ventana_de_serie en backend/app/services/indicadores_venta.py)
- * con el período elegido resaltado; un clic en una columna filtra toda la
- * página por ese mes o esa semana, con el resto de los filtros intacto. */
-export function GraficosEvolucion({
+/** Los gráficos de la venta, en dos grupos:
+ *
+ * - **Evolución**: venta neta y margen por mes o por semana ISO, uno al lado
+ *   del otro y siempre sobre los mismos períodos. Muestran una ventana de
+ *   contexto (ver ventana_de_serie en backend/app/services/indicadores_venta.py)
+ *   con el período elegido resaltado; un clic en una columna filtra toda la
+ *   página por ese mes o esa semana, con el resto de los filtros intacto.
+ * - **Proyección**: la venta real contra la meta que carga el cliente.
+ *
+ * Van en pestañas y no uno debajo del otro: responden preguntas distintas
+ * ("¿cómo venimos?" y "¿llegamos a la meta?") y rara vez se miran a la vez. */
+export function GraficosVenta({
   serie,
+  proyeccion,
   filtros,
+  pagina = "/indicadores",
 }: {
   serie: Record<Granularidad, PuntoSerie[]>;
+  proyeccion: Proyeccion;
   filtros: FiltrosIndicadores;
+  /** La página a la que lleva el clic en una columna (el vendedor tiene la suya). */
+  pagina?: string;
 }) {
   const router = useRouter();
   const [actualizando, startTransition] = useTransition();
+  const [vista, setVista] = useState<"evolucion" | "proyeccion">("evolucion");
   const [granularidad, setGranularidad] = useState<Granularidad>(esUnaSemana(filtros) ? "semana" : "mes");
   const unidad = granularidad === "mes" ? "mes" : "semana";
 
@@ -311,7 +325,7 @@ export function GraficosEvolucion({
   function filtrarPor(desde: string, hasta: string) {
     if (desde === filtros.desde && hasta === filtros.hasta) return;
     startTransition(() =>
-      router.replace(`/indicadores?${queryPagina({ ...filtros, desde, hasta })}`, { scroll: false })
+      router.replace(`${pagina}?${queryPagina({ ...filtros, desde, hasta })}`, { scroll: false })
     );
   }
   const elegir = (p: PuntoGrafico) => filtrarPor(p.periodo, p.fin);
@@ -322,9 +336,35 @@ export function GraficosEvolucion({
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="font-heading text-base font-medium">Evolución por {unidad}</h2>
+      <Tabs value={vista} onValueChange={(v) => setVista(v as typeof vista)}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="evolucion">Evolución</TabsTrigger>
+            <TabsTrigger value="proyeccion">Proyección</TabsTrigger>
+          </TabsList>
+          {vista === "evolucion" && (
+            <div className="flex items-center gap-2">
+              {primero && ultimo && !todoSeleccionado && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={actualizando}
+                  onClick={() => filtrarPor(primero.periodo, ultimo.fin)}
+                >
+                  Ver todo el rango
+                </Button>
+              )}
+              <Tabs value={granularidad} onValueChange={(v) => setGranularidad(v as Granularidad)}>
+                <TabsList>
+                  <TabsTrigger value="mes">Mes</TabsTrigger>
+                  <TabsTrigger value="semana">Semana</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+          )}
+        </div>
+
+        <TabsContent value="evolucion" className="space-y-3">
           <p className="text-sm text-muted-foreground">
             {actualizando
               ? "Actualizando…"
@@ -332,43 +372,35 @@ export function GraficosEvolucion({
                   granularidad === "semana" ? " (lunes a domingo)" : ""
                 }.`}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {primero && ultimo && !todoSeleccionado && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={actualizando}
-              onClick={() => filtrarPor(primero.periodo, ultimo.fin)}
+          {puntos.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Sin ventas en este período.
+              </CardContent>
+            </Card>
+          ) : (
+            // Mientras llega la página nueva se deja el gráfico anterior atenuado,
+            // sin parpadeos ni saltos de altura.
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-4 transition-opacity xl:grid-cols-2",
+                actualizando && "pointer-events-none opacity-60"
+              )}
             >
-              Ver todo el rango
-            </Button>
+              <GraficoVenta puntos={puntos} onElegir={elegir} />
+              <GraficoMargen puntos={puntos} onElegir={elegir} />
+            </div>
           )}
-          <Tabs value={granularidad} onValueChange={(v) => setGranularidad(v as Granularidad)}>
-            <TabsList>
-              <TabsTrigger value="mes">Mes</TabsTrigger>
-              <TabsTrigger value="semana">Semana</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-      </div>
-      {puntos.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">Sin ventas en este período.</CardContent>
-        </Card>
-      ) : (
-        // Mientras llega la página nueva se deja el gráfico anterior atenuado,
-        // sin parpadeos ni saltos de altura.
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-4 transition-opacity xl:grid-cols-2",
-            actualizando && "pointer-events-none opacity-60"
-          )}
-        >
-          <GraficoVenta puntos={puntos} onElegir={elegir} />
-          <GraficoMargen puntos={puntos} onElegir={elegir} />
-        </div>
-      )}
+        </TabsContent>
+
+        <TabsContent value="proyeccion" className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            La venta real contra la meta que cargas por ruta y mes. Un mes sin barra de venta todavía no tiene datos:
+            solo su meta.
+          </p>
+          <GraficoProyeccion proyeccion={proyeccion} />
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }

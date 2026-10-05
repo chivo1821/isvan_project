@@ -79,6 +79,12 @@ export const TIPO_VEHICULO_META: Record<TipoVehiculo, { label: string }> = {
   MOTO: { label: "Moto" },
 };
 
+/** "placa — tipo" de un vehículo, o el aviso de que la ruta todavía no
+ * tiene uno (se planifica sin vehículo y se asigna después). */
+export function describirVehiculo(vehiculo: { placa: string; tipo: TipoVehiculo } | null | undefined): string {
+  return vehiculo ? `${vehiculo.placa} — ${TIPO_VEHICULO_META[vehiculo.tipo].label}` : "Sin vehículo asignado";
+}
+
 // Los strings tipo "YYYY-MM-DD" (sin hora) se interpretan como UTC medianoche
 // por el constructor de Date; forzamos hora local para que no se corran un
 // dia hacia atras al formatear en zonas horarias negativas (ej. Venezuela).

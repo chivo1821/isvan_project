@@ -7,15 +7,17 @@ aca — ver docs/PLAN.md, seccion "Rutas multi-parada"."""
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.core.auth import get_current_user, requiere_rol
+from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.numero import siguiente_numero
-from app.core.permisos import es_repartidor, vehiculo_asignado
+from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.ubicacion import sin_ubicacion
 from psycopg.types.json import Jsonb
 
@@ -25,9 +27,13 @@ from app.schemas import (
     ReversarRutaRequest,
     Ruta,
     RutaCreate,
+    RutaProgramacion,
     SugerenciaVehiculo,
     SugerenciaVehiculoRequest,
+    en_utc,
 )
+from app.services import configuracion as cfg
+from app.services import planificacion as pl
 from app.services.plan_rutas import sugerir_plan_rutas
 from app.services.delivery import guardar_distancias_de_ruta
 from app.services.route_analysis import MINUTOS_POR_PARADA, LatLng, calcular_mejor_ruta_multi
@@ -85,8 +91,16 @@ def _con_detalle_lote(cur, rutas: list[dict], *, geometria_completa: bool = True
     for p in cur.fetchall():
         puntos_por_ruta.setdefault(p["rutaId"], []).append(p)
 
+    # Lo que hay que resolver antes de la salida (sin vehiculo, horarios que
+    # se pisan...): se calcula para todas las rutas del lote de una vez.
+    avisos = pl.avisos_de(cur, rutas)
     return [
-        {**r, "despachos": despachos_por_ruta.get(r["id"], []), "puntos": puntos_por_ruta.get(r["id"], [])}
+        {
+            **r,
+            "despachos": despachos_por_ruta.get(r["id"], []),
+            "puntos": puntos_por_ruta.get(r["id"], []),
+            "avisos": avisos.get(r["id"], []),
+        }
         for r in rutas
     ]
 
@@ -108,7 +122,7 @@ def _sin_trazado(cur, ruta_id: str) -> dict:
 def _verificar_ruta_propia(usuario: dict, ruta: dict) -> None:
     """Un REPARTIDOR solo puede tocar la ruta de su vehiculo asignado. Se
     responde 404 (no 403) para no confirmarle que la ruta de otro existe."""
-    if es_repartidor(usuario) and ruta["vehiculoId"] != vehiculo_asignado(usuario):
+    if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, ruta["vehiculoId"]):
         raise HTTPException(404, "Ruta no encontrada")
 
 
@@ -124,12 +138,13 @@ def listar_rutas(usuario: dict = Depends(get_current_user)):
             vehiculo_id = vehiculo_asignado(usuario)
             if not vehiculo_id:
                 return []
+            # Ahora puede tener varias planificadas: la proxima en salir, primero.
             cur.execute(
-                'SELECT * FROM "Ruta" WHERE "vehiculoId" = %s ORDER BY "fechaCreacion" DESC',
+                'SELECT * FROM "Ruta" WHERE "vehiculoId" = %s ORDER BY "salidaProgramada" ASC',
                 (vehiculo_id,),
             )
         else:
-            cur.execute('SELECT * FROM "Ruta" ORDER BY "fechaCreacion" DESC')
+            cur.execute('SELECT * FROM "Ruta" ORDER BY "salidaProgramada" DESC')
         return _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
 
 
@@ -160,7 +175,7 @@ def version_seguimiento(ruta: str | None = None):
                            ELSE "id" = %(ruta)s END
             )
             SELECT md5(COALESCE(string_agg(fila, '|' ORDER BY fila), '')) AS version FROM (
-                SELECT concat_ws(',', r."id", r."estado", r."vehiculoId", r."iniciadaEn", r."completadaEn",
+                SELECT concat_ws(',', r."id", r."estado", r."vehiculoId", r."salidaProgramada", r."iniciadaEn", r."completadaEn",
                                  r."canceladaEn", r."distanciaTotalKm", r."tiempoTotalMin",
                                  (SELECT COUNT(*) FROM "Despacho" d WHERE d."rutaId" = r."id")) AS fila
                 FROM rutas r
@@ -175,6 +190,121 @@ def version_seguimiento(ruta: str | None = None):
         return {"version": cur.fetchone()["version"]}
 
 
+# ---------- Planificacion: agenda y configuracion ----------
+#
+# Van antes de /{ruta_id}: si no, "agenda" y "configuracion" se tomarian
+# como el id de una ruta.
+
+_DESFASE_CARACAS = timedelta(hours=-4)  # Caracas = UTC-4 fijo (ver app/core/fechas.py)
+DIAS_MAXIMOS_AGENDA = 62
+
+
+def _medianoche_utc(dia: date) -> datetime:
+    """El comienzo de un dia de Caracas, en UTC sin zona (como en la base)."""
+    return datetime.combine(dia, datetime.min.time()) - _DESFASE_CARACAS
+
+
+def _ruta_de_agenda(ruta: dict, pedidos: list[dict], avisos: list[dict], libres: list[str] | None) -> dict:
+    return {
+        "id": ruta["id"],
+        "numero": ruta["numero"],
+        "estado": ruta["estado"],
+        "salidaProgramada": en_utc(ruta["salidaProgramada"]),
+        "iniciadaEn": en_utc(ruta["iniciadaEn"]) if ruta["iniciadaEn"] else None,
+        "completadaEn": en_utc(ruta["completadaEn"]) if ruta["completadaEn"] else None,
+        "tiempoTotalMin": ruta["tiempoTotalMin"],
+        "distanciaTotalKm": ruta["distanciaTotalKm"],
+        "vehiculoId": ruta["vehiculoId"],
+        "pedidos": pedidos,
+        "pesoKg": round(sum(p["pesoKg"] for p in pedidos), 1),
+        "avisos": avisos,
+        "vehiculosLibres": libres,
+    }
+
+
+@router.get("/agenda", dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))])
+def agenda(desde: date, hasta: date):
+    """Las rutas que salen entre `desde` y `hasta` (dias de Caracas), mas las
+    planificadas que ya debian haber salido antes: una ruta atrasada no puede
+    desaparecer de la vista por haber quedado en un dia anterior. Cada ruta
+    trae sus pedidos, sus avisos y los vehiculos libres en su horario."""
+    if hasta < desde:
+        raise HTTPException(400, "La fecha hasta no puede ser anterior a la fecha desde")
+    if (hasta - desde).days > DIAS_MAXIMOS_AGENDA:
+        raise HTTPException(400, f"La agenda abarca como maximo {DIAS_MAXIMOS_AGENDA} dias")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT * FROM "Ruta" WHERE "estado" <> %s AND "salidaProgramada" >= %s AND "salidaProgramada" < %s '
+            'ORDER BY "salidaProgramada"',
+            ("CANCELADA", _medianoche_utc(desde), _medianoche_utc(hasta + timedelta(days=1))),
+        )
+        en_rango = cur.fetchall()
+        cur.execute(
+            'SELECT * FROM "Ruta" WHERE "estado" = %s AND "salidaProgramada" < %s ORDER BY "salidaProgramada"',
+            ("PLANIFICADA", _medianoche_utc(desde)),
+        )
+        atrasadas = cur.fetchall()
+        rutas = en_rango + atrasadas
+
+        pedidos: dict[str, list[dict]] = {}
+        if rutas:
+            cur.execute(
+                'SELECT d."rutaId", d."id", d."numero", d."estado", c."nombre" AS "cliente", c."ciudad", '
+                'COALESCE(SUM(i."cantidad" * i."pesoUnitarioKg"), 0)::float AS "pesoKg" '
+                'FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
+                'LEFT JOIN "DespachoItem" i ON i."despachoId" = d."id" '
+                'WHERE d."rutaId" = ANY(%s) '
+                'GROUP BY d."rutaId", d."id", d."numero", d."estado", c."nombre", c."ciudad", d."ordenEnRuta" '
+                'ORDER BY d."rutaId", d."ordenEnRuta"',
+                ([r["id"] for r in rutas],),
+            )
+            for p in cur.fetchall():
+                pedidos.setdefault(p.pop("rutaId"), []).append(p)
+        avisos = pl.avisos_de(cur, rutas)
+        libres = pl.libres_por_ruta(cur, [r for r in rutas if r["estado"] == "PLANIFICADA"])
+        cur.execute(
+            f'SELECT v."id", v."placa", v."tipo", v."capacidadKg", v."tieneRefrigeracion", v."estado", '
+            f'{CONDUCTOR_DEL_VEHICULO} AS "conductor" FROM "Vehiculo" v ORDER BY v."placa"'
+        )
+        vehiculos = cur.fetchall()
+
+    def armar(lista: list[dict]) -> list[dict]:
+        return [_ruta_de_agenda(r, pedidos.get(r["id"], []), avisos.get(r["id"], []), libres.get(r["id"])) for r in lista]
+
+    return {
+        "desde": desde,
+        "hasta": hasta,
+        "rutas": armar(en_rango),
+        "atrasadas": armar(atrasadas),
+        "vehiculos": vehiculos,
+    }
+
+
+class ValorAjuste(BaseModel):
+    valor: float
+
+
+@router.get("/configuracion", dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))])
+def configuracion_rutas():
+    """Los ajustes de la planificacion (p. ej. la distancia maxima de las motos)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        return [{**a, "actualizadoEn": en_utc(a["actualizadoEn"]) if a["actualizadoEn"] else None} for a in cfg.todos(cur)]
+
+
+@router.put("/configuracion/{clave}")
+def guardar_configuracion(clave: str, data: ValorAjuste, usuario: dict = Depends(requiere_rol("ADMIN"))):
+    """Cambia un ajuste. Solo ADMIN."""
+    if clave not in cfg.AJUSTES:
+        raise HTTPException(404, "Ajuste desconocido")
+    with get_connection() as conn, conn.cursor() as cur:
+        try:
+            cfg.guardar(cur, clave, data.valor, usuario["id"])
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        conn.commit()
+        return [{**a, "actualizadoEn": en_utc(a["actualizadoEn"]) if a["actualizadoEn"] else None} for a in cfg.todos(cur)]
+
+
 @router.get("/{ruta_id}", response_model=Ruta)
 def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
@@ -184,7 +314,7 @@ def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
             raise HTTPException(404, "Ruta no encontrada")
         # Para un repartidor, una ruta de otro vehiculo simplemente no
         # existe: 404 y no 403, para no confirmarle que hay algo ahi.
-        if es_repartidor(usuario) and row["vehiculoId"] != vehiculo_asignado(usuario):
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"]):
             raise HTTPException(404, "Ruta no encontrada")
         return _con_detalle(cur, row)
 
@@ -195,7 +325,7 @@ def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     dependencies=[Depends(requiere_rol("DESPACHOS"))],
 )
 def obtener_vehiculos_sugeridos(data: SugerenciaVehiculoRequest):
-    return sugerir_vehiculos(data.despachoIds)
+    return sugerir_vehiculos(data.despachoIds, data.salidaProgramada, data.rutaId)
 
 
 @router.post(
@@ -212,7 +342,7 @@ def sugerir_rutas(data: PlanRutasRequest):
     que es donde se calcula el trazado real."""
     if data.radioMaxKm is not None and data.radioMaxKm <= 0:
         raise HTTPException(400, "El radio maximo entre paradas debe ser mayor que 0")
-    return sugerir_plan_rutas(data.despachoIds, data.mezclarRutasComerciales, data.radioMaxKm)
+    return sugerir_plan_rutas(data.despachoIds, data.mezclarRutasComerciales, data.radioMaxKm, data.salidaProgramada)
 
 
 @router.post("", response_model=Ruta, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
@@ -253,33 +383,23 @@ def crear_ruta(data: RutaCreate):
                 f'No existe el almacen de origen "{ALMACEN_BASE_ID}" en la base de datos. '
                 "Hay que crearlo antes de poder armar rutas (ver README, seccion de datos iniciales).",
             )
-        cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s AND "estado" = \'FUNCIONAL\'', (data.vehiculoId,))
-        if not cur.fetchone():
-            raise HTTPException(400, "El vehiculo no existe o no esta funcional")
-
-        # Un vehiculo lleva una sola ruta activa a la vez: ademas de evitar
-        # mandar el mismo camion a dos viajes simultaneos, es lo que hace que
-        # el repartidor asignado a ese vehiculo tenga exactamente un viaje a
-        # la vista (ver app/core/permisos.py).
-        cur.execute(
-            'SELECT "numero" FROM "Ruta" WHERE "vehiculoId" = %s AND "estado" = ANY(%s)',
-            (data.vehiculoId, ["PLANIFICADA", "EN_TRANSITO"]),
-        )
-        ruta_activa = cur.fetchone()
-        if ruta_activa:
-            raise HTTPException(
-                400,
-                f'Ese vehiculo ya tiene la ruta {ruta_activa["numero"]} activa. '
-                "Hay que completarla o cancelarla antes de asignarle otra.",
-            )
+        # El vehiculo es opcional y nada de el bloquea la planificacion
+        # (pedido del cliente, ver app/services/planificacion.py): ni que este
+        # en mantenimiento ni que ya tenga otra ruta. Eso sale como aviso en
+        # la ruta. Solo tiene que existir.
+        if data.vehiculoId is not None:
+            cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoId,))
+            if not cur.fetchone():
+                raise HTTPException(400, "El vehiculo no existe")
 
         numero = siguiente_numero(cur, "Ruta", "R", 4)
         ruta_id = f"ruta-{uuid.uuid4().hex[:10]}"
+        salida = data.salidaProgramada.astimezone(timezone.utc).replace(tzinfo=None)
         cur.execute(
             'INSERT INTO "Ruta" '
-            '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado") '
-            "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA') RETURNING *",
-            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, data.creadoPorId),
+            '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado", "salidaProgramada") '
+            "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA', %s) RETURNING *",
+            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, data.creadoPorId, salida),
         )
 
         _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
@@ -402,6 +522,42 @@ def recalcular_ruta(ruta_id: str):
         return _con_detalle(cur, cur.fetchone())
 
 
+@router.patch("/{ruta_id}/programacion", response_model=Ruta, dependencies=[Depends(requiere_rol("DESPACHOS"))])
+def programar_ruta(ruta_id: str, data: RutaProgramacion):
+    """Reprograma la salida de una ruta planificada y/o le cambia el
+    vehiculo (vehiculoId en null se lo quita). Como al crearla, nada de esto
+    bloquea: los conflictos vuelven como avisos en la respuesta."""
+    cambios = data.model_fields_set
+    if not cambios:
+        raise HTTPException(400, "No hay nada que cambiar")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        ruta = cur.fetchone()
+        if not ruta:
+            raise HTTPException(404, "Ruta no encontrada")
+        if ruta["estado"] != "PLANIFICADA":
+            raise HTTPException(400, "Solo se puede reprogramar una ruta planificada (que todavia no salio)")
+        if "salidaProgramada" in cambios:
+            if data.salidaProgramada is None:
+                raise HTTPException(400, "La salida programada no puede quedar vacia")
+            cur.execute(
+                'UPDATE "Ruta" SET "salidaProgramada" = %s WHERE "id" = %s',
+                (data.salidaProgramada.astimezone(timezone.utc).replace(tzinfo=None), ruta_id),
+            )
+        if "vehiculoId" in cambios:
+            if data.vehiculoId is not None:
+                cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoId,))
+                if not cur.fetchone():
+                    raise HTTPException(400, "El vehiculo no existe")
+            cur.execute('UPDATE "Ruta" SET "vehiculoId" = %s WHERE "id" = %s', (data.vehiculoId, ruta_id))
+            # Si ahora es una moto, se dejan listas las distancias del pago de
+            # delivery (como al crear una ruta de moto).
+            guardar_distancias_de_ruta(cur, ruta_id)
+        conn.commit()
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        return _con_detalle(cur, cur.fetchone())
+
+
 @router.post("/{ruta_id}/reversar", response_model=Ruta)
 def reversar_ruta(
     ruta_id: str,
@@ -485,6 +641,20 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
         _verificar_ruta_propia(usuario, ruta)
         if ruta["estado"] != "PLANIFICADA":
             raise HTTPException(400, "Solo se puede iniciar una ruta planificada")
+        # Planificar no bloquea; salir si: lo fisicamente imposible se frena
+        # aca (ver app/services/planificacion.py).
+        if not ruta["vehiculoId"]:
+            raise HTTPException(400, "La ruta no tiene vehiculo asignado: hay que asignarle uno antes de salir")
+        cur.execute(
+            'SELECT "numero" FROM "Ruta" WHERE "vehiculoId" = %s AND "estado" = %s AND "id" <> %s',
+            (ruta["vehiculoId"], "EN_TRANSITO", ruta_id),
+        )
+        en_camino = cur.fetchone()
+        if en_camino:
+            raise HTTPException(
+                400,
+                f'El vehiculo esta haciendo la ruta {en_camino["numero"]}: hay que terminarla antes de salir con esta',
+            )
 
         cur.execute(
             'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',

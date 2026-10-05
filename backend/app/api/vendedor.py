@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import calendar
 import uuid
+from dataclasses import replace
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api import indicadores as ind
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc, hoy_caracas
@@ -345,3 +347,56 @@ def rendimiento_vendedores(semana: date | None = None):
         "distanciaMaxM": DISTANCIA_MAX_AL_CLIENTE_M,
         "porVendedor": filas,
     }
+
+
+# ---------- Indicadores de venta de sus rutas ----------
+#
+# El mismo tablero del ADMIN (app/api/indicadores.py), con las rutas del
+# vendedor puestas a la fuerza en los filtros. Vive en este router, y no
+# abriendo el de indicadores, porque ese es solo ADMIN y tiene las cargas,
+# las metas y la calidad del dato.
+
+
+def _sus_empresas(cur, usuario: dict) -> list[str]:
+    return sorted({empresa for empresa, _ in rutas_del_vendedor(cur, usuario["id"])})
+
+
+def _sus_rutas_en(cur, usuario: dict, empresa: str) -> list[str]:
+    rutas = [ruta for e, ruta in rutas_del_vendedor(cur, usuario["id"]) if e == empresa]
+    if not rutas:
+        raise HTTPException(403, f"No tienes rutas asignadas en {empresa}")
+    return rutas
+
+
+@router.get("/indicadores/opciones")
+def opciones_indicadores(empresa: str | None = None, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
+    """Opciones de los filtros, limitadas a sus rutas. Sin empresa (o con una
+    en la que no tiene rutas) toma la primera en la que si tiene; sin ninguna
+    ruta asignada devuelve solo `empresas: []`."""
+    with get_connection() as conn, conn.cursor() as cur:
+        empresas = _sus_empresas(cur, usuario)
+        if not empresas:
+            return {"empresas": []}
+        elegida = empresa if empresa in empresas else empresas[0]
+        rutas = _sus_rutas_en(cur, usuario, elegida)
+        return {**ind.construir_opciones(cur, elegida, rutas), "empresas": empresas, "empresa": elegida}
+
+
+@router.get("/indicadores/tablero")
+def tablero_indicadores(
+    f: iv.Filtros = Depends(ind._filtros),
+    usuario: dict = Depends(requiere_rol("VENDEDOR")),
+):
+    """El tablero de sus rutas. Sin ruta elegida, todas las suyas; pedir una
+    ajena es un 403, no un filtro vacio que la deje adivinar."""
+    with get_connection() as conn, conn.cursor() as cur:
+        rutas = _sus_rutas_en(cur, usuario, f.empresa)
+        ajenas = [r for r in f.rutas if r not in rutas]
+        if ajenas:
+            raise HTTPException(403, "Solo puedes ver tus rutas asignadas")
+        tablero = ind.armar_tablero(cur, replace(f, rutas=f.rutas or rutas), con_brechas=False)
+        # La lista de rutas disponibles ignora a proposito el filtro de ruta
+        # (ver iv.opciones_disponibles): sin esto mostraria las ajenas.
+        disponibles = tablero["opcionesDisponibles"]
+        disponibles["rutas"] = [r for r in disponibles["rutas"] if r in rutas]
+        return tablero

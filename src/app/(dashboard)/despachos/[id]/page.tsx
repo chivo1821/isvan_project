@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DespachoItemCantidad } from "@/components/modules/despachos/despacho-item-cantidad";
-import { ESTADO_DESPACHO_META, ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { ESTADO_DESPACHO_META, ESTADO_RUTA_META, describirVehiculo, formatDateTime } from "@/lib/constants";
 import { getDespachoConDetalle } from "@/lib/mock-data";
 
 export default async function DespachoDetallePage({ params }: PageProps<"/despachos/[id]">) {
@@ -116,7 +116,7 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
               <div className="text-sm">
                 <p className="font-medium text-foreground">{despacho.ruta.numero}</p>
                 <p className="text-muted-foreground">
-                  {despacho.ruta.vehiculo.placa} — {TIPO_VEHICULO_META[despacho.ruta.vehiculo.tipo].label}
+                  {describirVehiculo(despacho.ruta.vehiculo)}
                   {despacho.ruta.distanciaTotalKm != null &&
                     ` · ${despacho.ruta.distanciaTotalKm.toLocaleString("es-VE")} km`}
                 </p>

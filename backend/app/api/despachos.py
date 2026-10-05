@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
-from app.core.permisos import es_repartidor, vehiculo_asignado
+from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
 from app.services.ventas_import import ALIAS_COLUMNAS as ALIAS_VENTAS
 from app.services.ventas_import import describir_columnas, reconocer_columnas
@@ -165,7 +165,7 @@ def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)
         # Un despacho que no va en la ruta de su vehiculo no existe para un
         # repartidor (404, no 403, para no revelar que hay algo ahi).
         vehiculo_de_la_ruta = row.pop("vehiculoId")
-        if es_repartidor(usuario) and vehiculo_de_la_ruta != vehiculo_asignado(usuario):
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, vehiculo_de_la_ruta):
             raise HTTPException(404, "Despacho no encontrado")
         return _con_items(cur, row)
 

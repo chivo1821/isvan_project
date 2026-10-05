@@ -50,6 +50,14 @@ def vehiculo_asignado(usuario: dict) -> str | None:
     return usuario.get("vehiculoAsignadoId")
 
 
+def es_de_su_vehiculo(usuario: dict, vehiculo_id: str | None) -> bool:
+    """Si una ruta (o el despacho de una ruta) es del vehiculo del
+    repartidor. Sin vehiculo asignado no es de nadie: comparar los dos None
+    dejaba ver las rutas sin vehiculo y los despachos sin ruta."""
+    propio = vehiculo_asignado(usuario)
+    return propio is not None and vehiculo_id == propio
+
+
 def rutas_del_vendedor(cur, usuario_id: str) -> list[tuple[str, str]]:
     """Rutas de venta del vendedor como (empresa, ruta). Vacia si todavia no
     se le asigno ninguna: en ese caso no ve despachos ni clientes."""

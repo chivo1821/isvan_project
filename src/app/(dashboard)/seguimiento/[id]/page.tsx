@@ -34,7 +34,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
       <AutoRefresco versionPath={`/rutas/seguimiento/version?ruta=${encodeURIComponent(ruta.id)}`} />
       <PageHeader
         title={`Seguimiento — ${ruta.numero}`}
-        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} · ${ruta.despachos.length} parada(s)`}
+        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo?.placa ?? "sin vehículo asignado"} · ${ruta.despachos.length} parada(s)`}
         actions={<StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />}
       />
 

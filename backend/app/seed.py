@@ -104,6 +104,8 @@ def seed(data: dict) -> None:
                     "id": r["id"], "numero": r["numero"], "vehiculoId": r["vehiculoId"],
                     "origenId": r["origenId"], "creadoPorId": r["creadoPorId"],
                     "estado": r["estado"], "fechaCreacion": _dt(r["fechaCreacion"]),
+                    # Las rutas del seed salen a la hora en que se crearon.
+                    "salidaProgramada": _dt(r.get("salidaProgramada") or r["fechaCreacion"]),
                     "distanciaTotalKm": r.get("distanciaTotalKm"),
                     "tiempoTotalMin": r.get("tiempoTotalMin"),
                 })

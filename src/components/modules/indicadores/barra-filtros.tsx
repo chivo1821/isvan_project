@@ -45,15 +45,20 @@ function aTexto(fecha: Date) {
   return `${fecha.getFullYear()}-${dos(fecha.getMonth() + 1)}-${dos(fecha.getDate())}`;
 }
 
+export type AtajoPeriodo = { label: string; desde: string; hasta: string };
+
 function SelectorPeriodo({
   desde,
   hasta,
   opciones,
+  extra = [],
   onCambiar,
 }: {
   desde: string;
   hasta: string;
-  opciones: OpcionesIndicadores;
+  opciones: Pick<OpcionesIndicadores, "fechaMin" | "fechaMax">;
+  /** Atajos propios de la página, antes de los de siempre. */
+  extra?: AtajoPeriodo[];
   onCambiar: (desde: string, hasta: string) => void;
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -63,7 +68,8 @@ function SelectorPeriodo({
   // extracto llega con días o semanas de atraso y "este mes" saldría vacío.
   const referencia = opciones.fechaMax ?? hasta;
   const anterior = sumarMeses(referencia, -1);
-  const atajos = [
+  const atajos: AtajoPeriodo[] = [
+    ...extra,
     { label: "Último mes con ventas", desde: inicioDeMes(referencia), hasta: finDeMes(referencia) },
     { label: "Mes anterior", desde: anterior, hasta: finDeMes(anterior) },
     { label: "Últimos 3 meses", desde: sumarMeses(referencia, -2), hasta: finDeMes(referencia) },
@@ -297,37 +303,64 @@ function FiltroMultiple({
   );
 }
 
+export type CampoFiltro = "rutas" | "grupos" | "tipos" | "clientes" | "productos" | "tiposDocumento";
+
+const TODOS_LOS_CAMPOS: CampoFiltro[] = ["rutas", "grupos", "tipos", "clientes", "productos", "tiposDocumento"];
+
+/** Lo que la barra necesita para armar las listas. Grupos, productos y tipos
+ * de documento solo hacen falta si se muestran esos filtros. */
+export type OpcionesBarra = Pick<OpcionesIndicadores, "rutas" | "tiposCliente" | "clientes" | "fechaMin" | "fechaMax"> &
+  Partial<Pick<OpcionesIndicadores, "grupos" | "productos" | "tiposDocumento">>;
+
 /** Los filtros del módulo (período, ruta, grupo, tipo de cliente, cliente y
  * producto) y la empresa. Viven en la URL: la página se vuelve a calcular en el
- * servidor con cada cambio, y el enlace se puede compartir tal cual. */
+ * servidor con cada cambio, y el enlace se puede compartir tal cual.
+ *
+ * La usa también el tablero del vendedor, con su página y solo sus empresas. */
 export function BarraFiltros({
   filtros,
   opciones,
   disponibles,
+  pagina = "/indicadores",
+  campos = TODOS_LOS_CAMPOS,
+  atajos,
+  extraQuery,
+  empresas = EMPRESAS,
 }: {
   filtros: FiltrosIndicadores;
-  opciones: OpcionesIndicadores;
+  opciones: OpcionesBarra;
   /** Sin datos (todavía no hay cargas) las listas muestran todo. */
   disponibles?: OpcionesDisponibles | null;
+  /** La página a la que llevan los filtros. */
+  pagina?: string;
+  /** Qué filtros se muestran; la empresa y el período, siempre. */
+  campos?: CampoFiltro[];
+  /** Atajos de período propios de la página. */
+  atajos?: AtajoPeriodo[];
+  /** Parámetros de la página que la barra no maneja y tiene que conservar
+   * (filtros que se eligen fuera de la barra, como un clic en un gráfico). */
+  extraQuery?: string;
+  /** Empresas que se pueden elegir (un vendedor, solo las de sus rutas). */
+  empresas?: Empresa[];
 }) {
   const d = disponibles ?? undefined;
   const acotadas = !!disponibles;
   const router = useRouter();
   const [actualizando, startTransition] = useTransition();
+  const ver = (campo: CampoFiltro) => campos.includes(campo);
 
   function aplicar(cambios: Partial<FiltrosIndicadores>) {
     const nuevos = { ...filtros, ...cambios };
-    startTransition(() => router.replace(`/indicadores?${queryPagina(nuevos)}`, { scroll: false }));
+    const query = extraQuery ? `${queryPagina(nuevos)}&${extraQuery}` : queryPagina(nuevos);
+    startTransition(() => router.replace(`${pagina}?${query}`, { scroll: false }));
   }
 
   function cambiarEmpresa(empresa: Empresa) {
     // Rutas, grupos y fechas son de cada empresa: se empieza de cero.
-    startTransition(() => router.replace(`/indicadores?empresa=${empresa}`, { scroll: false }));
+    startTransition(() => router.replace(`${pagina}?empresa=${empresa}`, { scroll: false }));
   }
 
-  const hayFiltros =
-    filtros.rutas.length + filtros.grupos.length + filtros.tipos.length + filtros.clientes.length + filtros.productos.length + filtros.tiposDocumento.length >
-    0;
+  const hayFiltros = campos.some((campo) => filtros[campo].length > 0);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -336,7 +369,7 @@ export function BarraFiltros({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {EMPRESAS.map((e) => (
+          {empresas.map((e) => (
             <SelectItem key={e} value={e}>
               {e}
             </SelectItem>
@@ -347,80 +380,93 @@ export function BarraFiltros({
         desde={filtros.desde}
         hasta={filtros.hasta}
         opciones={opciones}
+        extra={atajos}
         onCambiar={(desde, hasta) => aplicar({ desde, hasta })}
       />
-      <FiltroMultiple
-        etiqueta="Ruta"
-        todos="Todas las rutas"
-        opciones={soloDisponibles(comoOpciones(opciones.rutas), d?.rutas, filtros.rutas)}
-        acotadas={acotadas}
-        seleccion={filtros.rutas}
-        onCambiar={(rutas) => aplicar({ rutas })}
-      />
-      <FiltroMultiple
-        etiqueta="Grupo"
-        todos="Todos los grupos"
-        opciones={soloDisponibles(comoOpciones(opciones.grupos), d?.grupos, filtros.grupos)}
-        acotadas={acotadas}
-        seleccion={filtros.grupos}
-        onCambiar={(grupos) => aplicar({ grupos })}
-      />
-      <FiltroMultiple
-        etiqueta="Tipo de cliente"
-        todos="Todos los tipos de cliente"
-        opciones={soloDisponibles(comoOpciones(opciones.tiposCliente), d?.tiposCliente, filtros.tipos)}
-        acotadas={acotadas}
-        seleccion={filtros.tipos}
-        onCambiar={(tipos) => aplicar({ tipos })}
-      />
-      <FiltroMultiple
-        etiqueta="Cliente"
-        todos="Todos los clientes"
-        opciones={soloDisponibles(
-          opciones.clientes.map((c) => ({
-            valor: c.codigo,
-            etiqueta: c.nombre,
-            detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
-          })),
-          d?.clientes,
-          filtros.clientes
-        )}
-        acotadas={acotadas}
-        seleccion={filtros.clientes}
-        onCambiar={(clientes) => aplicar({ clientes })}
-      />
-      <FiltroMultiple
-        etiqueta="Producto"
-        todos="Todos los productos"
-        opciones={soloDisponibles(
-          opciones.productos.map((p) => ({
-            valor: p.codigo,
-            etiqueta: p.nombre,
-            detalle: `SKU ${p.codigo} · ${p.grupo}`,
-          })),
-          d?.productos,
-          filtros.productos
-        )}
-        acotadas={acotadas}
-        seleccion={filtros.productos}
-        onCambiar={(productos) => aplicar({ productos })}
-      />
-      <FiltroMultiple
-        etiqueta="Tipo de documento"
-        todos="Todos los documentos"
-        opciones={soloDisponibles(
-          opciones.tiposDocumento.map((codigo) => ({
-            valor: codigo,
-            etiqueta: TIPO_DOCUMENTO_META[codigo] ?? codigo,
-            detalle: codigo,
-          })),
-          d?.tiposDocumento,
-          filtros.tiposDocumento
-        )}
-        acotadas={acotadas}
-        seleccion={filtros.tiposDocumento}
-        onCambiar={(tiposDocumento) => aplicar({ tiposDocumento })}
-      />
+      {ver("rutas") && (
+        <FiltroMultiple
+          etiqueta="Ruta"
+          todos="Todas las rutas"
+          opciones={soloDisponibles(comoOpciones(opciones.rutas), d?.rutas, filtros.rutas)}
+          acotadas={acotadas}
+          seleccion={filtros.rutas}
+          onCambiar={(rutas) => aplicar({ rutas })}
+        />
+      )}
+      {ver("grupos") && (
+        <FiltroMultiple
+          etiqueta="Grupo"
+          todos="Todos los grupos"
+          opciones={soloDisponibles(comoOpciones(opciones.grupos ?? []), d?.grupos, filtros.grupos)}
+          acotadas={acotadas}
+          seleccion={filtros.grupos}
+          onCambiar={(grupos) => aplicar({ grupos })}
+        />
+      )}
+      {ver("tipos") && (
+        <FiltroMultiple
+          etiqueta="Tipo de cliente"
+          todos="Todos los tipos de cliente"
+          opciones={soloDisponibles(comoOpciones(opciones.tiposCliente), d?.tiposCliente, filtros.tipos)}
+          acotadas={acotadas}
+          seleccion={filtros.tipos}
+          onCambiar={(tipos) => aplicar({ tipos })}
+        />
+      )}
+      {ver("clientes") && (
+        <FiltroMultiple
+          etiqueta="Cliente"
+          todos="Todos los clientes"
+          opciones={soloDisponibles(
+            opciones.clientes.map((c) => ({
+              valor: c.codigo,
+              etiqueta: c.nombre,
+              detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
+            })),
+            d?.clientes,
+            filtros.clientes
+          )}
+          acotadas={acotadas}
+          seleccion={filtros.clientes}
+          onCambiar={(clientes) => aplicar({ clientes })}
+        />
+      )}
+      {ver("productos") && (
+        <FiltroMultiple
+          etiqueta="Producto"
+          todos="Todos los productos"
+          opciones={soloDisponibles(
+            (opciones.productos ?? []).map((p) => ({
+              valor: p.codigo,
+              etiqueta: p.nombre,
+              detalle: `SKU ${p.codigo} · ${p.grupo}`,
+            })),
+            d?.productos,
+            filtros.productos
+          )}
+          acotadas={acotadas}
+          seleccion={filtros.productos}
+          onCambiar={(productos) => aplicar({ productos })}
+        />
+      )}
+      {ver("tiposDocumento") && (
+        <FiltroMultiple
+          etiqueta="Tipo de documento"
+          todos="Todos los documentos"
+          opciones={soloDisponibles(
+            (opciones.tiposDocumento ?? []).map((codigo) => ({
+              valor: codigo,
+              etiqueta: TIPO_DOCUMENTO_META[codigo] ?? codigo,
+              detalle: codigo,
+            })),
+            d?.tiposDocumento,
+            filtros.tiposDocumento
+          )}
+          acotadas={acotadas}
+          seleccion={filtros.tiposDocumento}
+          onCambiar={(tiposDocumento) => aplicar({ tiposDocumento })}
+        />
+      )}
       {hayFiltros && (
         <Button
           variant="ghost"

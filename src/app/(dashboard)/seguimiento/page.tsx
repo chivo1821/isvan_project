@@ -16,7 +16,7 @@ export default async function SeguimientoPage() {
     return {
       id: r.id,
       numero: r.numero,
-      vehiculoPlaca: r.vehiculo.placa,
+      vehiculoPlaca: r.vehiculo?.placa ?? "Sin vehículo",
       paradas: r.despachos.length,
       estado: r.estado,
       position: ultimoPunto ? [ultimoPunto.lat, ultimoPunto.lng] : [r.origen.lat, r.origen.lng],

@@ -207,8 +207,11 @@ def reporte_rutas():
             f'{_CONDUCTOR} AS "conductor", '
             'usr."nombre" AS "creadoPor" '
             'FROM "Ruta" r '
-            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
-            'JOIN "Usuario" usr ON usr."id" = r."creadoPorId" '            'ORDER BY r."fechaCreacion" DESC'
+            # LEFT: una ruta planificada puede no tener vehiculo todavia y
+            # tiene que salir igual en el reporte.
+            'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'JOIN "Usuario" usr ON usr."id" = r."creadoPorId" '
+            'ORDER BY r."salidaProgramada" DESC'
         )
         rutas = cur.fetchall()
 
@@ -230,7 +233,8 @@ def reporte_rutas():
         atenciones = [m for p in paradas if (m := _minutos(p["llegadaEn"], p["entregadoEn"])) is not None]
         duracion_real = _minutos(r["iniciadaEn"], r["completadaEn"])
         filas.append([
-            r["numero"], r["estado"], r["fechaCreacion"], r["vehiculoPlaca"], r["vehiculoTipo"],
+            r["numero"], r["estado"], r["fechaCreacion"], r["salidaProgramada"],
+            r["vehiculoPlaca"] or "Sin vehículo", r["vehiculoTipo"],
             r["vehiculoCapacidad"], r["conductor"],
             len(paradas), len(entregadas), round(sum(p["peso"] for p in paradas), 3),
             r["distanciaTotalKm"], r["tiempoTotalMin"],
@@ -246,7 +250,7 @@ def reporte_rutas():
     libro.active.title = "Rutas"
     _escribir_hoja(
         libro.active,
-        ["N Ruta", "Estado", "Fecha creacion", "Vehiculo", "Tipo", "Capacidad (kg)", "Conductor",
+        ["N Ruta", "Estado", "Fecha creacion", "Salida programada", "Vehiculo", "Tipo", "Capacidad (kg)", "Conductor",
          "Paradas", "Entregadas", "Peso total (kg)", "Distancia (km)", "Tiempo estimado (min)",
          "Salida del almacen", "Fin del viaje", "Duracion real (min)", "Desvio vs estimado (min)",
          "Promedio por parada (min)", "Creada por"],

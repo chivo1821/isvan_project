@@ -45,3 +45,6 @@ backend/.venv/
 backend/app/jobs/logs/
 __pycache__/
 *.pyc
+graphify-out/
+# Fotos del censo guardadas en local (ALMACEN_FOTOS=local)
+backend/media/
