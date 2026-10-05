@@ -33,10 +33,15 @@ la sugerencia (POST /rutas).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc
 from app.core.ubicacion import sin_ubicacion
+from app.services import configuracion
+from app.services import planificacion as pl
+from app.services.planificacion import km_por_calle
 from app.services.route_analysis import (
     FACTOR_VIALIDAD,
     MINUTOS_POR_PARADA,
@@ -47,9 +52,6 @@ from app.services.route_analysis import (
 )
 
 ALMACEN_BASE_ID = "alm-catia"
-
-# Un vehiculo esta ocupado si ya esta asignado a una Ruta todavia activa.
-RUTAS_ACTIVAS = ("PLANIFICADA", "EN_TRANSITO")
 
 # Salto maximo (km en linea recta) entre una parada y la mas cercana de las
 # que ya estan en el grupo. Es el freno principal contra viajes absurdos:
@@ -97,6 +99,8 @@ class _Parada:
     peso_kg: float
     requiere_frio: bool
     despacho_ids: list[str] = field(default_factory=list)
+    # Km por calle (estimados) desde el almacen: para el limite de las motos.
+    km_almacen: float = 0.0
 
 
 def _cargar_paradas(cur, despacho_ids: list[str]) -> tuple[list[_Parada], list[dict]]:
@@ -167,20 +171,23 @@ def _cargar_paradas(cur, despacho_ids: list[str]) -> tuple[list[_Parada], list[d
     return list(paradas_por_cliente.values()), descartados
 
 
-def _vehiculos_disponibles(cur) -> list[dict]:
-    # Con el chofer, para que cada sugerencia diga quien manejaria el viaje.
+def _flota_funcional(cur) -> list[dict]:
+    """Todos los vehiculos funcionales, ocupados o no, del mas grande al mas
+    chico: con ellos se dimensionan los viajes que se proponen sin vehiculo
+    cuando a esa hora no queda ninguno libre."""
     cur.execute(
-        f'SELECT v.*, {CONDUCTOR_DEL_VEHICULO} AS "conductor" '
-        'FROM "Vehiculo" v WHERE v."estado" = \'FUNCIONAL\' AND v."id" NOT IN ('
-        '  SELECT r."vehiculoId" FROM "Ruta" r WHERE r."estado" = ANY(%s)'
-        ') ORDER BY v."capacidadKg" DESC',
-        (list(RUTAS_ACTIVAS),),
+        f'SELECT v.*, {CONDUCTOR_DEL_VEHICULO} AS "conductor" FROM "Vehiculo" v '
+        "WHERE v.\"estado\" = 'FUNCIONAL' ORDER BY v.\"capacidadKg\" DESC"
     )
     return cur.fetchall()
 
 
-def _puede_llevar(vehiculo: dict, parada: _Parada) -> bool:
+def _puede_llevar(vehiculo: dict, parada: _Parada, limite_moto_km: float) -> bool:
     if parada.requiere_frio and not vehiculo["tieneRefrigeracion"]:
+        return False
+    # Una moto no sale lejos del almacen (pedido del cliente; el limite se
+    # cambia en la configuracion, ver app/services/configuracion.py).
+    if vehiculo["tipo"] == "MOTO" and parada.km_almacen > limite_moto_km:
         return False
     return parada.peso_kg <= vehiculo["capacidadKg"]
 
@@ -192,6 +199,7 @@ def _armar_grupo(
     con_refrigeracion: bool,
     mezclar_rutas_comerciales: bool,
     radio_max_km: float,
+    max_km_almacen: float | None = None,
 ) -> list[_Parada]:
     """Arma un viaje: siembra con la parada mas lejana del almacen y va
     agregando la mas cercana al grupo, sin salirse del radio permitido y
@@ -204,7 +212,10 @@ def _armar_grupo(
     todo Charallave junto) en vez de arrastrar clientes del otro extremo."""
     candidatas = [
         p for p in pendientes
-        if p.peso_kg <= capacidad_kg and (con_refrigeracion or not p.requiere_frio)
+        if p.peso_kg <= capacidad_kg
+        and (con_refrigeracion or not p.requiere_frio)
+        # Con una moto de referencia, solo las paradas dentro de su limite.
+        and (max_km_almacen is None or p.km_almacen <= max_km_almacen)
     ]
     if not candidatas:
         return []
@@ -333,16 +344,30 @@ def sugerir_plan_rutas(
     despacho_ids: list[str],
     mezclar_rutas_comerciales: bool = True,
     radio_max_km: float | None = None,
+    salida_programada: datetime | None = None,
 ) -> dict:
     """Devuelve los viajes propuestos y los despachos que quedaron fuera.
 
     radio_max_km ajusta que tan lejos puede estar una parada de las demas del
     mismo viaje (por defecto RADIO_MAX_ENTRE_PARADAS_KM): bajarlo da viajes
-    mas compactos pero mas vehiculos; subirlo, lo contrario."""
+    mas compactos pero mas vehiculos; subirlo, lo contrario.
+
+    salida_programada es para cuando se planifica: se usan los vehiculos
+    libres a esa hora (sin otra ruta que se pise). Cuando no queda ninguno
+    libre, los viajes se siguen proponiendo SIN vehiculo, dimensionados con
+    la flota, para asignarlo despues: la falta de vehiculos ya no frena la
+    planificacion (ver app/services/planificacion.py)."""
     radio = radio_max_km or RADIO_MAX_ENTRE_PARADAS_KM
+    inicio = (
+        salida_programada.astimezone(timezone.utc).replace(tzinfo=None) if salida_programada else ahora_utc()
+    )
     with get_connection() as conn, conn.cursor() as cur:
         paradas, descartados = _cargar_paradas(cur, despacho_ids)
-        vehiculos = _vehiculos_disponibles(cur)
+        libres_a_esa_hora = pl.vehiculos_libres(
+            cur, inicio, inicio + timedelta(minutes=pl.DURACION_POR_DEFECTO_MIN)
+        )
+        flota = _flota_funcional(cur)
+        limite_moto = configuracion.leer(cur, "motoDistanciaMaxKm")
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
         almacen = cur.fetchone()
 
@@ -362,29 +387,36 @@ def sugerir_plan_rutas(
                 ),
             }],
         }
-    if not vehiculos:
+    if not flota:
         return {
             "sugerencias": [],
             "sinAsignar": sin_asignar + [{
                 "despachoIds": [id_ for p in paradas for id_ in p.despacho_ids],
-                "motivo": "No hay vehículos funcionales libres en este momento",
+                "motivo": "No hay ningún vehículo funcional en la flota para dimensionar los viajes",
             }],
         }
 
     origen = LatLng(lat=almacen["lat"], lng=almacen["lng"])
+    for p in paradas:
+        p.km_almacen = km_por_calle(origen, p.ubicacion)
     pendientes = list(paradas)
-    libres = list(vehiculos)  # ya vienen de mayor a menor capacidad
+    libres = list(libres_a_esa_hora)  # ya vienen de mayor a menor capacidad
     sugerencias: list[dict] = []
 
-    while pendientes and libres:
-        # Se arma el grupo con el vehiculo mas grande que pueda servir a
-        # alguna parada pendiente, y despues se baja al mas chico que alcance
-        # para lo que realmente quedo en el grupo: asi no se manda un camion
-        # grande medio vacio cuando una camioneta hace el mismo viaje.
+    while pendientes:
+        # Primero con un vehiculo libre a esa hora. Si ya no queda ninguno que
+        # sirva, el viaje se arma igual con el tamano de la flota y queda sin
+        # vehiculo, para asignarlo cuando se libere uno.
         referencia = next(
-            (v for v in libres if any(_puede_llevar(v, p) for p in pendientes)),
+            (v for v in libres if any(_puede_llevar(v, p, limite_moto) for p in pendientes)),
             None,
         )
+        con_vehiculo = referencia is not None
+        if not con_vehiculo:
+            referencia = next(
+                (v for v in flota if any(_puede_llevar(v, p, limite_moto) for p in pendientes)),
+                None,
+            )
         if referencia is None:
             break
 
@@ -395,27 +427,36 @@ def sugerir_plan_rutas(
             referencia["tieneRefrigeracion"],
             mezclar_rutas_comerciales,
             radio,
+            limite_moto if referencia["tipo"] == "MOTO" else None,
         )
         if not grupo:
             break
 
         peso_kg = sum(p.peso_kg for p in grupo)
         necesita_frio = any(p.requiere_frio for p in grupo)
+        mas_lejos_km = max(p.km_almacen for p in grupo)
+        # Se baja al vehiculo mas chico que alcance para lo que quedo en el
+        # grupo, sin mandar una moto mas lejos de lo permitido.
         asignado = min(
             (
-                v for v in libres
-                if v["capacidadKg"] >= peso_kg and (not necesita_frio or v["tieneRefrigeracion"])
+                v for v in (libres if con_vehiculo else flota)
+                if v["capacidadKg"] >= peso_kg
+                and (not necesita_frio or v["tieneRefrigeracion"])
+                and (v["tipo"] != "MOTO" or mas_lejos_km <= limite_moto)
             ),
             key=lambda v: v["capacidadKg"],
             default=referencia,
         )
 
         distancia_km, tiempo_min = _estimar_recorrido(origen, grupo)
-        costo_km = _costo_por_km(asignado)
+        costo_km = _costo_por_km(asignado) if con_vehiculo else None
         costo = round(distancia_km * costo_km, 2) if costo_km is not None else None
+        motivos = _motivos(grupo, asignado, peso_kg, distancia_km, costo)
+        if not con_vehiculo:
+            motivos.insert(0, "Sin vehículo libre a esa hora: se planifica y se le asigna uno después")
 
         sugerencias.append({
-            "vehiculo": asignado,
+            "vehiculo": asignado if con_vehiculo else None,
             "despachoIds": [id_ for p in grupo for id_ in p.despacho_ids],
             "paradas": len(grupo),
             "pesoKg": round(peso_kg, 2),
@@ -424,30 +465,36 @@ def sugerir_plan_rutas(
             "tiempoMinEstimado": tiempo_min,
             "costoEstimado": costo,
             "rutasComerciales": _rutas_comerciales(grupo),
-            "motivos": _motivos(grupo, asignado, peso_kg, distancia_km, costo),
+            "motivos": motivos,
         })
 
         clientes_del_grupo = {p.cliente_id for p in grupo}
-        libres = [v for v in libres if v["id"] != asignado["id"]]
+        if con_vehiculo:
+            libres = [v for v in libres if v["id"] != asignado["id"]]
         pendientes = [p for p in pendientes if p.cliente_id not in clientes_del_grupo]
 
-    if pendientes:
-        capacidad_maxima = max((v["capacidadKg"] for v in vehiculos), default=0)
-        pesadas = [p for p in pendientes if p.peso_kg > capacidad_maxima]
-        if pesadas:
-            sin_asignar.append({
-                "despachoIds": [id_ for p in pesadas for id_ in p.despacho_ids],
-                "motivo": (
-                    f"Superan por si solos la capacidad del vehículo más grande de la flota "
-                    f"({capacidad_maxima:,.0f} kg) — hay que dividir el despacho"
-                ),
-            })
-        clientes_pesados = {p.cliente_id for p in pesadas}
-        resto = [p for p in pendientes if p.cliente_id not in clientes_pesados]
-        if resto:
-            sin_asignar.append({
-                "despachoIds": [id_ for p in resto for id_ in p.despacho_ids],
-                "motivo": "No quedan vehículos libres para un viaje más — quedan para la próxima tanda",
-            })
+    # Lo que ningun vehiculo de la flota puede llevar, con el motivo de cada uno.
+    capacidad_maxima = max(v["capacidadKg"] for v in flota)
+    hay_frio = any(v["tieneRefrigeracion"] for v in flota)
+    hay_no_moto = any(v["tipo"] != "MOTO" for v in flota)
+    motivos_fuera: dict[str, list[_Parada]] = {}
+    for p in pendientes:
+        if p.peso_kg > capacidad_maxima:
+            motivo = (
+                f"Superan por si solos la capacidad del vehículo más grande de la flota "
+                f"({capacidad_maxima:,.0f} kg) — hay que dividir el despacho"
+            )
+        elif p.requiere_frio and not hay_frio:
+            motivo = "Requieren refrigeración y no hay ningún vehículo refrigerado funcional"
+        elif not hay_no_moto and p.km_almacen > limite_moto:
+            motivo = (
+                f"Están a más de {limite_moto:g} km del almacén (el máximo para motos) "
+                "y en la flota funcional solo hay motos"
+            )
+        else:
+            motivo = "Ningún vehículo de la flota puede llevarlos"
+        motivos_fuera.setdefault(motivo, []).append(p)
+    for motivo, grupo in motivos_fuera.items():
+        sin_asignar.append({"despachoIds": [id_ for p in grupo for id_ in p.despacho_ids], "motivo": motivo})
 
     return {"sugerencias": sugerencias, "sinAsignar": sin_asignar}

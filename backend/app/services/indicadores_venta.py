@@ -269,6 +269,183 @@ def serie(cur, f: Filtros, granularidad: str) -> list[dict]:
     ]
 
 
+# ---------- Metas y proyeccion ----------
+#
+# La meta la carga el cliente por ruta y mes (ver MetaVenta en
+# prisma/schema.prisma); no se calcula. Con pocos meses de historia y
+# creciendo fuerte, un pronostico estadistico hablaria mas de la recta que
+# del negocio.
+
+# La meta solo conoce empresa, ruta y mes. Si el usuario filtra por algo que
+# la meta no distingue (un cliente, un producto, un grupo, un tipo de
+# documento), la venta que ve es una parte del total y compararla contra la
+# meta completa mentiria: en ese caso no se muestra.
+FILTROS_SIN_META = ("grupos", "tipos_cliente", "clientes", "productos", "tipos_documento")
+
+
+def meta_aplica(f: Filtros) -> list[str]:
+    """Los filtros activos que impiden comparar contra la meta. Vacio = se
+    puede comparar."""
+    return [campo for campo in FILTROS_SIN_META if getattr(f, campo)]
+
+
+def _dias_del_mes(mes: date) -> int:
+    return calendar.monthrange(mes.year, mes.month)[1]
+
+
+def _dias_dentro(mes: date, desde: date, hasta: date) -> int:
+    """Dias de ese mes que caen dentro del periodo elegido."""
+    inicio = max(mes, desde)
+    fin = min(_fin_de_mes(mes), hasta)
+    return max((fin - inicio).days + 1, 0)
+
+
+def proyeccion(cur, f: Filtros, serie_mes: list[dict], venta_periodo: float | None = None) -> dict:
+    """Venta real contra la meta cargada, mes a mes.
+
+    Reusa la serie mensual que ya calculo el tablero (no vuelve a sumar
+    ventas) y le agrega las metas, incluidos los meses futuros que ya tengan
+    meta cargada: asi la linea de meta se ve por delante de la venta.
+    """
+    ajenos = meta_aplica(f)
+    if ajenos:
+        return {"aplica": False, "filtrosAjenos": ajenos, "puntos": [], "periodo": None}
+
+    ventas = {p["periodo"]: p for p in serie_mes}
+    fecha_max = fecha_max_vigente(cur, f.empresa)
+    inicio = min(ventas) if ventas else _primero_del_mes(f.desde)
+
+    cur.execute(
+        """
+        SELECT date_trunc('month', "mes")::date AS "periodo", SUM("montoUsd")::float AS "meta"
+        FROM "MetaVenta"
+        WHERE "empresa" = %(empresa)s AND "mes" >= %(inicio)s
+          AND (%(rutas)s::text[] IS NULL OR "ruta" = ANY(%(rutas)s))
+        GROUP BY 1 ORDER BY 1
+        """,
+        {"empresa": f.empresa, "inicio": inicio, "rutas": f.rutas or None},
+    )
+    metas = {fila["periodo"]: fila["meta"] for fila in cur.fetchall()}
+
+    meses: list[date] = []
+    mes = inicio
+    ultimo = max([*ventas, *metas, _primero_del_mes(f.hasta)])
+    while mes <= ultimo:
+        meses.append(mes)
+        mes = _primero_del_mes(mes, 1)
+
+    puntos = []
+    for mes in meses:
+        venta = ventas.get(mes)
+        meta = metas.get(mes)
+        # Un mes posterior al ultimo dia con ventas todavia no tiene dato
+        # (None), no es un mes de venta cero.
+        futuro = fecha_max is not None and mes > _primero_del_mes(fecha_max)
+        venta_neta = None if (venta is None and futuro) else (venta["ventaNeta"] if venta else 0.0)
+        puntos.append({
+            "periodo": mes,
+            "ventaNeta": venta_neta,
+            "meta": meta,
+            "cumplimientoPct": _div(venta_neta, meta) if meta and venta_neta is not None else None,
+            # El mes en curso va incompleto: se marca para no leerlo como un
+            # incumplimiento.
+            "parcial": fecha_max is not None and mes == _primero_del_mes(fecha_max) and fecha_max < _fin_de_mes(mes),
+        })
+
+    # Lo mismo para el periodo elegido en los filtros. Si el periodo corta
+    # un mes por la mitad (una semana suelta, por ejemplo), la meta de ese
+    # mes se prorratea por dias: es lineal, y el frontend lo avisa.
+    del_periodo = {mes: monto for mes, monto in metas.items() if _dias_dentro(mes, f.desde, f.hasta)}
+    meta_periodo = sum(
+        monto * _dias_dentro(mes, f.desde, f.hasta) / _dias_del_mes(mes) for mes, monto in del_periodo.items()
+    )
+    # La venta del periodo es la real, no una parte prorrateada: ya esta
+    # calculada con los mismos filtros (es la tarjeta "Venta neta").
+    if venta_periodo is None:
+        actual = calcular(cur, f)
+        venta_periodo = actual["ventaNeta"] if actual else 0.0
+    return {
+        "aplica": True,
+        "filtrosAjenos": [],
+        "puntos": puntos,
+        "periodo": {
+            # None, no 0: que el periodo elegido no tenga meta cargada no es
+            # una meta de cero ("$524.153 de $0" no dice nada).
+            "meta": round(meta_periodo, 2) if del_periodo else None,
+            "venta": round(venta_periodo, 2),
+            "cumplimientoPct": _div(venta_periodo, meta_periodo) if meta_periodo else None,
+            "prorrateada": any(
+                0 < _dias_dentro(mes, f.desde, f.hasta) < _dias_del_mes(mes) for mes in del_periodo
+            ),
+        },
+    }
+
+
+BASES_SUGERENCIA = ("media", "ultimo")
+# Cuantos meses cerrados entran en la media de cada mes propuesto.
+VENTANA_SUGERENCIA = 3
+
+
+def _ventana_de(mes: date, cerrados: list[date]) -> list[date]:
+    """Los meses cerrados inmediatamente ANTERIORES a `mes`. Anteriores a ese
+    mes y no los ultimos del historico: asi la propuesta de cada mes sale de
+    lo que se vendia justo antes, y la linea de meta acompana al negocio en
+    vez de quedar plana."""
+    previos = [m for m in cerrados if m < mes]
+    return previos[-VENTANA_SUGERENCIA:]
+
+
+def sugerir_metas(cur, empresa: str, anio: int, base: str = "media") -> dict:
+    """Metas propuestas por ruta para cada mes del ano, a partir de lo que ya
+    vendio cada ruta.
+
+    No es un pronostico: son ventas reales. Cada mes se propone con su propia
+    ventana movil — la media de los VENTANA_SUGERENCIA meses cerrados
+    anteriores (o solo el ultimo, con base="ultimo") — asi que los meses no
+    salen todos iguales y un mes pico no se convierte en la meta de todo el
+    ano. Un mes a medias (el mes en curso) no entra en ninguna ventana.
+    """
+    fecha_max = fecha_max_vigente(cur, empresa)
+    if not fecha_max:
+        return {"base": base, "ventana": VENTANA_SUGERENCIA, "meses": []}
+    ultimo_cerrado = fecha_max if fecha_max == _fin_de_mes(fecha_max) else _primero_del_mes(fecha_max, -1)
+    cur.execute(
+        f"""
+        SELECT date_trunc('month', v."fecha")::date AS "mes", vc."ruta", SUM(v."montoUsd")::float AS "usd"
+        {FUENTE}
+        WHERE v."empresa" = %(empresa)s AND v."reemplazadaPorCargaId" IS NULL
+          AND v."fecha" <= %(hasta)s AND vc."ruta" IS NOT NULL
+        GROUP BY 1, 2 ORDER BY 1
+        """,
+        {"empresa": empresa, "hasta": _fin_de_mes(ultimo_cerrado)},
+    )
+    ventas: dict[date, dict[str, float]] = {}
+    rutas: set[str] = set()
+    for fila in cur.fetchall():
+        ventas.setdefault(fila["mes"], {})[fila["ruta"]] = fila["usd"]
+        rutas.add(fila["ruta"])
+
+    cerrados = sorted(ventas)
+    meses = []
+    for numero in range(1, 13):
+        objetivo = date(anio, numero, 1)
+        ventana = _ventana_de(objetivo, cerrados)
+        if not ventana:
+            continue
+        if base == "ultimo":
+            ventana = ventana[-1:]
+        propuestas = []
+        for ruta in sorted(rutas, key=orden_ruta):
+            # Se divide entre los meses de la ventana, no entre los que esa
+            # ruta vendio: una ruta parada un mes no debe quedar igual que
+            # una que vendio los tres.
+            monto = sum(ventas[m].get(ruta, 0.0) for m in ventana) / len(ventana)
+            if monto > 0:
+                propuestas.append({"ruta": ruta, "sugerido": round(monto, 2)})
+        meses.append({"mes": objetivo, "ventana": ventana, "rutas": propuestas})
+    return {"base": base, "ventana": VENTANA_SUGERENCIA, "meses": meses}
+
+
 # ---------- Desgloses ----------
 
 # dimension -> (clave, nombre visible, dato de apoyo)

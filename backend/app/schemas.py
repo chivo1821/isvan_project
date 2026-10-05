@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated, Literal, Optional
 
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, AwareDatetime, BaseModel
 
 
 def en_utc(valor: datetime) -> datetime:
@@ -244,6 +244,11 @@ class SugerenciaVehiculo(BaseModel):
 
 class SugerenciaVehiculoRequest(BaseModel):
     despachoIds: list[str]
+    # Para que vehiculos estar libre: la salida programada de la ruta y, si
+    # es una ruta que ya existe (asignarle vehiculo), su id para no contarla
+    # contra si misma. Sin salida: ahora.
+    salidaProgramada: Optional[AwareDatetime] = None
+    rutaId: Optional[str] = None
 
 
 # ---------- Clientes ----------
@@ -432,14 +437,26 @@ class RutaPunto(BaseModel):
     paradaDespachoId: Optional[str] = None
 
 
+class AvisoRuta(BaseModel):
+    """Algo que hay que resolver antes de la salida (ver
+    app/services/planificacion.py). No bloquea: se muestra."""
+
+    tipo: str
+    mensaje: str
+    rutaId: Optional[str] = None
+
+
 class Ruta(BaseModel):
     id: str
     numero: str
-    vehiculoId: str
+    # Sin vehiculo mientras no se asigne (planificacion, ver app/services/planificacion.py).
+    vehiculoId: Optional[str] = None
     origenId: str
     creadoPorId: str
     estado: str
     fechaCreacion: Instante
+    # Fecha y hora de salida del almacen: la de recogida de todos sus pedidos.
+    salidaProgramada: Instante
     # Salida del almacen y fin del viaje (ver app/api/rutas.py).
     iniciadaEn: Optional[Instante] = None
     completadaEn: Optional[Instante] = None
@@ -453,6 +470,7 @@ class Ruta(BaseModel):
     despachosAlCancelar: Optional[list[str]] = None
     despachos: list[Despacho] = []
     puntos: list[RutaPunto] = []
+    avisos: list[AvisoRuta] = []
 
 
 class ReversarRutaRequest(BaseModel):
@@ -461,8 +479,18 @@ class ReversarRutaRequest(BaseModel):
 
 class RutaCreate(BaseModel):
     despachoIds: list[str]
-    vehiculoId: str
+    # Opcional: la ruta se puede planificar y asignarle vehiculo despues.
+    vehiculoId: Optional[str] = None
     creadoPorId: str
+    salidaProgramada: AwareDatetime
+
+
+class RutaProgramacion(BaseModel):
+    """Reprogramar una ruta planificada y/o cambiarle el vehiculo. Un campo
+    que no viene no se toca; vehiculoId en null le quita el vehiculo."""
+
+    salidaProgramada: Optional[AwareDatetime] = None
+    vehiculoId: Optional[str] = None
 
 
 # ---------- Sugerencia de agrupacion de rutas ----------
@@ -473,7 +501,9 @@ class SugerenciaRuta(BaseModel):
     metricas son estimadas (distancia en linea recta corregida por un factor
     de vialidad); el trazado real lo calcula el TSP al crear la ruta."""
 
-    vehiculo: Vehiculo
+    # None si a esa hora no queda ningun vehiculo libre: el viaje se propone
+    # igual (no se frena la planificacion) y se le asigna vehiculo despues.
+    vehiculo: Optional[Vehiculo] = None
     despachoIds: list[str]
     paradas: int
     pesoKg: float
@@ -506,6 +536,9 @@ class PlanRutasRequest(BaseModel):
     # Vacio = el valor por defecto del servicio
     # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).
     radioMaxKm: Optional[float] = None
+    # Para cuando se planifica: se proponen los vehiculos libres a esa hora.
+    # Vacio = ahora.
+    salidaProgramada: Optional[AwareDatetime] = None
 
 
 # ---------- Reportes ----------
@@ -549,3 +582,19 @@ class ResumenRendimiento(BaseModel):
     promedioAtencionMin: Optional[float] = None
     promedioTrasladoMin: Optional[float] = None
     porConductor: list[RendimientoConductor] = []
+
+
+# ---------- Metas de venta ----------
+
+
+class MetaVentaItem(BaseModel):
+    ruta: str
+    # Cualquier dia del mes; el backend lo lleva al primero.
+    mes: date
+    # 0 o negativo borra la meta de esa ruta y ese mes.
+    montoUsd: float
+
+
+class GuardarMetasRequest(BaseModel):
+    empresa: str
+    metas: list[MetaVentaItem]

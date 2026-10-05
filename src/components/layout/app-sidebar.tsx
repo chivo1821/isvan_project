@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
+  BarChart3Icon,
   Building2Icon,
   ChevronRightIcon,
   ClipboardCheckIcon,
@@ -62,6 +63,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Mis despachos", href: "/vendedor", icon: PackageIcon, roles: ["VENDEDOR"], exacto: true },
       { label: "Visitas", href: "/vendedor/visitas", icon: MapPinCheckIcon, roles: ["VENDEDOR"] },
+      { label: "Indicadores", href: "/vendedor/indicadores", icon: BarChart3Icon, roles: ["VENDEDOR"] },
+      { label: "Censo", href: "/vendedor/censo", icon: ClipboardCheckIcon, roles: ["VENDEDOR"] },
     ],
   },
   {
@@ -85,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
         roles: ROLES_OPERACION,
         children: [
           { label: "Todas las rutas", href: "/rutas" },
+          { label: "Planificación", href: "/rutas/planificacion" },
           { label: "Nueva ruta", href: "/rutas/nueva", roles: ["ADMIN", "DESPACHOS"] },
         ],
       },
@@ -125,6 +129,7 @@ const INICIO_HIJOS: NavLeaf[] = [
   { label: "Resumen", href: "/" },
   { label: "Indicadores de venta", href: "/indicadores" },
   { label: "Delivery en moto", href: "/delivery" },
+  { label: "Censo de clientes", href: "/censo" },
 ];
 
 function isActive(pathname: string, href: string) {

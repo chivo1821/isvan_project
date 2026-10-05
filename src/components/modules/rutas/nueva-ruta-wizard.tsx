@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangleIcon, PackageSearchIcon, RouteIcon, SparklesIcon, UserIcon } from "lucide-react";
+import { AlertTriangleIcon, CalendarClockIcon, PackageSearchIcon, RouteIcon, SparklesIcon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -19,8 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TIPO_VEHICULO_META } from "@/lib/constants";
+import { TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
 import type { Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
+import { proximaHoraEnPunto, salidaIso } from "@/lib/planificacion";
 
 type DespachoConCliente = Despacho & { destinoCliente: Cliente };
 type SugerenciaVehiculo = {
@@ -33,7 +35,9 @@ type SugerenciaVehiculo = {
 // juntar y en qué vehículo) con sus métricas estimadas. Ver
 // backend/app/services/plan_rutas.py.
 type SugerenciaRuta = {
-  vehiculo: Vehiculo;
+  /** null si a esa hora no queda ningún vehículo libre: el viaje se propone
+   * igual y se le asigna vehículo después. */
+  vehiculo: Vehiculo | null;
   despachoIds: string[];
   paradas: number;
   pesoKg: number;
@@ -92,6 +96,18 @@ export function NuevaRutaWizard({
   // freno contra viajes absurdos (un cliente en La Guaira y otro en
   // Charallave); bajarlo da viajes más compactos pero usa más vehículos.
   const [radioMaxKm, setRadioMaxKm] = useState("12");
+  // Cuándo sale del almacén: define qué vehículos están libres y es la hora
+  // de recogida que ve el repartidor.
+  const [salida, setSalida] = useState(proximaHoraEnPunto);
+  const salidaProgramada = salidaIso(salida.fecha, salida.hora);
+
+  function cambiarSalida(cambio: Partial<{ fecha: string; hora: string }>) {
+    setSalida((prev) => ({ ...prev, ...cambio }));
+    // A otra hora, otros vehículos libres: lo sugerido ya no vale.
+    setPlan(null);
+    setSugerencias(null);
+    setVehiculoId(null);
+  }
 
   function alternar(id: string) {
     setSeleccionados((prev) => {
@@ -111,10 +127,11 @@ export function NuevaRutaWizard({
         despachoIds: despachos.map((d) => d.id),
         mezclarRutasComerciales,
         radioMaxKm: Number(radioMaxKm),
+        salidaProgramada,
       });
       setPlan(data);
       if (data.sugerencias.length === 0) {
-        toast.info("No se pudo armar ninguna ruta con los despachos y vehículos disponibles");
+        toast.info("No se pudo armar ninguna ruta con los despachos disponibles");
       }
     } catch (err) {
       toast.error("No se pudieron calcular las sugerencias", {
@@ -130,14 +147,15 @@ export function NuevaRutaWizard({
    * mano antes de crear la ruta). */
   function usarSugerencia(sugerencia: SugerenciaRuta) {
     setSeleccionados(new Set(sugerencia.despachoIds));
-    setSugerencias([
-      {
-        vehiculo: sugerencia.vehiculo,
-        holguraKg: sugerencia.vehiculo.capacidadKg - sugerencia.pesoKg,
-        motivos: sugerencia.motivos,
-      },
-    ]);
-    setVehiculoId(sugerencia.vehiculo.id);
+    const vehiculo = sugerencia.vehiculo;
+    if (!vehiculo) {
+      // Sin vehículo libre a esa hora: se planifica sin vehículo.
+      setSugerencias(null);
+      setVehiculoId(null);
+      return;
+    }
+    setSugerencias([{ vehiculo, holguraKg: vehiculo.capacidadKg - sugerencia.pesoKg, motivos: sugerencia.motivos }]);
+    setVehiculoId(vehiculo.id);
   }
 
   async function buscarVehiculos() {
@@ -147,10 +165,13 @@ export function NuevaRutaWizard({
     try {
       const data = await apiPost<SugerenciaVehiculo[]>("/rutas/vehiculos-sugeridos", {
         despachoIds: [...seleccionados],
+        salidaProgramada,
       });
       setSugerencias(data);
       if (data.length === 0) {
-        toast.info("No hay vehículos disponibles que cumplan la capacidad o refrigeración requeridas");
+        toast.info("No hay vehículos libres a esa hora que cumplan lo que necesita la ruta", {
+          description: "Puedes planificarla igual sin vehículo y asignárselo después.",
+        });
       }
     } catch (err) {
       toast.error("No se pudo buscar vehículos sugeridos", {
@@ -162,17 +183,23 @@ export function NuevaRutaWizard({
   }
 
   async function crearRuta() {
-    if (seleccionados.size === 0 || !vehiculoId) return;
+    if (seleccionados.size === 0 || !salidaProgramada) return;
     setCreando(true);
     try {
       const ruta = await apiPost<Ruta>("/rutas", {
         despachoIds: [...seleccionados],
         vehiculoId,
         creadoPorId,
+        salidaProgramada,
       });
-      toast.success(`Ruta ${ruta.numero} creada`, {
+      toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {
         description: `${ruta.despachos.length} parada(s) · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
       });
+      // Lo pendiente (sin vehículo, horarios que se pisan...) no frena la
+      // creación, pero se avisa de entrada; queda también en la ruta.
+      if (ruta.avisos?.length) {
+        toast.warning("La ruta quedó con avisos", { description: ruta.avisos.map((a) => a.mensaje).join(" · ") });
+      }
       router.push(`/rutas/${ruta.id}`);
       router.refresh();
     } catch (err) {
@@ -186,12 +213,50 @@ export function NuevaRutaWizard({
   const despachosSeleccionados = despachos.filter((d) => seleccionados.has(d.id));
   const pesoSeleccionado = despachosSeleccionados.reduce((sum, d) => sum + pesoTotal(d), 0);
   const porId = new Map(despachos.map((d) => [d.id, d]));
+  const vehiculoElegido = sugerencias?.find((s) => s.vehiculo.id === vehiculoId)?.vehiculo;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <NumberedCard
           number={1}
+          title="Salida del almacén"
+          helpText="Fecha y hora en que la ruta sale del almacén: es la hora de recogida que ve el repartidor y define qué vehículos están libres. Se puede planificar a futuro y cambiar después desde la ruta o la planificación."
+        >
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="salida-fecha" className="text-sm font-normal text-muted-foreground">
+                Fecha
+              </Label>
+              <Input
+                id="salida-fecha"
+                type="date"
+                value={salida.fecha}
+                onChange={(e) => cambiarSalida({ fecha: e.target.value })}
+                className="w-44"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="salida-hora" className="text-sm font-normal text-muted-foreground">
+                Hora
+              </Label>
+              <Input
+                id="salida-hora"
+                type="time"
+                value={salida.hora}
+                onChange={(e) => cambiarSalida({ hora: e.target.value })}
+                className="w-32"
+              />
+            </div>
+            <p className="flex items-center gap-1.5 pb-2 text-sm text-muted-foreground">
+              <CalendarClockIcon className="size-4" aria-hidden />
+              {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Elige la fecha y la hora"}
+            </p>
+          </div>
+        </NumberedCard>
+
+        <NumberedCard
+          number={2}
           title="Rutas sugeridas"
           helpText="Agrupa los despachos por cercanía entre clientes, sin pasarse de la capacidad del vehículo; la ruta comercial del cliente desempata entre paradas igual de cerca. Los kilómetros, el tiempo y el costo operativo del vehículo son estimados (el tiempo ya incluye lo que el camión pasa detenido en cada cliente); el trazado real se calcula al crear la ruta."
         >
@@ -244,7 +309,7 @@ export function NuevaRutaWizard({
                 {plan.sugerencias.map((s, index) => {
                   const paradas = s.despachoIds.map((id) => porId.get(id)).filter(Boolean) as DespachoConCliente[];
                   return (
-                    <div key={s.vehiculo.id} className="rounded-lg border border-border p-3">
+                    <div key={s.vehiculo?.id ?? `sin-vehiculo-${index}`} className="rounded-lg border border-border p-3">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -253,12 +318,21 @@ export function NuevaRutaWizard({
                               <StatusBadge key={ruta} tone="neutral" label={ruta} />
                             ))}
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            {s.vehiculo.placa} — {TIPO_VEHICULO_META[s.vehiculo.tipo].label} ·{" "}
-                            {s.paradas} parada(s) · {formatKg(s.pesoKg)} ({s.usoCapacidadPct}% de{" "}
-                            {formatKg(s.vehiculo.capacidadKg)})
-                          </p>
-                          <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
+                          {s.vehiculo ? (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                {s.vehiculo.placa} — {TIPO_VEHICULO_META[s.vehiculo.tipo].label} ·{" "}
+                                {s.paradas} parada(s) · {formatKg(s.pesoKg)} ({s.usoCapacidadPct}% de{" "}
+                                {formatKg(s.vehiculo.capacidadKg)})
+                              </p>
+                              <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
+                            </>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              <span className="font-medium text-warning">Sin vehículo libre a esa hora</span> ·{" "}
+                              {s.paradas} parada(s) · {formatKg(s.pesoKg)} — se planifica y se le asigna después
+                            </p>
+                          )}
                           <p className="text-sm text-muted-foreground">
                             ~{s.distanciaKmEstimada.toLocaleString("es-VE")} km · ~{s.tiempoMinEstimado} min
                             {s.costoEstimado != null &&
@@ -301,7 +375,7 @@ export function NuevaRutaWizard({
         </NumberedCard>
 
         <NumberedCard
-          number={2}
+          number={3}
           title="Despachos a incluir"
           helpText="Solo se listan despachos ya aprobados que todavía no forman parte de una ruta. Puedes partir de una sugerencia y ajustarla a mano."
         >
@@ -358,14 +432,25 @@ export function NuevaRutaWizard({
         </NumberedCard>
 
         <NumberedCard
-          number={3}
-          title="Vehículo"
-          helpText="Se sugiere el vehículo con mejor ajuste de capacidad para el peso total de los despachos elegidos."
+          number={4}
+          title="Vehículo (opcional)"
+          helpText="Se sugieren los vehículos libres a la hora de salida con mejor ajuste de capacidad. Si no hay ninguno, la ruta se planifica sin vehículo y se le asigna después desde la ruta o la planificación."
         >
           <div className="space-y-3">
-            <Button onClick={buscarVehiculos} disabled={seleccionados.size === 0 || buscando} variant="outline">
-              {buscando ? "Buscando..." : "Buscar vehículos sugeridos"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={buscarVehiculos}
+                disabled={seleccionados.size === 0 || !salidaProgramada || buscando}
+                variant="outline"
+              >
+                {buscando ? "Buscando..." : "Buscar vehículos libres"}
+              </Button>
+              {vehiculoId && (
+                <Button size="sm" variant="ghost" onClick={() => setVehiculoId(null)}>
+                  Planificar sin vehículo
+                </Button>
+              )}
+            </div>
 
             {sugerencias && sugerencias.length > 0 && (
               <div className="space-y-2">
@@ -405,7 +490,7 @@ export function NuevaRutaWizard({
       </div>
 
       <div className="lg:sticky lg:top-6 lg:self-start">
-        <NumberedCard number={4} title="Confirmar ruta" helpText="Se calcula el orden de paradas y el trazado desde Almacén Catia.">
+        <NumberedCard number={5} title="Confirmar ruta" helpText="Se calcula el orden de paradas y el trazado desde Almacén Catia.">
           {despachosSeleccionados.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-6 text-center">
               <RouteIcon className="size-8 text-muted-foreground" />
@@ -415,6 +500,15 @@ export function NuevaRutaWizard({
             <div className="space-y-1 text-sm">
               <p className="font-medium text-foreground">
                 {despachosSeleccionados.length} parada(s) · {formatKg(pesoSeleccionado)}
+              </p>
+              <p className="text-muted-foreground">
+                {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Falta la fecha y hora de salida"}
+                {" · "}
+                {vehiculoElegido ? (
+                  `en ${vehiculoElegido.placa}`
+                ) : (
+                  <span className="text-warning">sin vehículo (se asigna después)</span>
+                )}
               </p>
               <ul className="space-y-0.5 text-xs text-muted-foreground">
                 {despachosSeleccionados.map((d) => (
@@ -428,11 +522,11 @@ export function NuevaRutaWizard({
           )}
           <Button
             className="mt-4 w-full"
-            disabled={seleccionados.size === 0 || !vehiculoId || creando}
+            disabled={seleccionados.size === 0 || !salidaProgramada || creando}
             onClick={crearRuta}
           >
             <RouteIcon />
-            {creando ? "Creando ruta..." : "Crear ruta"}
+            {creando ? "Creando ruta..." : vehiculoElegido ? "Crear ruta" : "Planificar sin vehículo"}
           </Button>
         </NumberedCard>
       </div>

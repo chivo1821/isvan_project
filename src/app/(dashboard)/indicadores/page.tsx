@@ -11,7 +11,8 @@ import { CargarVentasDialog } from "@/components/modules/indicadores/cargar-vent
 import { DesgloseTabla } from "@/components/modules/indicadores/desglose-tabla";
 import { KpiGrid, textoComparacion } from "@/components/modules/indicadores/kpi-grid";
 import { MapaVentas } from "@/components/modules/indicadores/mapa-ventas";
-import { GraficosEvolucion } from "@/components/modules/indicadores/serie-chart";
+import { MetasDialog } from "@/components/modules/indicadores/metas-dialog";
+import { GraficosVenta } from "@/components/modules/indicadores/serie-chart";
 import { apiGet } from "@/lib/api-client";
 import {
   empresaDeParams,
@@ -48,6 +49,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
                 Cargas y cobertura
               </Link>
             </Button>
+            <MetasDialog empresa={empresa} />
             <CargarVentasDialog empresa={empresa} />
           </>
         }
@@ -84,7 +86,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
             </Card>
           )}
 
-          <GraficosEvolucion serie={tablero.serie} filtros={filtros} />
+          <GraficosVenta serie={tablero.serie} proyeccion={tablero.proyeccion} filtros={filtros} />
           <DesgloseTabla desgloses={tablero.desgloses} total={actual?.ventaNeta ?? 0} />
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">

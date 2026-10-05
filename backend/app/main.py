@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from app.api import (
     almacenes,
     auth,
+    censo,
     clientes,
     delivery,
     despachos,
@@ -58,6 +59,7 @@ app.add_middleware(
 ROUTERS_PUBLICOS = [auth.router]
 ROUTERS_PROTEGIDOS = [
     almacenes.router,
+    censo.router,
     clientes.router,
     usuarios.router,
     vehiculos.router,
@@ -70,11 +72,12 @@ ROUTERS_PROTEGIDOS = [
     vendedor.router,
 ]
 
-# Los unicos routers a los que entra un VENDEDOR: el suyo, y usuarios (su
-# propia ficha y su clave; lo demas de ese router es de ADMIN). El resto de
+# Los unicos routers a los que entra un VENDEDOR: el suyo, usuarios (su
+# propia ficha y su clave; lo demas de ese router es de ADMIN) y el censo
+# (lo llena el; la revision es de ADMIN, endpoint por endpoint). El resto de
 # la operacion se le cierra aca, de una sola vez, en vez de endpoint por
 # endpoint (ver sin_acceso_vendedor en app/core/permisos.py).
-ROUTERS_DEL_VENDEDOR = [usuarios.router, vendedor.router]
+ROUTERS_DEL_VENDEDOR = [usuarios.router, vendedor.router, censo.router]
 
 # En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:
 # services + rewrites), con /api/backend/* -> este servicio. No hay forma de

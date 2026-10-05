@@ -1,0 +1,2337 @@
+{
+  "id": "censo",
+  "title": "CENSO ISVAN & TRALOG",
+  "settings": {
+    "form_title": "CENSO ISVAN & TRALOG"
+  },
+  "children": [
+    {
+      "type": "select_one",
+      "list": "encuestador",
+      "name": "encuestador",
+      "label": "Vendedor",
+      "appearance": "autocomplete",
+      "required": true,
+      "readonly": false,
+      "xlsform": {
+        "type": "select_one encuestador",
+        "name": "encuestador",
+        "label": "Vendedor",
+        "appearance": "autocomplete",
+        "required": "yes"
+      }
+    },
+    {
+      "type": "date",
+      "name": "fecha",
+      "label": "Fecha de Encuesta",
+      "hint": "Este campo registra automaticamente la fecha en que se realiza la encuesta",
+      "appearance": "hidden",
+      "required": false,
+      "readonly": true,
+      "xlsform": {
+        "type": "date",
+        "name": "fecha",
+        "label": "Fecha de Encuesta",
+        "hint": "Este campo registra automaticamente la fecha en que se realiza la encuesta",
+        "appearance": "hidden",
+        "readonly": "yes",
+        "default": "today()"
+      },
+      "default_dinamico": "today()"
+    },
+    {
+      "type": "time",
+      "name": "hora",
+      "label": "Hora de Encuesta",
+      "hint": "Este campo registra automaticamente la hora en que se realiza la encuesta",
+      "appearance": "hidden",
+      "required": false,
+      "readonly": true,
+      "xlsform": {
+        "type": "time",
+        "name": "hora",
+        "label": "Hora de Encuesta",
+        "hint": "Este campo registra automaticamente la hora en que se realiza la encuesta",
+        "appearance": "hidden",
+        "readonly": "yes",
+        "default": "now()"
+      },
+      "default_dinamico": "now()"
+    },
+    {
+      "type": "geopoint",
+      "name": "ubicacion",
+      "label": "Ubicación",
+      "hint": "<span style=\"color: blue\"><i><b>RECUERDE ACTIVAR LA UBICACIÓN DE SU DISPOSITIVO MÓVIL ANTES DE COMENZAR LA ENCUESTA, HAGA CLIC SOBRE SU UBICACIÓN EN EL MAPA</b></i></span>",
+      "appearance": "autocomplete",
+      "required": true,
+      "readonly": false,
+      "xlsform": {
+        "type": "geopoint",
+        "name": "ubicacion",
+        "label": "Ubicación",
+        "hint": "<font color=\"blue\"><i><b>RECUERDE ACTIVAR LA UBICACIÓN DE SU DISPOSITIVO MÓVIL ANTES DE COMENZAR LA ENCUESTA, HAGA CLIC SOBRE SU UBICACIÓN EN EL MAPA</i></font>",
+        "appearance": "autocomplete",
+        "required": "yes"
+      }
+    },
+    {
+      "type": "group",
+      "name": "direccion",
+      "label": "Dirección",
+      "relevant": null,
+      "appearance": null,
+      "children": [
+        {
+          "type": "select_one",
+          "list": "estado",
+          "name": "estado",
+          "label": "Estado",
+          "appearance": "autocomplete",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one estado",
+            "name": "estado",
+            "label": "Estado",
+            "appearance": "autocomplete",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "municipio",
+          "name": "municipio",
+          "label": "Municipio",
+          "appearance": "autocomplete",
+          "choice_filter": "estado=${estado}",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one municipio",
+            "name": "municipio",
+            "label": "Municipio",
+            "appearance": "autocomplete",
+            "required": "yes",
+            "choice_filter": "estado=${estado}"
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "parroquia",
+          "name": "parroq",
+          "label": "Seleccione la parroquia",
+          "hint": "Identifique  la parroquia en la que se encuentra, ayudese con los identificadores de las calles.",
+          "appearance": "autocomplete",
+          "choice_filter": "municipio=${municipio}",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one parroquia",
+            "name": "parroq",
+            "label": "Seleccione la parroquia",
+            "hint": "Identifique  la parroquia en la que se encuentra, ayudese con los identificadores de las calles.",
+            "appearance": "autocomplete",
+            "required": "yes",
+            "choice_filter": "municipio=${municipio}"
+          }
+        },
+        {
+          "type": "text",
+          "name": "sector",
+          "label": "Sector",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "sector",
+            "label": "Sector",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "text",
+          "name": "punto_referencia",
+          "label": "Punto de referencia",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "punto_referencia",
+            "label": "Punto de referencia",
+            "required": "yes"
+          }
+        }
+      ],
+      "xlsform": {
+        "type": "begin_group",
+        "name": "direccion",
+        "label": "Dirección"
+      }
+    },
+    {
+      "type": "group",
+      "name": "censo_clientela",
+      "label": "Censo ISVAN &amp; TRALOG",
+      "relevant": null,
+      "appearance": null,
+      "children": [
+        {
+          "type": "text",
+          "name": "nombre_comercio",
+          "label": "Nombre del comercio",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "nombre_comercio",
+            "label": "Nombre del comercio",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "text",
+          "name": "rif",
+          "label": "Rif del Cliente",
+          "constraint": "string_length == 9",
+          "constraint_message": "Introduzca 9 caracteres",
+          "required": true,
+          "readonly": false,
+          "field_length": 9,
+          "xlsform": {
+            "type": "text",
+            "name": "rif",
+            "label": "Rif del Cliente",
+            "required": "yes",
+            "constraint": "string_length == 9",
+            "constraint_message": "Introduzca 9 caracteres",
+            "bind_fieldLength": "9"
+          }
+        },
+        {
+          "type": "text",
+          "name": "telefono",
+          "label": "Teléfono",
+          "constraint": "string_length == 11",
+          "constraint_message": "Introduzca 11 caracteres",
+          "required": true,
+          "readonly": false,
+          "field_length": 11,
+          "xlsform": {
+            "type": "text",
+            "name": "telefono",
+            "label": "Teléfono",
+            "required": "yes",
+            "constraint": "string_length == 11",
+            "constraint_message": "Introduzca 11 caracteres",
+            "bind_fieldLength": "11"
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "ruta",
+          "name": "ruta",
+          "label": "Ruta de trabajo",
+          "appearance": "horizontal",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one ruta",
+            "name": "ruta",
+            "label": "Ruta de trabajo",
+            "appearance": "horizontal",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "tipo_cliente",
+          "name": "tipo_cliente",
+          "label": "Tipo de cliente",
+          "appearance": "horizontal",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one tipo_cliente",
+            "name": "tipo_cliente",
+            "label": "Tipo de cliente",
+            "appearance": "horizontal",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "sino",
+          "name": "desea_vender_tiorico",
+          "label": "¿Desea vender tío rico?",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Nuevo\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one sino",
+            "name": "desea_vender_tiorico",
+            "label": "¿Desea vender tío rico?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Nuevo\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "empresa",
+          "name": "empresa",
+          "label": "Empresa encargada de la venta",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one empresa",
+            "name": "empresa",
+            "label": "Empresa encargada de la venta",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "text",
+          "name": "codigo_cliente",
+          "label": "Código del Cliente",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "codigo_cliente",
+            "label": "Código del Cliente",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "dia",
+          "name": "dia_visita",
+          "label": "Día de visita",
+          "appearance": "hidden",
+          "relevant": "${tipo_cliente} == \"Nuevo\" or ${tipo_cliente} == \"Ya existente\"",
+          "required": false,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one dia",
+            "name": "dia_visita",
+            "label": "Día de visita",
+            "appearance": "hidden",
+            "relevant": "${tipo_cliente} == \"Nuevo\" or ${tipo_cliente} == \"Ya existente\""
+          }
+        },
+        {
+          "type": "select_multiple",
+          "list": "dia",
+          "name": "dia_visita1",
+          "label": "Día de visita",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Nuevo\" or ${tipo_cliente} == \"Ya existente\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_multiple dia",
+            "name": "dia_visita1",
+            "label": "Día de visita",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Nuevo\" or ${tipo_cliente} == \"Ya existente\""
+          }
+        },
+        {
+          "type": "time",
+          "name": "horario_trabajo",
+          "label": "Horario de trabajo",
+          "guidance_hint": "<h3 style=\"color: red\">Horario de apertura del cliente</h3>",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "time",
+            "name": "horario_trabajo",
+            "label": "Horario de trabajo",
+            "guidance_hint": "<h3 style = \"color: red;\">Horario de apertura del cliente</h3>",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "time",
+          "name": "horario_atencion_vende",
+          "label": "Horario de atención al vendedor",
+          "guidance_hint": "<h3 style=\"color: red\">Horario en el que el cliente puede recibir al vendedor</h3>",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "time",
+            "name": "horario_atencion_vende",
+            "label": "Horario de atención al vendedor",
+            "guidance_hint": "<h3 style = \"color: red;\">Horario en el que el cliente puede recibir al vendedor</h3>",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "time",
+          "name": "horario_despacho",
+          "label": "Horario de recepción del despacho",
+          "guidance_hint": "<h3 style=\"color: red\">Horario en el que el cliente puede recibir los despachos</h3>",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "time",
+            "name": "horario_despacho",
+            "label": "Horario de recepción del despacho",
+            "guidance_hint": "<h3 style = \"color: red;\">Horario en el que el cliente puede recibir los despachos",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "sino",
+          "name": "helados_competencia",
+          "label": "¿Vende helados de la competencia?",
+          "guidance_hint": "<h3 style=\"color: red\">Visualizar el comercio para determinar si vende otras marcas</h3>",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one sino",
+            "name": "helados_competencia",
+            "label": "¿Vende helados de la competencia?",
+            "guidance_hint": "<h3 style = \"color: red;\">Visualizar el comercio para determinar si vende otras marcas",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "select_multiple",
+          "list": "marcas",
+          "name": "marcas_competencia",
+          "label": "¿Qué marcas vende?",
+          "appearance": "horizontal",
+          "relevant": "${helados_competencia} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_multiple marcas",
+            "name": "marcas_competencia",
+            "label": "¿Qué marcas vende?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${helados_competencia} == \"Si\""
+          }
+        },
+        {
+          "type": "text",
+          "name": "cual_otra_marca",
+          "label": "¿Cuál otra marca vende?",
+          "relevant": "${marcas_competencia} == \"Otros\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "cual_otra_marca",
+            "label": "¿Cuál otra marca vende?",
+            "required": "yes",
+            "relevant": "${marcas_competencia} == \"Otros\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "sino",
+          "name": "posee_activo",
+          "label": "¿Posee activos el cliente?",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one sino",
+            "name": "posee_activo",
+            "label": "¿Posee activos el cliente?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "propiedad",
+          "name": "propiedad_activo",
+          "label": "¿El activo es propio?",
+          "appearance": "horizontal",
+          "relevant": "${posee_activo} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one propiedad",
+            "name": "propiedad_activo",
+            "label": "¿El activo es propio?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${posee_activo} == \"Si\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "tipo_activo",
+          "name": "tipo_activo",
+          "label": "Tipo de activo que posee el cliente",
+          "appearance": "horizontal",
+          "relevant": "${posee_activo} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one tipo_activo",
+            "name": "tipo_activo",
+            "label": "Tipo de activo que posee el cliente",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${posee_activo} == \"Si\""
+          }
+        },
+        {
+          "type": "integer",
+          "name": "activos_propios",
+          "label": "Cantidad de activos propios",
+          "relevant": "${propiedad_activo} == \"Propio\" or ${propiedad_activo} == \"Ambos\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "integer",
+            "name": "activos_propios",
+            "label": "Cantidad de activos propios",
+            "required": "yes",
+            "relevant": "${propiedad_activo} == \"Propio\" or ${propiedad_activo} == \"Ambos\""
+          }
+        },
+        {
+          "type": "integer",
+          "name": "activos_asignados",
+          "label": "Cantidad de activos asignados",
+          "relevant": "${propiedad_activo} == \"Asignado\" or ${propiedad_activo} == \"Ambos\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "integer",
+            "name": "activos_asignados",
+            "label": "Cantidad de activos asignados",
+            "required": "yes",
+            "relevant": "${propiedad_activo} == \"Asignado\" or ${propiedad_activo} == \"Ambos\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "sino",
+          "name": "helados_competencia1",
+          "label": "¿Vende helados de la competencia?",
+          "guidance_hint": "<h3 style=\"color: red\">Visualizar el comercio para determinar si vende otras marcas</h3>",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Nuevo\" or ${desea_vender_tiorico} == \"No\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one sino",
+            "name": "helados_competencia1",
+            "label": "¿Vende helados de la competencia?",
+            "guidance_hint": "<h3 style = \"color: red;\">Visualizar el comercio para determinar si vende otras marcas",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Nuevo\" or ${desea_vender_tiorico} == \"No\""
+          }
+        },
+        {
+          "type": "select_multiple",
+          "list": "marcas",
+          "name": "marcas_competencia1",
+          "label": "¿Qué marcas vende?",
+          "appearance": "horizontal",
+          "relevant": "${helados_competencia1} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_multiple marcas",
+            "name": "marcas_competencia1",
+            "label": "¿Qué marcas vende?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${helados_competencia1} == \"Si\""
+          }
+        },
+        {
+          "type": "text",
+          "name": "cual_otra_marca1",
+          "label": "¿Cuál otra marca vende?",
+          "relevant": "${marcas_competencia1} == \"Otros\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "cual_otra_marca1",
+            "label": "¿Cuál otra marca vende?",
+            "required": "yes",
+            "relevant": "${marcas_competencia1} == \"Otros\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "sino",
+          "name": "posee_activo_competencia",
+          "label": "¿El cliente posee activos de la competencia?",
+          "appearance": "horizontal",
+          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one sino",
+            "name": "posee_activo_competencia",
+            "label": "¿El cliente posee activos de la competencia?",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
+          }
+        },
+        {
+          "type": "select_one",
+          "list": "tipo_activo",
+          "name": "tipo_activo1",
+          "label": "Tipo de activo que posee el cliente de la competencia",
+          "appearance": "horizontal",
+          "relevant": "${posee_activo_competencia} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "select_one tipo_activo",
+            "name": "tipo_activo1",
+            "label": "Tipo de activo que posee el cliente de la competencia",
+            "appearance": "horizontal",
+            "required": "yes",
+            "relevant": "${posee_activo_competencia} == \"Si\""
+          }
+        },
+        {
+          "type": "integer",
+          "name": "cant_activos_competencia",
+          "label": "¿Cuántos activos posee de la competencia?",
+          "relevant": "${posee_activo_competencia} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "integer",
+            "name": "cant_activos_competencia",
+            "label": "¿Cuántos activos posee de la competencia?",
+            "required": "yes",
+            "relevant": "${posee_activo_competencia} == \"Si\""
+          }
+        },
+        {
+          "type": "text",
+          "name": "observaciones",
+          "label": "Observaciones",
+          "required": false,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "observaciones",
+            "label": "Observaciones"
+          }
+        }
+      ],
+      "xlsform": {
+        "type": "begin_group",
+        "name": "censo_clientela",
+        "label": "Censo ISVAN & TRALOG"
+      }
+    },
+    {
+      "type": "group",
+      "name": "fotos",
+      "label": "Registro fotografico",
+      "relevant": null,
+      "appearance": null,
+      "children": [
+        {
+          "type": "image",
+          "name": "foto_fachada",
+          "label": "Foto de fachada",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "image",
+            "name": "foto_fachada",
+            "label": "Foto de fachada",
+            "required": "yes"
+          }
+        },
+        {
+          "type": "image",
+          "name": "foto_activo",
+          "label": "Foto del activo",
+          "relevant": "${posee_activo} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "image",
+            "name": "foto_activo",
+            "label": "Foto del activo",
+            "required": "yes",
+            "relevant": "${posee_activo} == \"Si\""
+          }
+        },
+        {
+          "type": "image",
+          "name": "foto_activo2",
+          "label": "Foto del activo",
+          "relevant": "${posee_activo} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "image",
+            "name": "foto_activo2",
+            "label": "Foto del activo",
+            "required": "yes",
+            "relevant": "${posee_activo} == \"Si\""
+          }
+        },
+        {
+          "type": "image",
+          "name": "foto_serial_activo",
+          "label": "Foto del serial del activo",
+          "relevant": "${posee_activo} == \"Si\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "image",
+            "name": "foto_serial_activo",
+            "label": "Foto del serial del activo",
+            "required": "yes",
+            "relevant": "${posee_activo} == \"Si\""
+          }
+        }
+      ],
+      "xlsform": {
+        "type": "begin_group",
+        "name": "fotos",
+        "label": "Registro fotografico"
+      }
+    },
+    {
+      "type": "time",
+      "name": "horafinent",
+      "label": "Hora de Finalización de llenado de la encuesta",
+      "hint": "Presione el recuadro de hora antes de enviar la encuesta.",
+      "appearance": "hidden",
+      "calculation": "end_hour",
+      "required": false,
+      "readonly": false,
+      "xlsform": {
+        "type": "time",
+        "name": "horafinent",
+        "label": "Hora de Finalización de llenado de la encuesta",
+        "hint": "Presione el recuadro de hora antes de enviar la encuesta.",
+        "appearance": "hidden",
+        "calculation": "end_hour"
+      }
+    },
+    {
+      "type": "text",
+      "name": "horaduracionencuesta",
+      "label": "Tiempo de duraciòn de la encuesta",
+      "appearance": "hidden",
+      "calculation": "end_hh_mm_ss",
+      "required": false,
+      "readonly": false,
+      "field_length": 255,
+      "xlsform": {
+        "type": "text",
+        "name": "horaduracionencuesta",
+        "label": "Tiempo de duraciòn de la encuesta",
+        "appearance": "hidden",
+        "calculation": "end_hh_mm_ss",
+        "bind_fieldLength": "255"
+      }
+    }
+  ],
+  "choices": {
+    "sino": [
+      {
+        "name": "Si",
+        "label": "Sí",
+        "extra": {}
+      },
+      {
+        "name": "No",
+        "label": "No",
+        "extra": {}
+      }
+    ],
+    "parroquia": [
+      {
+        "name": "Antímano",
+        "label": "Antímano",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Caricuao",
+        "label": "Caricuao",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Macarao",
+        "label": "Macarao",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Altagracia",
+        "label": "Altagracia",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "La Pastora",
+        "label": "La Pastora",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San José",
+        "label": "San José",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "La Candelaria",
+        "label": "La Candelaria",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San Bernardino",
+        "label": "San Bernardino",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Catedral",
+        "label": "Catedral",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Santa Teresa",
+        "label": "Santa Teresa",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Santa Rosalía",
+        "label": "Santa Rosalía",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San Juan",
+        "label": "San Juan",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San Agustín",
+        "label": "San Agustín",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "El Paraíso",
+        "label": "El Paraíso",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "La Vega",
+        "label": "La Vega",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Sucre",
+        "label": "Sucre",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "El Junquito",
+        "label": "El Junquito",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "23 de Enero",
+        "label": "23 de Enero",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "El Valle",
+        "label": "El Valle",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San Pedro (Libertador)",
+        "label": "San Pedro",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "El Recreo",
+        "label": "El Recreo",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Coche",
+        "label": "Coche",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Chacao",
+        "label": "Chacao",
+        "extra": {
+          "municipio": "Chacao"
+        }
+      },
+      {
+        "name": "Baruta",
+        "label": "Baruta",
+        "extra": {
+          "municipio": "Baruta"
+        }
+      },
+      {
+        "name": "Las Minas de Baruta",
+        "label": "Las Minas de Baruta",
+        "extra": {
+          "municipio": "Baruta"
+        }
+      },
+      {
+        "name": "El Cafetal",
+        "label": "El Cafetal",
+        "extra": {
+          "municipio": "Baruta"
+        }
+      },
+      {
+        "name": "Petare",
+        "label": "Petare",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "Fila de Mariches",
+        "label": "Fila de Mariches",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "Leoncio Martínez",
+        "label": "Leoncio Martínez",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "Caucaguita",
+        "label": "Caucaguita",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "La Dolorita",
+        "label": "La Dolorita",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "El Hatillo",
+        "label": "El Hatillo",
+        "extra": {
+          "municipio": "El Hatillo"
+        }
+      },
+      {
+        "name": "Los Teques",
+        "label": "Los Teques",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "El Jarillo",
+        "label": "El Jarillo",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "Paracotos",
+        "label": "Paracotos",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "San Pedro",
+        "label": "San Pedro",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "Altagracia de La Montaña",
+        "label": "Altagracia de La Montaña",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "Tácata",
+        "label": "Tácata",
+        "extra": {
+          "municipio": "Guaicaipuro"
+        }
+      },
+      {
+        "name": "Carrizal",
+        "label": "Carrizal",
+        "extra": {
+          "municipio": "Carrizal"
+        }
+      },
+      {
+        "name": "Cecilio Acosta",
+        "label": "Cecilio Acosta",
+        "extra": {
+          "municipio": "Carrizal"
+        }
+      },
+      {
+        "name": "San Antonio de Los Altos",
+        "label": "San Antonio de Los Altos",
+        "extra": {
+          "municipio": "Los Salias"
+        }
+      },
+      {
+        "name": "Ocumare del Tuy",
+        "label": "Ocumare del Tuy",
+        "extra": {
+          "municipio": "Lander"
+        }
+      },
+      {
+        "name": "Santa Bárbara",
+        "label": "Santa Bárbara",
+        "extra": {
+          "municipio": "Lander"
+        }
+      },
+      {
+        "name": "Charallave",
+        "label": "Charallave",
+        "extra": {
+          "municipio": "Cristóbal Rojas"
+        }
+      },
+      {
+        "name": "Las Brisas",
+        "label": "Las Brisas",
+        "extra": {
+          "municipio": "Cristóbal Rojas"
+        }
+      },
+      {
+        "name": "Cúa",
+        "label": "Cúa",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "Nueva Cúa",
+        "label": "Nueva Cúa",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "San Francisco de Yare",
+        "label": "San Francisco de Yare",
+        "extra": {
+          "municipio": "Simón Bolívar"
+        }
+      },
+      {
+        "name": "San Antonio de Yare",
+        "label": "San Antonio de Yare",
+        "extra": {
+          "municipio": "Simón Bolívar"
+        }
+      },
+      {
+        "name": "Santa  Lucía",
+        "label": "Santa  Lucía",
+        "extra": {
+          "municipio": "Paz Castillo"
+        }
+      },
+      {
+        "name": "Santa Teresa del Tuy",
+        "label": "Santa Teresa del Tuy",
+        "extra": {
+          "municipio": "Independencia"
+        }
+      },
+      {
+        "name": "El Cartanal",
+        "label": "El Cartanal",
+        "extra": {
+          "municipio": "Independencia"
+        }
+      },
+      {
+        "name": "Guarenas",
+        "label": "Guarenas",
+        "extra": {
+          "municipio": "Plaza"
+        }
+      },
+      {
+        "name": "Guatire",
+        "label": "Guatire",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Bolívar",
+        "label": "Bolívar",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Mamporal",
+        "label": "Mamporal",
+        "extra": {
+          "municipio": "Buroz"
+        }
+      },
+      {
+        "name": "Higuerote",
+        "label": "Higuerote",
+        "extra": {
+          "municipio": "Brión"
+        }
+      },
+      {
+        "name": "Curiepe",
+        "label": "Curiepe",
+        "extra": {
+          "municipio": "Brión"
+        }
+      },
+      {
+        "name": "Tacarigua",
+        "label": "Tacarigua",
+        "extra": {
+          "municipio": "Brión"
+        }
+      },
+      {
+        "name": "San José de Barlovento",
+        "label": "San José de Barlovento",
+        "extra": {
+          "municipio": "Andrés Bello"
+        }
+      },
+      {
+        "name": "Cumbo",
+        "label": "Cumbo",
+        "extra": {
+          "municipio": "Andrés Bello"
+        }
+      },
+      {
+        "name": "Río Chico",
+        "label": "Río Chico",
+        "extra": {
+          "municipio": "Páez"
+        }
+      },
+      {
+        "name": "Tacarigua de La Laguna",
+        "label": "Tacarigua de La Laguna",
+        "extra": {
+          "municipio": "Páez"
+        }
+      },
+      {
+        "name": "Paparo",
+        "label": "Paparo",
+        "extra": {
+          "municipio": "Páez"
+        }
+      },
+      {
+        "name": "El Guapo",
+        "label": "El Guapo",
+        "extra": {
+          "municipio": "Páez"
+        }
+      },
+      {
+        "name": "San Fernando del Guapo",
+        "label": "San Fernando del Guapo",
+        "extra": {
+          "municipio": "Páez"
+        }
+      },
+      {
+        "name": "Cúpira",
+        "label": "Cúpira",
+        "extra": {
+          "municipio": "Pedro Gual"
+        }
+      },
+      {
+        "name": "Caucagua",
+        "label": "Caucagua",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Marizapa",
+        "label": "Marizapa",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Aragüita",
+        "label": "Aragüita",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Ribas",
+        "label": "Ribas",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Capaya",
+        "label": "Capaya",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "El Café",
+        "label": "El Café",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Panaquire",
+        "label": "Panaquire",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "Arévalo González",
+        "label": "Arévalo González",
+        "extra": {
+          "municipio": "Acevedo"
+        }
+      },
+      {
+        "name": "La Guaira",
+        "label": "La Guaira",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Maiquetía",
+        "label": "Maiquetía",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Carlos Soublette",
+        "label": "Carlos Soublette",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Urimare",
+        "label": "Urimare",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Catia La Mar",
+        "label": "Catia La Mar",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Macuto",
+        "label": "Macuto",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Caraballeda",
+        "label": "Caraballeda",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Naiguatá",
+        "label": "Naiguatá",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Carayaca",
+        "label": "Carayaca",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Caruao",
+        "label": "Caruao",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "El Junko",
+        "label": "El Junko",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Aeropuerto",
+        "label": "Aeropuerto",
+        "extra": {
+          "municipio": "Vargas"
+        }
+      },
+      {
+        "name": "Las Delicias",
+        "label": "Las Delicias",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Madre María de San José",
+        "label": "Madre María de San José",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Joaquín Crespo",
+        "label": "Joaquín Crespo",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Pedro José Ovalles",
+        "label": "Pedro José Ovalles",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "José Casanova Godoy",
+        "label": "José Casanova Godoy",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Andrés Eloy Blanco",
+        "label": "Andrés Eloy Blanco",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Los Tacariguas",
+        "label": "Los Tacariguas",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Choroní",
+        "label": "Choroní",
+        "extra": {
+          "municipio": "Girardot"
+        }
+      },
+      {
+        "name": "Francisco Linares Alcántara",
+        "label": "Francisco Linares Alcántara",
+        "extra": {
+          "municipio": "Francisco Linares Alcántara"
+        }
+      },
+      {
+        "name": "Francisco de Miranda",
+        "label": "Francisco de Miranda",
+        "extra": {
+          "municipio": "Francisco Linares Alcántara"
+        }
+      },
+      {
+        "name": "Monseñor Feliciano González",
+        "label": "Monseñor Feliciano González",
+        "extra": {
+          "municipio": "Francisco Linares Alcántara"
+        }
+      },
+      {
+        "name": "Mario Briceño Iragorry",
+        "label": "Mario Briceño Iragorry",
+        "extra": {
+          "municipio": "Mario Briceño Iragorry"
+        }
+      },
+      {
+        "name": "Caña de Azúcar",
+        "label": "Caña de Azúcar",
+        "extra": {
+          "municipio": "Mario Briceño Iragorry"
+        }
+      },
+      {
+        "name": "Santiago Mariño",
+        "label": "Santiago Mariño",
+        "extra": {
+          "municipio": "Santiago Mariño"
+        }
+      },
+      {
+        "name": "Arévalo Aponte",
+        "label": "Arévalo Aponte",
+        "extra": {
+          "municipio": "Santiago Mariño"
+        }
+      },
+      {
+        "name": "Chuao",
+        "label": "Chuao",
+        "extra": {
+          "municipio": "Santiago Mariño"
+        }
+      },
+      {
+        "name": "Alfredo Pacheco Miranda",
+        "label": "Alfredo Pacheco Miranda",
+        "extra": {
+          "municipio": "Santiago Mariño"
+        }
+      },
+      {
+        "name": "Samán de Güere",
+        "label": "Samán de Güere",
+        "extra": {
+          "municipio": "Santiago Mariño"
+        }
+      },
+      {
+        "name": "Samán de Güere",
+        "label": "Samán de Güere",
+        "extra": {
+          "municipio": "Ocumare de La Costa de Oro"
+        }
+      },
+      {
+        "name": "Urbana Juan Vicente Bolívar",
+        "label": "Urbana Juan Vicente Bolívar",
+        "extra": {
+          "municipio": "José Félix Ribas"
+        }
+      },
+      {
+        "name": "Castor Nieves Ríos",
+        "label": "Castor Nieves Ríos",
+        "extra": {
+          "municipio": "José Félix Ribas"
+        }
+      },
+      {
+        "name": "Las Guacamayas",
+        "label": "Las Guacamayas",
+        "extra": {
+          "municipio": "José Félix Ribas"
+        }
+      },
+      {
+        "name": "Pao de Zárate",
+        "label": "Pao de Zárate",
+        "extra": {
+          "municipio": "José Félix Ribas"
+        }
+      },
+      {
+        "name": "Zuata",
+        "label": "Zuata",
+        "extra": {
+          "municipio": "José Félix Ribas"
+        }
+      },
+      {
+        "name": "Zuata",
+        "label": "Zuata",
+        "extra": {
+          "municipio": "Bolívar"
+        }
+      },
+      {
+        "name": "Zuata",
+        "label": "Zuata",
+        "extra": {
+          "municipio": "José Rafael Revenga"
+        }
+      },
+      {
+        "name": "Zuata",
+        "label": "Zuata",
+        "extra": {
+          "municipio": "Tovar"
+        }
+      },
+      {
+        "name": "Zamora",
+        "label": "Zamora",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "San Francisco de Asís",
+        "label": "San Francisco de Asís",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Valles de Tucutunemo",
+        "label": "Valles de Tucutunemo",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Augusto Mijares",
+        "label": "Augusto Mijares",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Magdaleno",
+        "label": "Magdaleno",
+        "extra": {
+          "municipio": "Zamora"
+        }
+      },
+      {
+        "name": "Sucre",
+        "label": "Sucre",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "Bella Vista",
+        "label": "Bella Vista",
+        "extra": {
+          "municipio": "Sucre"
+        }
+      },
+      {
+        "name": "Bella Vista",
+        "label": "Bella Vista",
+        "extra": {
+          "municipio": "José Angel Lamas"
+        }
+      },
+      {
+        "name": "Libertador",
+        "label": "Libertador",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "San Martín de Porres",
+        "label": "San Martín de Porres",
+        "extra": {
+          "municipio": "Libertador"
+        }
+      },
+      {
+        "name": "Camatagua",
+        "label": "Camatagua",
+        "extra": {
+          "municipio": "Camatagua"
+        }
+      },
+      {
+        "name": "Carmen de Cura",
+        "label": "Carmen de Cura",
+        "extra": {
+          "municipio": "Camatagua"
+        }
+      },
+      {
+        "name": "San Casimiro",
+        "label": "San Casimiro",
+        "extra": {
+          "municipio": "San Casimiro"
+        }
+      },
+      {
+        "name": "Güiripa",
+        "label": "Güiripa",
+        "extra": {
+          "municipio": "San Casimiro"
+        }
+      },
+      {
+        "name": "Ollas de Caramacate",
+        "label": "Ollas de Caramacate",
+        "extra": {
+          "municipio": "San Casimiro"
+        }
+      },
+      {
+        "name": "Valle Morín",
+        "label": "Valle Morín",
+        "extra": {
+          "municipio": "San Casimiro"
+        }
+      },
+      {
+        "name": "Valle Morín",
+        "label": "Valle Morín",
+        "extra": {
+          "municipio": "San Sebastián"
+        }
+      },
+      {
+        "name": "Urdaneta",
+        "label": "Urdaneta",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "Las Peñitas",
+        "label": "Las Peñitas",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "San Francisco de Cara",
+        "label": "San Francisco de Cara",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "Taguay",
+        "label": "Taguay",
+        "extra": {
+          "municipio": "Urdaneta"
+        }
+      },
+      {
+        "name": "Santos Michelena",
+        "label": "Santos Michelena",
+        "extra": {
+          "municipio": "Santos Michelena"
+        }
+      },
+      {
+        "name": "Tiara",
+        "label": "Tiara",
+        "extra": {
+          "municipio": "Santos Michelena"
+        }
+      }
+    ],
+    "municipio": [
+      {
+        "name": "Libertador",
+        "label": "Libertador",
+        "extra": {
+          "estado": "Distrito Capital"
+        }
+      },
+      {
+        "name": "Chacao",
+        "label": "Chacao",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Baruta",
+        "label": "Baruta",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Sucre",
+        "label": "Sucre",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "El Hatillo",
+        "label": "El Hatillo",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Guaicaipuro",
+        "label": "Guaicaipuro",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Carrizal",
+        "label": "Carrizal",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Los Salias",
+        "label": "Los Salias",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Lander",
+        "label": "Lander",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Cristóbal Rojas",
+        "label": "Cristóbal Rojas",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Urdaneta",
+        "label": "Urdaneta",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Simón Bolívar",
+        "label": "Simón Bolívar",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Paz Castillo",
+        "label": "Paz Castillo",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Independencia",
+        "label": "Independencia",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Plaza",
+        "label": "Plaza",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Zamora",
+        "label": "Zamora",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Buroz",
+        "label": "Buroz",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Brión",
+        "label": "Brión",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Andrés Bello",
+        "label": "Andrés Bello",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Páez",
+        "label": "Páez",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Pedro Gual",
+        "label": "Pedro Gual",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Acevedo",
+        "label": "Acevedo",
+        "extra": {
+          "estado": "Miranda"
+        }
+      },
+      {
+        "name": "Vargas",
+        "label": "Vargas",
+        "extra": {
+          "estado": "La Guaira"
+        }
+      },
+      {
+        "name": "Girardot",
+        "label": "Girardot",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Francisco Linares Alcántara",
+        "label": "Francisco Linares Alcántara",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Mario Briceño Iragorry",
+        "label": "Mario Briceño Iragorry",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Santiago Mariño",
+        "label": "Santiago Mariño",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Ocumare de La Costa de Oro",
+        "label": "Ocumare de La Costa de Oro",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "José Félix Ribas",
+        "label": "José Félix Ribas",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Bolívar",
+        "label": "Bolívar",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "José Rafael Revenga",
+        "label": "José Rafael Revenga",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Tovar",
+        "label": "Tovar",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Zamora",
+        "label": "Zamora",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Sucre",
+        "label": "Sucre",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "José Angel Lamas",
+        "label": "José Angel Lamas",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Libertador",
+        "label": "Libertador",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Camatagua",
+        "label": "Camatagua",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "San Casimiro",
+        "label": "San Casimiro",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "San Sebastián",
+        "label": "San Sebastián",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Urdaneta",
+        "label": "Urdaneta",
+        "extra": {
+          "estado": "Aragua"
+        }
+      },
+      {
+        "name": "Santos Michelena",
+        "label": "Santos Michelena",
+        "extra": {
+          "estado": "Aragua"
+        }
+      }
+    ],
+    "estado": [
+      {
+        "name": "Aragua",
+        "label": "Aragua",
+        "extra": {}
+      },
+      {
+        "name": "Distrito Capital",
+        "label": "Distrito Capital",
+        "extra": {}
+      },
+      {
+        "name": "La Guaira",
+        "label": "La Guaira",
+        "extra": {}
+      },
+      {
+        "name": "Miranda",
+        "label": "Miranda",
+        "extra": {}
+      }
+    ],
+    "encuestador": [
+      {
+        "name": "Alma Meneses",
+        "label": "Alma Meneses",
+        "extra": {}
+      },
+      {
+        "name": "Darvin Arguello",
+        "label": "Darvin Arguello",
+        "extra": {}
+      },
+      {
+        "name": "Dayan Cordero",
+        "label": "Dayan Cordero",
+        "extra": {}
+      },
+      {
+        "name": "Diogenes Meza",
+        "label": "Diogenes Meza",
+        "extra": {}
+      },
+      {
+        "name": "Edwin Carval",
+        "label": "Edwin Carval",
+        "extra": {}
+      },
+      {
+        "name": "Gustavo Serrano",
+        "label": "Gustavo Serrano",
+        "extra": {}
+      },
+      {
+        "name": "Ivan Ramirez",
+        "label": "Ivan Ramirez",
+        "extra": {}
+      },
+      {
+        "name": "Jose Blanco",
+        "label": "Jose Blanco",
+        "extra": {}
+      },
+      {
+        "name": "Juan A. Useche",
+        "label": "Juan A. Useche",
+        "extra": {}
+      },
+      {
+        "name": "Juan P. Useche",
+        "label": "Juan P. Useche",
+        "extra": {}
+      },
+      {
+        "name": "Lorainne Martinez",
+        "label": "Lorainne Martinez",
+        "extra": {}
+      },
+      {
+        "name": "Mairobis Romero",
+        "label": "Mairobis Romero",
+        "extra": {}
+      },
+      {
+        "name": "Milagros Caldera",
+        "label": "Milagros Caldera",
+        "extra": {}
+      },
+      {
+        "name": "Royer Rua",
+        "label": "Royer Rua",
+        "extra": {}
+      },
+      {
+        "name": "Rusbel Batatima",
+        "label": "Rusbel Batatima",
+        "extra": {}
+      },
+      {
+        "name": "William Arellano",
+        "label": "William Arellano",
+        "extra": {}
+      }
+    ],
+    "tipo_cliente": [
+      {
+        "name": "Nuevo",
+        "label": "Nuevo",
+        "extra": {}
+      },
+      {
+        "name": "Ya existente",
+        "label": "Ya existente",
+        "extra": {}
+      }
+    ],
+    "marcas": [
+      {
+        "name": "Cali",
+        "label": "Cali",
+        "extra": {}
+      },
+      {
+        "name": "Efe",
+        "label": "Efe",
+        "extra": {}
+      },
+      {
+        "name": "Charlotte",
+        "label": "Charlotte",
+        "extra": {}
+      },
+      {
+        "name": "Crema Alta",
+        "label": "Crema Alta",
+        "extra": {}
+      },
+      {
+        "name": "Helados Carabobo",
+        "label": "Helados Carabobo",
+        "extra": {}
+      },
+      {
+        "name": "Otros",
+        "label": "Otros",
+        "extra": {}
+      }
+    ],
+    "propiedad": [
+      {
+        "name": "Propio",
+        "label": "Propio",
+        "extra": {}
+      },
+      {
+        "name": "Asignado",
+        "label": "Asignado",
+        "extra": {}
+      },
+      {
+        "name": "Ambos",
+        "label": "Ambos",
+        "extra": {}
+      }
+    ],
+    "tipo_activo": [
+      {
+        "name": "Nevera",
+        "label": "Nevera",
+        "extra": {}
+      },
+      {
+        "name": "Congelador",
+        "label": "Congelador",
+        "extra": {}
+      }
+    ],
+    "dia": [
+      {
+        "name": "Lunes",
+        "label": "Lunes",
+        "extra": {}
+      },
+      {
+        "name": "Martes",
+        "label": "Martes",
+        "extra": {}
+      },
+      {
+        "name": "Miércoles",
+        "label": "Miércoles",
+        "extra": {}
+      },
+      {
+        "name": "Jueves",
+        "label": "Jueves",
+        "extra": {}
+      },
+      {
+        "name": "Viernes",
+        "label": "Viernes",
+        "extra": {}
+      },
+      {
+        "name": "Sábado",
+        "label": "Sábado",
+        "extra": {}
+      },
+      {
+        "name": "Domingo",
+        "label": "Domingo",
+        "extra": {}
+      }
+    ],
+    "ruta": [
+      {
+        "name": "Ruta 1",
+        "label": "Ruta 1",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 2",
+        "label": "Ruta 2",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 3",
+        "label": "Ruta 3",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 4",
+        "label": "Ruta 4",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 5",
+        "label": "Ruta 5",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 6",
+        "label": "Ruta 6",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 7",
+        "label": "Ruta 7",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 8",
+        "label": "Ruta 8",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 9",
+        "label": "Ruta 9",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 10",
+        "label": "Ruta 10",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 11",
+        "label": "Ruta 11",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 12",
+        "label": "Ruta 12",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 13",
+        "label": "Ruta 13",
+        "extra": {}
+      },
+      {
+        "name": "Ruta 14",
+        "label": "Ruta 14",
+        "extra": {}
+      }
+    ],
+    "empresa": [
+      {
+        "name": "ISVAN",
+        "label": "ISVAN",
+        "extra": {}
+      },
+      {
+        "name": "TRALOG",
+        "label": "TRALOG",
+        "extra": {}
+      },
+      {
+        "name": "AMBAS",
+        "label": "AMBAS",
+        "extra": {}
+      }
+    ]
+  },
+  "version": "c917a4917f8f"
+}

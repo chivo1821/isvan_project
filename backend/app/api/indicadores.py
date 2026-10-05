@@ -28,8 +28,9 @@ from psycopg.types.json import Jsonb
 
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
+from app.core.fechas import ahora_utc
 from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
-from app.schemas import en_utc
+from app.schemas import GuardarMetasRequest, en_utc
 from app.services import indicadores_venta as iv
 from app.services.ventas_import import ExtractoVentas, leer_extracto
 
@@ -87,44 +88,54 @@ def opciones(empresa: str):
     """Valores para los filtros y el rango de fechas con datos."""
     _validar_empresa(empresa)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT DISTINCT "ruta" FROM "VentaCliente" WHERE "empresa" = %s', (empresa,))
-        rutas = sorted((r["ruta"] for r in cur.fetchall()), key=_orden_ruta)
-        cur.execute('SELECT DISTINCT "grupo" FROM "VentaProducto" WHERE "empresa" = %s ORDER BY 1', (empresa,))
-        grupos = [r["grupo"] for r in cur.fetchall()]
-        cur.execute('SELECT DISTINCT "tipo" FROM "VentaCliente" WHERE "empresa" = %s ORDER BY 1', (empresa,))
-        tipos = [r["tipo"] for r in cur.fetchall()]
-        # Para los filtros de cliente y de producto (SKU), que traen buscador.
-        cur.execute(
-            'SELECT "codigo", "nombre", "ruta" FROM "VentaCliente" WHERE "empresa" = %s ORDER BY "nombre", "codigo"',
-            (empresa,),
-        )
-        clientes = cur.fetchall()
-        cur.execute(
-            'SELECT "codigo"::text AS "codigo", "nombre", "grupo" FROM "VentaProducto" '
-            'WHERE "empresa" = %s ORDER BY "nombre", "codigo"',
-            (empresa,),
-        )
-        productos = cur.fetchall()
-        cur.execute(
-            'SELECT MIN(v."fecha") AS "desde", MAX(v."fecha") AS "hasta", '
-            'ARRAY_AGG(DISTINCT v."codTipoDoc") AS "tiposDocumento" '
-            'FROM "Venta" v JOIN "VentaCarga" c ON c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' '
-            'WHERE v."empresa" = %s AND v."reemplazadaPorCargaId" IS NULL',
-            (empresa,),
-        )
-        rango = cur.fetchone()
-        # Facturas y notas de entrega primero; despues las devoluciones.
-        orden_doc = {"FA": 0, "NE": 1, "DV": 2, "DN": 3}
-        tipos_documento = sorted(
-            (t for t in rango["tiposDocumento"] or [] if t), key=lambda t: (orden_doc.get(t, 9), t)
-        )
-        cur.execute(
-            "SELECT COUNT(*) FILTER (WHERE \"estado\" = 'CONFIRMADA') AS \"confirmadas\", "
-            "COUNT(*) FILTER (WHERE \"estado\" = 'PENDIENTE') AS \"pendientes\" "
-            'FROM "VentaCarga" WHERE "empresa" = %s',
-            (empresa,),
-        )
-        cargas = cur.fetchone()
+        return construir_opciones(cur, empresa)
+
+
+def construir_opciones(cur, empresa: str, rutas_permitidas: list[str] | None = None) -> dict:
+    """Las opciones de los filtros. Con `rutas_permitidas` (el VENDEDOR, ver
+    app/api/vendedor.py) las rutas, los tipos de cliente y los clientes se
+    limitan a esas rutas: un vendedor no ve ni puede elegir las ajenas.
+    Grupos y productos son el catalogo y no dicen nada de otras rutas."""
+    alcance = {"empresa": empresa, "rutas": rutas_permitidas}
+    de_sus_rutas = '"empresa" = %(empresa)s AND (%(rutas)s::text[] IS NULL OR "ruta" = ANY(%(rutas)s))'
+    cur.execute(f'SELECT DISTINCT "ruta" FROM "VentaCliente" WHERE {de_sus_rutas}', alcance)
+    rutas = sorted((r["ruta"] for r in cur.fetchall()), key=_orden_ruta)
+    cur.execute('SELECT DISTINCT "grupo" FROM "VentaProducto" WHERE "empresa" = %s ORDER BY 1', (empresa,))
+    grupos = [r["grupo"] for r in cur.fetchall()]
+    cur.execute(f'SELECT DISTINCT "tipo" FROM "VentaCliente" WHERE {de_sus_rutas} ORDER BY 1', alcance)
+    tipos = [r["tipo"] for r in cur.fetchall()]
+    # Para los filtros de cliente y de producto (SKU), que traen buscador.
+    cur.execute(
+        f'SELECT "codigo", "nombre", "ruta" FROM "VentaCliente" WHERE {de_sus_rutas} ORDER BY "nombre", "codigo"',
+        alcance,
+    )
+    clientes = cur.fetchall()
+    cur.execute(
+        'SELECT "codigo"::text AS "codigo", "nombre", "grupo" FROM "VentaProducto" '
+        'WHERE "empresa" = %s ORDER BY "nombre", "codigo"',
+        (empresa,),
+    )
+    productos = cur.fetchall()
+    cur.execute(
+        'SELECT MIN(v."fecha") AS "desde", MAX(v."fecha") AS "hasta", '
+        'ARRAY_AGG(DISTINCT v."codTipoDoc") AS "tiposDocumento" '
+        'FROM "Venta" v JOIN "VentaCarga" c ON c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' '
+        'WHERE v."empresa" = %s AND v."reemplazadaPorCargaId" IS NULL',
+        (empresa,),
+    )
+    rango = cur.fetchone()
+    # Facturas y notas de entrega primero; despues las devoluciones.
+    orden_doc = {"FA": 0, "NE": 1, "DV": 2, "DN": 3}
+    tipos_documento = sorted(
+        (t for t in rango["tiposDocumento"] or [] if t), key=lambda t: (orden_doc.get(t, 9), t)
+    )
+    cur.execute(
+        "SELECT COUNT(*) FILTER (WHERE \"estado\" = 'CONFIRMADA') AS \"confirmadas\", "
+        "COUNT(*) FILTER (WHERE \"estado\" = 'PENDIENTE') AS \"pendientes\" "
+        'FROM "VentaCarga" WHERE "empresa" = %s',
+        (empresa,),
+    )
+    cargas = cur.fetchone()
     return {
         "rutas": rutas,
         "grupos": grupos,
@@ -145,20 +156,30 @@ def tablero(f: iv.Filtros = Depends(_filtros)):
     con una sola conexion: en Vercel cada request es una invocacion aparte
     de la funcion, y la pagina necesita una docena de consultas."""
     with get_connection() as conn, conn.cursor() as cur:
-        desgloses = {}
-        for dimension in iv.DIMENSIONES:
-            filas, total = iv.desglose(cur, f, dimension)
-            desgloses[dimension] = {"filas": filas, "totalGrupos": total}
-        return {
-            "resumen": _resumen(cur, f),
-            "serie": {"mes": iv.serie(cur, f, "mes"), "semana": iv.serie(cur, f, "semana")},
-            "desgloses": desgloses,
-            "alertas": _alertas(cur, f),
-            "mapa": _mapa(cur, f),
-            "brechas": _brechas(cur, f),
-            "activacion": iv.activacion(cur, f),
-            "opcionesDisponibles": iv.opciones_disponibles(cur, f),
-        }
+        return armar_tablero(cur, f)
+
+
+def armar_tablero(cur, f: iv.Filtros, con_brechas: bool = True) -> dict:
+    """El tablero completo. Lo usa tambien el del VENDEDOR, con sus rutas ya
+    puestas en `f` y sin las brechas: esas comparan contra el maestro de
+    logistica entero y mostrarian clientes de rutas ajenas."""
+    desgloses = {}
+    for dimension in iv.DIMENSIONES:
+        filas, total = iv.desglose(cur, f, dimension)
+        desgloses[dimension] = {"filas": filas, "totalGrupos": total}
+    resumen = _resumen(cur, f)
+    serie_mes = iv.serie(cur, f, "mes")
+    return {
+        "resumen": resumen,
+        "serie": {"mes": serie_mes, "semana": iv.serie(cur, f, "semana")},
+        "proyeccion": iv.proyeccion(cur, f, serie_mes, (resumen["actual"] or {}).get("ventaNeta")),
+        "desgloses": desgloses,
+        "alertas": _alertas(cur, f),
+        "mapa": _mapa(cur, f),
+        "brechas": _brechas(cur, f) if con_brechas else None,
+        "activacion": iv.activacion(cur, f),
+        "opcionesDisponibles": iv.opciones_disponibles(cur, f),
+    }
 
 
 @router.get("/resumen")
@@ -321,6 +342,71 @@ def cobertura(empresa: str):
         )
         cargas = cur.fetchall()
     return {"dias": dias, "cargas": cargas}
+
+
+# ---------- Metas de venta ----------
+
+
+@router.get("/metas")
+def listar_metas(empresa: str, anio: int):
+    """Las metas de ese ano, una fila por ruta y mes, mas las rutas que el
+    cliente tiene en su cartera (para que la tabla las muestre todas aunque
+    todavia no tengan meta)."""
+    _validar_empresa(empresa)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT "ruta", "mes", "montoUsd"::float AS "montoUsd", "actualizadoEn" '
+            'FROM "MetaVenta" WHERE "empresa" = %s AND "mes" >= %s AND "mes" < %s ORDER BY "mes"',
+            (empresa, date(anio, 1, 1), date(anio + 1, 1, 1)),
+        )
+        metas = [{**fila, "actualizadoEn": en_utc(fila["actualizadoEn"])} for fila in cur.fetchall()]
+        cur.execute('SELECT DISTINCT "ruta" FROM "VentaCliente" WHERE "empresa" = %s', (empresa,))
+        rutas = sorted({fila["ruta"] for fila in cur.fetchall()} | {m["ruta"] for m in metas}, key=_orden_ruta)
+        return {"anio": anio, "rutas": rutas, "metas": metas}
+
+
+@router.get("/metas/sugerencia")
+def sugerencia_metas(empresa: str, anio: int, base: str = "media"):
+    """Metas propuestas por ruta para cada mes del ano, a partir del
+    historico, para que el cliente arranque con algo y lo ajuste a mano."""
+    _validar_empresa(empresa)
+    if base not in iv.BASES_SUGERENCIA:
+        raise HTTPException(400, f"Base desconocida: usa {' o '.join(iv.BASES_SUGERENCIA)}")
+    with get_connection() as conn, conn.cursor() as cur:
+        return iv.sugerir_metas(cur, empresa, anio, base)
+
+
+@router.put("/metas")
+def guardar_metas(data: GuardarMetasRequest, usuario: dict = Depends(requiere_rol("ADMIN"))):
+    """Guarda las metas que se tocaron en la tabla. Un monto en 0 (o menos)
+    borra la meta: es como se deja un mes sin objetivo."""
+    _validar_empresa(data.empresa)
+    guardadas, borradas = 0, 0
+    with get_connection() as conn, conn.cursor() as cur:
+        for meta in data.metas:
+            ruta = meta.ruta.strip()
+            if not ruta:
+                raise HTTPException(400, "Hay una meta sin ruta")
+            mes = meta.mes.replace(day=1)
+            if meta.montoUsd > 0:
+                cur.execute(
+                    'INSERT INTO "MetaVenta" ("id", "empresa", "ruta", "mes", "montoUsd", '
+                    '"actualizadoEn", "actualizadoPorId") VALUES (%s, %s, %s, %s, %s, %s, %s) '
+                    'ON CONFLICT ("empresa", "ruta", "mes") DO UPDATE SET '
+                    '"montoUsd" = EXCLUDED."montoUsd", "actualizadoEn" = EXCLUDED."actualizadoEn", '
+                    '"actualizadoPorId" = EXCLUDED."actualizadoPorId"',
+                    (f"meta-{uuid.uuid4().hex[:10]}", data.empresa, ruta, mes,
+                     round(meta.montoUsd, 2), ahora_utc(), usuario["id"]),
+                )
+                guardadas += 1
+            else:
+                cur.execute(
+                    'DELETE FROM "MetaVenta" WHERE "empresa" = %s AND "ruta" = %s AND "mes" = %s',
+                    (data.empresa, ruta, mes),
+                )
+                borradas += cur.rowcount
+        conn.commit()
+    return {"guardadas": guardadas, "borradas": borradas}
 
 
 # ---------- Cargas ----------

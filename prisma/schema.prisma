@@ -95,19 +95,22 @@ model Usuario {
   vehiculoAsignadoId String?
   vehiculoAsignado   Vehiculo? @relation("ConductorDelVehiculo", fields: [vehiculoAsignadoId], references: [id])
 
-  despachosCreados     Despacho[]           @relation("DespachosCreadosPor")
-  aprobacionesDespacho DespachoAprobacion[]
-  rutasCreadas         Ruta[]               @relation("RutasCreadas")
-  rutasCanceladas      Ruta[]               @relation("RutasCanceladas")
-  sesiones             Sesion[]
-  cargasVenta          VentaCarga[]
-  tabuladorDelivery    TabuladorDelivery[]         @relation("TabuladorDeliveryActualizadoPor")
-  liquidacionesDelivery LiquidacionDelivery[]      @relation("LiquidacionesDelivery")
-  liquidacionesCreadas  LiquidacionDelivery[]      @relation("LiquidacionesDeliveryCreadasPor")
-  redesViales           RedVialCarga[]             @relation("RedVialCargadaPor")
+  despachosCreados      Despacho[]            @relation("DespachosCreadosPor")
+  aprobacionesDespacho  DespachoAprobacion[]
+  rutasCreadas          Ruta[]                @relation("RutasCreadas")
+  rutasCanceladas       Ruta[]                @relation("RutasCanceladas")
+  sesiones              Sesion[]
+  cargasVenta           VentaCarga[]
+  tabuladorDelivery     TabuladorDelivery[]   @relation("TabuladorDeliveryActualizadoPor")
+  liquidacionesDelivery LiquidacionDelivery[] @relation("LiquidacionesDelivery")
+  liquidacionesCreadas  LiquidacionDelivery[] @relation("LiquidacionesDeliveryCreadasPor")
+  redesViales           RedVialCarga[]        @relation("RedVialCargadaPor")
+  metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
+  censos                Censo[]               @relation("CensosLlenados")
+  configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
-  rutasVenta           VendedorRuta[]
-  visitas              Visita[]
+  rutasVenta            VendedorRuta[]
+  visitas               Visita[]
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
@@ -134,9 +137,9 @@ model Almacen {
   lng           Float
   esFrigorifico Boolean @default(true)
 
-  despachosOrigen Despacho[] @relation("DespachoOrigen")
-  vehiculos       Vehiculo[]
-  rutas           Ruta[]
+  despachosOrigen   Despacho[]         @relation("DespachoOrigen")
+  vehiculos         Vehiculo[]
+  rutas             Ruta[]
   distanciasCliente DistanciaCliente[]
 }
 
@@ -166,18 +169,18 @@ model Vehiculo {
 // (ISVAN / TRALOG comparten almacen y flota pero no su cartera de clientes),
 // asi que la llave de negocio es (empresa, codigo), no el codigo solo.
 model Cliente {
-  id        String  @id @default(cuid())
-  empresa   Empresa
-  codigo    String // ej. "CLI-0001", unico solo dentro de su empresa
-  nombre    String
-  tipo      String // "Tienda" | "Distribuidor" | "Consumidor final"
-  direccion String
-  ciudad    String
-  lat       Float?
-  lng       Float?
+  id            String  @id @default(cuid())
+  empresa       Empresa
+  codigo        String // ej. "CLI-0001", unico solo dentro de su empresa
+  nombre        String
+  tipo          String // "Tienda" | "Distribuidor" | "Consumidor final"
+  direccion     String
+  ciudad        String
+  lat           Float?
+  lng           Float?
   // Obligatorio: lo usan los despachadores para contactar al cliente.
-  telefono  String
-  email     String?
+  telefono      String
+  email         String?
   // Ruta comercial (de venta/reparto) a la que el negocio asigna al cliente,
   // p.ej. "R-07". No es la Ruta (viaje) de este sistema: es un dato del
   // cliente que viene del extracto de ventas y se usa como criterio de peso
@@ -186,7 +189,7 @@ model Cliente {
   // cargados antes de que existiera la columna.
   rutaComercial String?
 
-  despachos Despacho[] @relation("DespachoDestino")
+  despachos         Despacho[]                  @relation("DespachoDestino")
   distanciasAlmacen DistanciaCliente[]
   paradasLiquidadas LiquidacionDeliveryParada[]
 
@@ -231,12 +234,12 @@ model Despacho {
 }
 
 model DespachoItem {
-  id         String   @id @default(cuid())
-  despachoId String
-  despacho   Despacho @relation(fields: [despachoId], references: [id])
+  id                 String   @id @default(cuid())
+  despachoId         String
+  despacho           Despacho @relation(fields: [despachoId], references: [id])
   // Texto libre (viene del Excel o de carga manual) — ya no hay catalogo de
   // productos: cada fila trae su propia descripcion, cantidad y peso.
-  descripcion String
+  descripcion        String
   // Lo que el documento origen pedia originalmente (se copia y se congela al
   // crear el despacho). "cantidad" es lo que realmente se va a despachar: el
   // coordinador puede ajustarla a mano mientras el despacho no haya salido
@@ -244,7 +247,7 @@ model DespachoItem {
   cantidadSolicitada Int
   cantidad           Int
   pesoUnitarioKg     Float
-  requiereFrio       Boolean @default(true)
+  requiereFrio       Boolean  @default(true)
 }
 
 // Auditoria de la aprobacion/rechazo del despacho.
@@ -267,14 +270,21 @@ model DespachoAprobacion {
 model Ruta {
   id               String     @id @default(cuid())
   numero           String     @unique // ej. "R-0001"
-  vehiculoId       String
-  vehiculo         Vehiculo   @relation(fields: [vehiculoId], references: [id])
+  // Opcional: una ruta se puede planificar antes de tener vehiculo (que no
+  // frene la planificacion si la flota esta ocupada) y asignarselo despues.
+  // Sin vehiculo no la ve ningun repartidor ni se puede iniciar.
+  vehiculoId       String?
+  vehiculo         Vehiculo?  @relation(fields: [vehiculoId], references: [id], onDelete: Restrict)
   origenId         String
   origen           Almacen    @relation(fields: [origenId], references: [id])
   creadoPorId      String
   creadoPor        Usuario    @relation("RutasCreadas", fields: [creadoPorId], references: [id])
   estado           EstadoRuta @default(PLANIFICADA)
   fechaCreacion    DateTime   @default(now())
+  // Cuando tiene que salir del almacen: la fecha y hora de recogida de todos
+  // sus pedidos. Un vehiculo puede tener varias rutas planificadas en
+  // horarios distintos (ver app/services/planificacion.py).
+  salidaProgramada DateTime
   // Cuando el vehiculo salio del almacen y cuando se entrego la ultima
   // parada. Con estas dos y las marcas de cada Despacho se arma el reporte
   // de rendimiento del viaje (duracion real vs estimada, tiempo hasta la
@@ -294,9 +304,12 @@ model Ruta {
   motivoCancelacion   String?
   despachosAlCancelar Json?
 
-  despachos Despacho[]
-  puntos    RutaPunto[]
+  despachos         Despacho[]
+  puntos            RutaPunto[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+
+  @@index([salidaProgramada])
+  @@index([vehiculoId, estado])
 }
 
 // Waypoints de la geometria de una Ruta multi-parada, usados tanto para
@@ -429,6 +442,30 @@ model VentaProducto {
   @@index([empresa, grupo])
 }
 
+// Meta de venta de una ruta para un mes, en dolares. La carga el cliente
+// (no se calcula): con tres meses de historia y creciendo, un pronostico
+// estadistico diria mas de la recta que del negocio.
+//
+// Por ruta y no por empresa para que el grafico siga valiendo al filtrar:
+// la meta de la empresa es la suma de sus rutas. Las ventas no traen
+// vendedor, solo cliente y ruta (ver VentaCliente.ruta), asi que la ruta es
+// el nivel mas fino que el dato soporta.
+model MetaVenta {
+  id       String   @id @default(cuid())
+  empresa  Empresa
+  ruta     String
+  // Primer dia del mes, como el resto de los periodos del modulo.
+  mes      DateTime @db.Date
+  montoUsd Decimal  @db.Decimal(20, 2)
+
+  actualizadoEn    DateTime @default(now()) @updatedAt
+  actualizadoPorId String?
+  actualizadoPor   Usuario? @relation("MetasActualizadasPor", fields: [actualizadoPorId], references: [id], onDelete: SetNull)
+
+  @@unique([empresa, ruta, mes])
+  @@index([empresa, mes])
+}
+
 // Una fila del extracto: un producto dentro de un documento.
 model Venta {
   id                    BigInt              @id @default(autoincrement())
@@ -461,7 +498,6 @@ model Venta {
   @@index([reemplazadaPorCargaId])
 }
 
-
 // ---------- Delivery (pago a motorizados) ----------
 //
 // A los motorizados se les paga por entrega segun la distancia del almacen
@@ -485,15 +521,15 @@ model TabuladorDelivery {
 // y se guarda: el pago no depende del orden del viaje ni de que el servicio
 // de rutas responda en el momento del reporte.
 model DistanciaCliente {
-  id           String   @id @default(cuid())
-  almacenId    String
-  almacen      Almacen  @relation(fields: [almacenId], references: [id])
-  clienteId    String
-  cliente      Cliente  @relation(fields: [clienteId], references: [id])
-  km           Float
+  id          String   @id @default(cuid())
+  almacenId   String
+  almacen     Almacen  @relation(fields: [almacenId], references: [id])
+  clienteId   String
+  cliente     Cliente  @relation(fields: [clienteId], references: [id])
+  km          Float
   // "iserver" (red vial real) o "estimada" (linea recta por un factor).
-  fuente       String
-  calculadoEn  DateTime @default(now())
+  fuente      String
+  calculadoEn DateTime @default(now())
 
   @@unique([almacenId, clienteId])
 }
@@ -538,7 +574,6 @@ model LiquidacionDeliveryParada {
   @@index([liquidacionId])
 }
 
-
 // ---------- Red vial (calculo de rutas en la base) ----------
 //
 // La red vial de Venezuela (OpenStreetMap) vive en la base y pgRouting
@@ -555,7 +590,7 @@ model LiquidacionDeliveryParada {
 // costoMinInverso vale -1 en los tramos de un solo sentido (asi es como
 // pgRouting bloquea la direccion contraria).
 model RedVialTramo {
-  id              BigInt  @id @default(autoincrement())
+  id              BigInt                                    @id @default(autoincrement())
   osmId           String?
   source          Int?
   target          Int?
@@ -578,7 +613,7 @@ model RedVialTramo {
 // Los cruces de la red. Los calcula el cargador con pgr_extractVertices a
 // partir de los extremos de cada tramo.
 model RedVialNodo {
-  id   BigInt                                @id
+  id   BigInt                               @id
   geom Unsupported("geometry(Point, 4326)")
 
   @@index([geom], type: Gist)
@@ -606,17 +641,75 @@ model RedVialCarga {
 // contra la red. Las coordenadas se guardan redondeadas (ver
 // DECIMALES_CACHE en backend/app/services/red_vial.py).
 model RutaCalculada {
-  id           String   @id @default(cuid())
-  perfil       String   @default("vehiculo")
-  origenLat    Float
-  origenLng    Float
-  destinoLat   Float
-  destinoLng   Float
-  distanciaKm  Float
-  tiempoMin    Int
+  id          String   @id @default(cuid())
+  perfil      String   @default("vehiculo")
+  origenLat   Float
+  origenLng   Float
+  destinoLat  Float
+  destinoLng  Float
+  distanciaKm Float
+  tiempoMin   Int
   /// El trazado como [[lng, lat], ...], listo para dibujar.
-  geometria    Json
-  calculadoEn  DateTime @default(now())
+  geometria   Json
+  calculadoEn DateTime @default(now())
 
   @@unique([perfil, origenLat, origenLng, destinoLat, destinoLng])
+}
+
+// ---------- Censo de clientes (formularios desde XLSForm) ----------
+//
+// Un formulario lleno. La definicion (preguntas, listas, relevant,
+// constraint...) vive en backend/app/formularios/<formulario>.json,
+// importada del XLSForm de Survey123; aca se guarda con que version se lleno
+// y las respuestas tal cual (solo las relevantes), mas unas columnas sacadas
+// de ellas para listar y filtrar sin abrir el JSON.
+model Censo {
+  id             String   @id @default(cuid())
+  formulario     String
+  version        String
+  usuarioId      String
+  usuario        Usuario  @relation("CensosLlenados", fields: [usuarioId], references: [id])
+  respuestas     Json
+  lat            Float?
+  lng            Float?
+  encuestador    String?
+  nombreComercio String?
+  tipoCliente    String?
+  empresa        String?
+  ruta           String?
+  // Del telefono: cuando se abrio el formulario y cuando se envio.
+  iniciadoEn     DateTime
+  terminadoEn    DateTime
+  recibidoEn     DateTime @default(now())
+
+  fotos CensoFoto[]
+
+  @@index([formulario, recibidoEn])
+  @@index([usuarioId, recibidoEn])
+}
+
+// Las fotos van en el almacenamiento de archivos (ver
+// backend/app/services/almacen_fotos.py), no en la base: aca solo la clave.
+model CensoFoto {
+  id       String   @id @default(cuid())
+  censoId  String
+  censo    Censo    @relation(fields: [censoId], references: [id], onDelete: Cascade)
+  pregunta String
+  clave    String
+  tipo     String
+  bytes    Int
+  creadaEn DateTime @default(now())
+
+  @@unique([censoId, pregunta])
+}
+
+// Ajustes de la operacion que el ADMIN cambia sin desplegar, como clave ->
+// valor (ver app/services/configuracion.py). Sin fila, vale el valor por
+// defecto del codigo.
+model Configuracion {
+  clave            String   @id
+  valor            Json
+  actualizadoEn    DateTime @default(now())
+  actualizadoPorId String?
+  actualizadoPor   Usuario? @relation("ConfiguracionActualizadaPor", fields: [actualizadoPorId], references: [id], onDelete: SetNull)
 }

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Undo2Icon } from "lucide-react";
+import { CalendarClockIcon, Undo2Icon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
+import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
 import { RecalcularRutaButton } from "@/components/modules/rutas/recalcular-ruta-button";
 import { ReversarRutaButton } from "@/components/modules/rutas/reversar-ruta-button";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
@@ -10,11 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ESTADO_DESPACHO_META,
   ESTADO_RUTA_META,
-  TIPO_VEHICULO_META,
+  describirVehiculo,
   formatDate,
   formatDateTime,
 } from "@/lib/constants";
+import { apiGet } from "@/lib/api-client";
 import { getRutaConDetalle } from "@/lib/mock-data";
+import { diaCaracas, type Agenda } from "@/lib/planificacion";
 import { getUsuarioActual } from "@/lib/session";
 
 export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]">) {
@@ -28,14 +32,32 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
   const sinMarcas = ruta.despachos.every((d) => !d.llegadaEn && !d.entregadoEn && d.estado !== "ENTREGADO");
   const puedeReversar = usuarioActual?.rol === "ADMIN" && rutaActiva && sinMarcas;
   const reversada = ruta.estado === "CANCELADA" && ruta.canceladaEn;
+  // Reprogramar y asignar vehículo: solo mientras no salió, y solo quien
+  // arma rutas (la API exige DESPACHOS; ADMIN siempre pasa).
+  const puedeProgramar =
+    ruta.estado === "PLANIFICADA" && (usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS");
+  // La agenda de su día trae la flota y qué vehículos están libres a su hora.
+  const dia = diaCaracas(ruta.salidaProgramada);
+  const agenda = puedeProgramar
+    ? await apiGet<Agenda>(`/rutas/agenda?desde=${dia}&hasta=${dia}`).catch(() => null)
+    : null;
+  const enAgenda = agenda?.rutas.find((r) => r.id === ruta.id);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={ruta.numero}
-        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo.placa} — ${TIPO_VEHICULO_META[ruta.vehiculo.tipo].label} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
+        subtitle={`${ruta.origen.nombre} · ${describirVehiculo(ruta.vehiculo)} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
         actions={
           <div className="flex flex-wrap items-center gap-3">
+            {puedeProgramar && agenda && (
+              <ProgramarRutaDialog
+                ruta={ruta}
+                vehiculos={agenda.vehiculos}
+                libres={enAgenda?.vehiculosLibres}
+                pesoKg={enAgenda?.pesoKg}
+              />
+            )}
             {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}
             {puedeReversar && (
               <ReversarRutaButton rutaId={ruta.id} numero={ruta.numero} paradas={ruta.despachos.length} />
@@ -49,6 +71,16 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
           </div>
         }
       />
+
+      {ruta.estado !== "CANCELADA" && (
+        <p className="flex items-center gap-1.5 text-sm">
+          <CalendarClockIcon className="size-4 text-muted-foreground" aria-hidden />
+          {ruta.estado === "PLANIFICADA" ? "Sale del almacén el " : "Salida programada: "}
+          <span className="font-medium">{formatDateTime(ruta.salidaProgramada)}</span>
+          {ruta.iniciadaEn && <span className="text-muted-foreground">· salió el {formatDateTime(ruta.iniciadaEn)}</span>}
+        </p>
+      )}
+      <AvisosRuta avisos={ruta.avisos} />
 
       {reversada && (
         <Card className="border-destructive/40 bg-destructive/5">

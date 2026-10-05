@@ -76,13 +76,12 @@ export async function getVehiculoById(id: string): Promise<Vehiculo | undefined>
   return vehiculos.find((v) => v.id === id);
 }
 
-// Un vehiculo esta ocupado si ya esta asignado a una Ruta todavia activa
-// (planificada o en tránsito) — antes se miraba por despacho, ahora por ruta.
+// Disponible ahora = funcional y sin una ruta en la calle. Las planificadas
+// no lo ocupan: un vehículo puede tener varias, en horarios distintos (ver
+// backend/app/services/planificacion.py).
 export async function getVehiculosDisponibles(): Promise<Vehiculo[]> {
   const [vehiculos, rutas] = await Promise.all([getVehiculosRaw(), getRutasRaw()]);
-  const ocupados = new Set(
-    rutas.filter((r) => r.estado === "PLANIFICADA" || r.estado === "EN_TRANSITO").map((r) => r.vehiculoId)
-  );
+  const ocupados = new Set(rutas.filter((r) => r.estado === "EN_TRANSITO").map((r) => r.vehiculoId));
   return vehiculos.filter((v) => v.estado === "FUNCIONAL" && !ocupados.has(v.id));
 }
 
@@ -92,7 +91,8 @@ export type RutaResumen = {
   id: string;
   numero: string;
   estado: Ruta["estado"];
-  vehiculo: Vehiculo;
+  vehiculo: Vehiculo | null;
+  salidaProgramada: string;
   distanciaTotalKm?: number | null;
   tiempoTotalMin?: number | null;
 };
@@ -119,7 +119,8 @@ function armarDespachoConDetalle(despacho: Despacho, datos: Awaited<ReturnType<t
           id: rutaRaw.id,
           numero: rutaRaw.numero,
           estado: rutaRaw.estado,
-          vehiculo: vehiculos.find((v) => v.id === rutaRaw.vehiculoId)!,
+          vehiculo: vehiculos.find((v) => v.id === rutaRaw.vehiculoId) ?? null,
+          salidaProgramada: rutaRaw.salidaProgramada,
           distanciaTotalKm: rutaRaw.distanciaTotalKm,
           tiempoTotalMin: rutaRaw.tiempoTotalMin,
         }
@@ -146,7 +147,8 @@ export async function getDespachosPendientesAprobacion(): Promise<DespachoConDet
 // ---------- Rutas ----------
 
 export type RutaConDetalle = Omit<Ruta, "despachos"> & {
-  vehiculo: Vehiculo;
+  /** null mientras la ruta se planifica sin vehículo. */
+  vehiculo: Vehiculo | null;
   origen: Almacen;
   creadoPor: Usuario;
   /** Quién la reversó, si fue reversada (ver RutaConDetalle.canceladaEn). */
@@ -162,10 +164,12 @@ export type RutaConDetalle = Omit<Ruta, "despachos"> & {
 
 function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargarTodo>>): RutaConDetalle {
   const { almacenes, clientes, usuarios, vehiculos } = datos;
-  const vehiculo = vehiculos.find((v) => v.id === ruta.vehiculoId)!;
-  const repartidor = usuarios.find(
-    (u) => u.rol === "REPARTIDOR" && u.vehiculoAsignadoId === ruta.vehiculoId
-  );
+  const vehiculo = vehiculos.find((v) => v.id === ruta.vehiculoId) ?? null;
+  // Sin vehículo no hay conductor: comparar dos null le asignaría la ruta a
+  // cualquier repartidor que tampoco tenga vehículo.
+  const repartidor = ruta.vehiculoId
+    ? usuarios.find((u) => u.rol === "REPARTIDOR" && u.vehiculoAsignadoId === ruta.vehiculoId)
+    : undefined;
   return {
     ...ruta,
     vehiculo,

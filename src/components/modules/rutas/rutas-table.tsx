@@ -5,7 +5,8 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDate } from "@/lib/constants";
+import { ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { IndicadorAvisos } from "./avisos-ruta";
 import type { RutaConDetalle } from "@/lib/mock-data";
 
 export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
@@ -24,13 +25,18 @@ export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
     {
       id: "vehiculo",
       header: "Vehículo",
-      accessorFn: (row) => row.vehiculo.placa,
-      cell: ({ row }) => (
-        <div>
-          <p>{row.original.vehiculo.placa}</p>
-          <p className="text-xs text-muted-foreground">{TIPO_VEHICULO_META[row.original.vehiculo.tipo].label}</p>
-        </div>
-      ),
+      accessorFn: (row) => row.vehiculo?.placa ?? "",
+      cell: ({ row }) => {
+        const vehiculo = row.original.vehiculo;
+        // Se planifica sin vehículo y se le asigna uno antes de la salida.
+        if (!vehiculo) return <span className="text-xs font-medium text-[var(--warning)]">Sin vehículo</span>;
+        return (
+          <div>
+            <p>{vehiculo.placa}</p>
+            <p className="text-xs text-muted-foreground">{TIPO_VEHICULO_META[vehiculo.tipo].label}</p>
+          </div>
+        );
+      },
     },
     {
       id: "conductor",
@@ -51,14 +57,19 @@ export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
         row.original.distanciaTotalKm != null ? `${row.original.distanciaTotalKm.toLocaleString("es-VE")} km` : "—",
     },
     {
-      accessorKey: "fechaCreacion",
-      header: "Fecha",
-      cell: ({ row }) => formatDate(row.original.fechaCreacion),
+      accessorKey: "salidaProgramada",
+      header: "Salida",
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDateTime(row.original.salidaProgramada)}</span>,
     },
     {
       accessorKey: "estado",
       header: "Estado",
-      cell: ({ row }) => <StatusBadge {...ESTADO_RUTA_META[row.original.estado]} />,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5">
+          <StatusBadge {...ESTADO_RUTA_META[row.original.estado]} />
+          <IndicadorAvisos avisos={row.original.avisos} />
+        </div>
+      ),
     },
   ];
 
