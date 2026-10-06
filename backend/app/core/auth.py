@@ -34,7 +34,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    # bcrypt solo compara los primeros 72 bytes (las versiones viejas
+    # recortaban solas); la 5 lanza error con una clave mas larga, y eso era
+    # un 500 en el login que cualquiera podia provocar. Se recorta igual que
+    # antes, asi las claves guardadas siguen funcionando.
+    return bcrypt.checkpw(password.encode("utf-8")[:72], password_hash.encode("utf-8"))
 
 
 def _hash_token(token: str) -> str:

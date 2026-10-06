@@ -11,6 +11,7 @@ serializa los campos declarados en el modelo, asi que nunca sale en el JSON.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 from typing import Annotated, Literal, Optional
 
@@ -42,6 +43,30 @@ def _normalizar_correo(valor: str) -> str:
 # por que.
 Correo = Annotated[str, AfterValidator(_normalizar_correo)]
 
+_FORMATO_CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def _correo_con_formato(valor: str) -> str:
+    if not _FORMATO_CORREO.fullmatch(valor):
+        raise ValueError("El correo no tiene un formato valido")
+    return valor
+
+
+# Al CREAR un usuario se exige ademas un formato de correo. El login sigue
+# con Correo a secas: un usuario viejo con un correo raro no se queda afuera.
+CorreoNuevo = Annotated[str, AfterValidator(_normalizar_correo), AfterValidator(_correo_con_formato)]
+
+
+def _clave_dentro_de_bcrypt(valor: str) -> str:
+    """bcrypt solo usa los primeros 72 bytes, y desde la version 5 una clave
+    mas larga es un error (era un 500 en el login y al crear usuarios)."""
+    if len(valor.encode("utf-8")) > 72:
+        raise ValueError("La contraseña no puede pasar de 72 bytes (unos 72 caracteres sin acentos)")
+    return valor
+
+
+ClaveNueva = Annotated[str, AfterValidator(_clave_dentro_de_bcrypt)]
+
 
 class Usuario(BaseModel):
     id: str
@@ -55,11 +80,29 @@ class Usuario(BaseModel):
     vehiculoAsignadoId: Optional[str] = None
 
 
+# Los valores de los enums de la base (prisma/schema.prisma). Validarlos aca
+# devuelve un 422 claro; si no, un valor raro llegaba hasta Postgres y era un 500.
+RolUsuario = Literal["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"]
+TipoVehiculo = Literal["CAMION_REFRIGERADO", "CAMIONETA", "MOTO"]
+EstadoVehiculo = Literal["FUNCIONAL", "EN_MANTENIMIENTO", "FUERA_DE_SERVICIO"]
+
+
+def _salida_razonable(valor: datetime) -> datetime:
+    """Una salida programada fuera de esto es un error de tipeo (o un ataque):
+    con el anio 9999 el calculo de horarios se desbordaba en un 500."""
+    if not 2000 <= valor.year <= 2100:
+        raise ValueError("La fecha de salida tiene que estar entre los anios 2000 y 2100")
+    return valor
+
+
+SalidaProgramada = Annotated[AwareDatetime, AfterValidator(_salida_razonable)]
+
+
 class UsuarioCreate(BaseModel):
     nombre: str
-    email: Correo
-    rol: str
-    password: str
+    email: CorreoNuevo
+    rol: RolUsuario
+    password: ClaveNueva
     vehiculoAsignadoId: Optional[str] = None
 
 
@@ -186,11 +229,11 @@ class LoginRequest(BaseModel):
 
 class CambiarPasswordRequest(BaseModel):
     passwordActual: str
-    passwordNueva: str
+    passwordNueva: ClaveNueva
 
 
 class ResetPasswordRequest(BaseModel):
-    passwordNueva: str
+    passwordNueva: ClaveNueva
 
 
 # ---------- Almacen / flota ----------
@@ -225,7 +268,7 @@ class Vehiculo(BaseModel):
 
 class VehiculoCreate(BaseModel):
     placa: str
-    tipo: str
+    tipo: TipoVehiculo
     capacidadKg: float
     tieneRefrigeracion: bool = True
     conductorNombre: Optional[str] = None
@@ -233,7 +276,7 @@ class VehiculoCreate(BaseModel):
 
 
 class VehiculoEstadoUpdate(BaseModel):
-    estado: str
+    estado: EstadoVehiculo
 
 
 class SugerenciaVehiculo(BaseModel):
@@ -247,7 +290,7 @@ class SugerenciaVehiculoRequest(BaseModel):
     # Para que vehiculos estar libre: la salida programada de la ruta y, si
     # es una ruta que ya existe (asignarle vehiculo), su id para no contarla
     # contra si misma. Sin salida: ahora.
-    salidaProgramada: Optional[AwareDatetime] = None
+    salidaProgramada: Optional[SalidaProgramada] = None
     rutaId: Optional[str] = None
 
 
@@ -325,9 +368,9 @@ class Despacho(BaseModel):
 
 
 class DespachoCreate(BaseModel):
+    # Quien lo crea sale de la sesion, no del cuerpo (ver crear_despacho).
     destinoClienteId: str
     numeroDocumento: str
-    creadoPorId: str
     items: list[DespachoItemCreate]
 
 
@@ -341,7 +384,7 @@ class DespachoAprobacion(BaseModel):
 
 
 class DespachoAprobacionCreate(BaseModel):
-    usuarioId: str
+    # Quien aprueba sale de la sesion, no del cuerpo.
     accion: Literal["APROBADA", "RECHAZADA"]
     comentario: Optional[str] = None
 
@@ -406,7 +449,6 @@ class ImportarExcelPreviewResponse(BaseModel):
 
 
 class ImportarExcelConfirmarRequest(BaseModel):
-    creadoPorId: str
     grupos: list[ImportarExcelGrupoPreview]
 
 
@@ -481,15 +523,14 @@ class RutaCreate(BaseModel):
     despachoIds: list[str]
     # Opcional: la ruta se puede planificar y asignarle vehiculo despues.
     vehiculoId: Optional[str] = None
-    creadoPorId: str
-    salidaProgramada: AwareDatetime
+    salidaProgramada: SalidaProgramada
 
 
 class RutaProgramacion(BaseModel):
     """Reprogramar una ruta planificada y/o cambiarle el vehiculo. Un campo
     que no viene no se toca; vehiculoId en null le quita el vehiculo."""
 
-    salidaProgramada: Optional[AwareDatetime] = None
+    salidaProgramada: Optional[SalidaProgramada] = None
     vehiculoId: Optional[str] = None
 
 
@@ -538,7 +579,7 @@ class PlanRutasRequest(BaseModel):
     radioMaxKm: Optional[float] = None
     # Para cuando se planifica: se proponen los vehiculos libres a esa hora.
     # Vacio = ahora.
-    salidaProgramada: Optional[AwareDatetime] = None
+    salidaProgramada: Optional[SalidaProgramada] = None
 
 
 # ---------- Reportes ----------
@@ -596,5 +637,5 @@ class MetaVentaItem(BaseModel):
 
 
 class GuardarMetasRequest(BaseModel):
-    empresa: str
+    empresa: Empresa
     metas: list[MetaVentaItem]

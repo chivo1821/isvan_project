@@ -34,7 +34,7 @@ type PreviewResponse = {
   columnas: ColumnaLeida[];
 };
 
-export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; creadoPorId: string }) {
+export function ExcelImportPanel({ origen }: { origen: Almacen }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [empresa, setEmpresa] = useState<Empresa | "">("");
@@ -92,7 +92,6 @@ export function ExcelImportPanel({ origen, creadoPorId }: { origen: Almacen; cre
     setErrorGeneral(null);
     try {
       const creados = await apiPost<Despacho[]>("/despachos/importar/confirmar", {
-        creadoPorId,
         grupos: resultado.grupos,
       });
       toast.success(`${creados.length} despacho(s) creado(s)`, {

@@ -88,7 +88,6 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
           despachoId={despacho.id}
           despachoNumero={despacho.numero}
           destinoNombre={despacho.destinoCliente.nombre}
-          usuarioId={usuarioActual.id}
         />
       </div>
     </div>

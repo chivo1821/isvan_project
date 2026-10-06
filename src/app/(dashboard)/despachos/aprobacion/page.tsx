@@ -59,7 +59,7 @@ export default async function AprobacionDespachosPage() {
                 {despachos.map((d) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">
-                      <DetalleDespachoDialog despacho={d} usuarioId={usuarioActual.id} />
+                      <DetalleDespachoDialog despacho={d} />
                     </TableCell>
                     <TableCell>{d.origen.nombre}</TableCell>
                     <TableCell>{d.destinoCliente.nombre}</TableCell>
@@ -72,7 +72,6 @@ export default async function AprobacionDespachosPage() {
                           despachoId={d.id}
                           despachoNumero={d.numero}
                           destinoNombre={d.destinoCliente.nombre}
-                          usuarioId={usuarioActual.id}
                           size="sm"
                         />
                       </div>

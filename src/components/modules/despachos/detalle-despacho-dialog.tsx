@@ -17,10 +17,8 @@ import type { DespachoConDetalle } from "@/lib/mock-data";
 
 export function DetalleDespachoDialog({
   despacho,
-  usuarioId,
 }: {
   despacho: DespachoConDetalle;
-  usuarioId: string;
 }) {
   const pesoTotal = despacho.items.reduce((sum, item) => sum + item.cantidad * item.pesoUnitarioKg, 0);
 
@@ -104,7 +102,6 @@ export function DetalleDespachoDialog({
             despachoId={despacho.id}
             despachoNumero={despacho.numero}
             destinoNombre={despacho.destinoCliente.nombre}
-            usuarioId={usuarioId}
           />
         </DialogFooter>
       </DialogContent>

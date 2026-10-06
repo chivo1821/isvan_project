@@ -48,3 +48,7 @@ __pycache__/
 graphify-out/
 # Fotos del censo guardadas en local (ALMACEN_FOTOS=local)
 backend/media/
+
+# escaneo de seguridad con OWASP ZAP: herramienta local, no va al repo
+# (sus reportes muestran como responde la API ante ataques)
+scripts/zap/

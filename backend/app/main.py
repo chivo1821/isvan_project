@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import Depends, FastAPI
+import psycopg
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # INFO para que se vean los logs de app.services.route_analysis al llamar al
 # servicio de SuperMap iServer (URL consultada, cuantos puntos devolvio, o el
@@ -52,6 +54,46 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def cabeceras_de_seguridad(request: Request, call_next):
+    """Cabeceras que pidio el escaneo de OWASP ZAP: que el navegador no
+    adivine el tipo de una respuesta (nosniff) y que otro sitio no pueda
+    incrustar las respuestas de la API (CORP). same-site, no same-origin: en
+    desarrollo el frontend (:3000) y la API (:8000) son el mismo sitio, pero
+    no el mismo origen."""
+    respuesta = await call_next(request)
+    respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    respuesta.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+    return respuesta
+
+
+_log = logging.getLogger("app.errores")
+
+
+@app.exception_handler(psycopg.errors.ForeignKeyViolation)
+async def referencia_inexistente(request: Request, exc: psycopg.errors.ForeignKeyViolation):
+    """Un id que no existe (cliente, usuario, vehiculo...): es un dato mal
+    enviado, no una falla del servidor."""
+    _log.warning("Referencia inexistente en %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=422, content={"detail": "Hace referencia a un registro que no existe"})
+
+
+@app.exception_handler(psycopg.errors.UniqueViolation)
+async def registro_duplicado(request: Request, exc: psycopg.errors.UniqueViolation):
+    """Un valor que tiene que ser unico y ya existe (una placa, un numero...)."""
+    _log.warning("Duplicado en %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=409, content={"detail": "Ya existe un registro con ese valor"})
+
+
+@app.exception_handler(psycopg.DataError)
+async def dato_invalido(request: Request, exc: psycopg.DataError):
+    """Un dato que Postgres no puede guardar ni comparar: un caracter nulo
+    (%00) en un texto, un valor fuera de rango... Antes era un 500. Queda en
+    el log por si algun dia es un error nuestro y no del que llama."""
+    _log.warning("Dato invalido en %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=422, content={"detail": "Hay un dato con un formato que no es valido"})
 
 # auth.router se deja sin la dependencia global de sesion (login/logout no
 # la requieren; GET /auth/me exige sesion por su cuenta). Todos los demas
