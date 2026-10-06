@@ -23,11 +23,9 @@ function itemVacio(): ItemForm {
 export function ManualDespachoForm({
   clientes,
   origen,
-  creadoPorId,
 }: {
   clientes: Cliente[];
   origen: Almacen;
-  creadoPorId: string;
 }) {
   const router = useRouter();
   const [clienteId, setClienteId] = useState("");
@@ -66,7 +64,6 @@ export function ManualDespachoForm({
       const despacho = await apiPost<Despacho>("/despachos", {
         destinoClienteId: clienteId,
         numeroDocumento: numeroDocumento.trim(),
-        creadoPorId,
         items: itemsValidos.map((it) => ({
           descripcion: it.descripcion.trim(),
           cantidad: Number(it.cantidad),

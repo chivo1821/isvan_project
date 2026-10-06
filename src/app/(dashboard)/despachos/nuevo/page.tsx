@@ -19,7 +19,7 @@ export default async function NuevoDespachoPage() {
         title="Nuevo despacho"
         subtitle="Importa el Excel del día (ISVAN o TRALOG) o carga un pedido suelto a mano"
       />
-      <NuevoDespachoWizard clientes={clientes} origen={origen} creadoPorId={usuarioActual.id} />
+      <NuevoDespachoWizard clientes={clientes} origen={origen} />
     </div>
   );
 }

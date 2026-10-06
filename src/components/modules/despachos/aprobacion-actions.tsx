@@ -23,14 +23,12 @@ export function AprobacionDespachoActions({
   despachoId,
   despachoNumero,
   destinoNombre,
-  usuarioId,
   size = "default",
   stopPropagation = false,
 }: {
   despachoId: string;
   despachoNumero: string;
   destinoNombre: string;
-  usuarioId: string;
   size?: "default" | "sm";
   /** Util cuando el componente vive dentro de una fila clickeable de una tabla. */
   stopPropagation?: boolean;
@@ -44,7 +42,6 @@ export function AprobacionDespachoActions({
     setEnviando(true);
     try {
       await apiPost(`/despachos/${despachoId}/aprobacion`, {
-        usuarioId,
         accion: accion === "aprobar" ? "APROBADA" : "RECHAZADA",
         comentario: comentario.trim() || undefined,
       });

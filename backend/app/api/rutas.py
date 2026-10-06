@@ -345,8 +345,8 @@ def sugerir_rutas(data: PlanRutasRequest):
     return sugerir_plan_rutas(data.despachoIds, data.mezclarRutasComerciales, data.radioMaxKm, data.salidaProgramada)
 
 
-@router.post("", response_model=Ruta, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
-def crear_ruta(data: RutaCreate):
+@router.post("", response_model=Ruta, status_code=201)
+def crear_ruta(data: RutaCreate, usuario: dict = Depends(requiere_rol("DESPACHOS"))):
     if not data.despachoIds:
         raise HTTPException(400, "Selecciona al menos un despacho para la ruta")
 
@@ -399,7 +399,7 @@ def crear_ruta(data: RutaCreate):
             'INSERT INTO "Ruta" '
             '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado", "salidaProgramada") '
             "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA', %s) RETURNING *",
-            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, data.creadoPorId, salida),
+            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, usuario["id"], salida),
         )
 
         _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)

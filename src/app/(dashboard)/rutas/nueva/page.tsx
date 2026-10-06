@@ -23,7 +23,7 @@ export default async function NuevaRutaPage() {
         title="Nueva ruta"
         subtitle="Agrupa varios despachos aprobados en el viaje de un vehículo — el orden de las paradas se calcula desde Almacén Catia"
       />
-      <NuevaRutaWizard despachos={despachosConCliente} creadoPorId={usuarioActual.id} />
+      <NuevaRutaWizard despachos={despachosConCliente} />
     </div>
   );
 }

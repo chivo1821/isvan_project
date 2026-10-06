@@ -170,8 +170,10 @@ def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)
         return _con_items(cur, row)
 
 
-@router.post("", response_model=Despacho, status_code=201, dependencies=[Depends(requiere_rol("DESPACHOS"))])
-def crear_despacho(data: DespachoCreate):
+@router.post("", response_model=Despacho, status_code=201)
+def crear_despacho(data: DespachoCreate, usuario: dict = Depends(requiere_rol("DESPACHOS"))):
+    # El creador es siempre quien tiene la sesion: si viniera en el cuerpo,
+    # cualquiera podria firmar un despacho a nombre de otro.
     """Carga manual de un despacho (un cliente, ítems escritos a mano) — el
     mismo camino de creación que usa la importación de Excel confirmada
     (ver _crear_despacho_interno), útil para un pedido suelto sin planilla."""
@@ -192,7 +194,7 @@ def crear_despacho(data: DespachoCreate):
             cur,
             destino_cliente_id=data.destinoClienteId,
             numero_documento=data.numeroDocumento,
-            creado_por_id=data.creadoPorId,
+            creado_por_id=usuario["id"],
             items=data.items,
         )
         conn.commit()
@@ -529,9 +531,8 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
 @router.post(
     "/importar/confirmar",
     response_model=list[Despacho],
-    dependencies=[Depends(requiere_rol("DESPACHOS"))],
 )
-def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
+def importar_excel_confirmar(data: ImportarExcelConfirmarRequest, usuario: dict = Depends(requiere_rol("DESPACHOS"))):
     if not data.grupos:
         raise HTTPException(400, "No hay documentos validos para importar")
 
@@ -564,7 +565,7 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
         for grupo, numero in zip(data.grupos, numeros):
             despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
             filas_despacho.append(
-                (despacho_id, numero, grupo.numeroDocumento, ALMACEN_BASE_ID, grupo.clienteId, data.creadoPorId, ahora)
+                (despacho_id, numero, grupo.numeroDocumento, ALMACEN_BASE_ID, grupo.clienteId, usuario["id"], ahora)
             )
             items_creados = []
             for item in grupo.items:
@@ -581,7 +582,7 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest):
             creados.append({
                 "id": despacho_id, "numero": numero, "numeroDocumento": grupo.numeroDocumento,
                 "origenId": ALMACEN_BASE_ID, "destinoClienteId": grupo.clienteId,
-                "creadoPorId": data.creadoPorId, "estado": "PENDIENTE_APROBACION",
+                "creadoPorId": usuario["id"], "estado": "PENDIENTE_APROBACION",
                 "fechaCreacion": ahora, "fechaEstimadaEntrega": None,
                 "rutaId": None, "ordenEnRuta": None, "items": items_creados,
             })
@@ -662,9 +663,12 @@ def aprobar_despachos_masivo(
 @router.post(
     "/{despacho_id}/aprobacion",
     response_model=Despacho,
-    dependencies=[Depends(requiere_rol("APROBADOR"))],
 )
-def aprobar_o_rechazar_despacho(despacho_id: str, data: DespachoAprobacionCreate):
+def aprobar_o_rechazar_despacho(
+    despacho_id: str, data: DespachoAprobacionCreate, usuario: dict = Depends(requiere_rol("APROBADOR"))
+):
+    # La auditoria queda a nombre de quien tiene la sesion (como en la
+    # aprobacion masiva), nunca de un id que mande el navegador.
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
         despacho = cur.fetchone()
@@ -676,7 +680,7 @@ def aprobar_o_rechazar_despacho(despacho_id: str, data: DespachoAprobacionCreate
         cur.execute(
             'INSERT INTO "DespachoAprobacion" ("id", "despachoId", "usuarioId", "accion", "comentario") '
             "VALUES (%s, %s, %s, %s, %s)",
-            (f"dap-{uuid.uuid4().hex[:10]}", despacho_id, data.usuarioId, data.accion, data.comentario),
+            (f"dap-{uuid.uuid4().hex[:10]}", despacho_id, usuario["id"], data.accion, data.comentario),
         )
 
         nuevo_estado = "APROBADO" if data.accion == "APROBADA" else "RECHAZADO"

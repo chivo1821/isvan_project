@@ -78,10 +78,8 @@ function ChoferDelVehiculo({ conductor }: { conductor?: string | null }) {
 
 export function NuevaRutaWizard({
   despachos,
-  creadoPorId,
 }: {
   despachos: DespachoConCliente[];
-  creadoPorId: string;
 }) {
   const router = useRouter();
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
@@ -189,7 +187,6 @@ export function NuevaRutaWizard({
       const ruta = await apiPost<Ruta>("/rutas", {
         despachoIds: [...seleccionados],
         vehiculoId,
-        creadoPorId,
         salidaProgramada,
       });
       toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {

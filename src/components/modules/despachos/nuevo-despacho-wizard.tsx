@@ -8,11 +8,9 @@ import type { Almacen, Cliente } from "@/lib/mock-data";
 export function NuevoDespachoWizard({
   clientes,
   origen,
-  creadoPorId,
 }: {
   clientes: Cliente[];
   origen: Almacen;
-  creadoPorId: string;
 }) {
   return (
     <Tabs defaultValue="excel" className="gap-4">
@@ -21,10 +19,10 @@ export function NuevoDespachoWizard({
         <TabsTrigger value="manual">Carga manual</TabsTrigger>
       </TabsList>
       <TabsContent value="excel">
-        <ExcelImportPanel origen={origen} creadoPorId={creadoPorId} />
+        <ExcelImportPanel origen={origen} />
       </TabsContent>
       <TabsContent value="manual">
-        <ManualDespachoForm clientes={clientes} origen={origen} creadoPorId={creadoPorId} />
+        <ManualDespachoForm clientes={clientes} origen={origen} />
       </TabsContent>
     </Tabs>
   );
