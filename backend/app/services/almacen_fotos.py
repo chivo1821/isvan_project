@@ -154,7 +154,7 @@ class AlmacenR2:
             cabeceras=cabeceras,
         )
 
-    def subida(self, clave: str, tipo: str, bytes_: int) -> Subida:
+    def subida(self, clave: str, tipo: str, bytes_: int, ruta_carga: str = "") -> Subida:
         cabeceras = {"Content-Type": tipo, "Content-Length": str(bytes_)}
         url = self._url("PUT", clave, VIGENCIA_SUBIDA_S, cabeceras)
         # Content-Length lo pone el navegador solo (no se puede fijar a
@@ -229,9 +229,10 @@ class AlmacenLocal:
             raise ValueError("El enlace de subida vencio; vuelve a intentar")
         return carga
 
-    def subida(self, clave: str, tipo: str, bytes_: int) -> Subida:
+    def subida(self, clave: str, tipo: str, bytes_: int, ruta_carga: str = "/censo/fotos/carga") -> Subida:
+        """ruta_carga: el endpoint del backend que hace de R2 para este modulo."""
         return Subida(
-            url=f"{self.base_api}/censo/fotos/carga/{self.ficha(clave, tipo, bytes_)}",
+            url=f"{self.base_api}{ruta_carga}/{self.ficha(clave, tipo, bytes_)}",
             metodo="PUT",
             cabeceras={"Content-Type": tipo},
             con_sesion=True,

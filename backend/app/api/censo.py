@@ -11,7 +11,7 @@ La definicion sale del XLSForm (ver app/services/xlsform.py y
 scripts/importar_formulario.py). El servidor vuelve a validar cada envio con
 las mismas reglas que el navegador (app/services/formulario.py).
 
-Este router esta abierto al VENDEDOR (ver ROUTERS_DEL_VENDEDOR en
+Este router esta abierto al VENDEDOR (ver ROUTERS_POR_ROL en
 app/main.py), asi que cada endpoint de revision lleva su requiere_rol("ADMIN").
 """
 

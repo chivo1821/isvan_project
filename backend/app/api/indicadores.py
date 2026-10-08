@@ -31,6 +31,7 @@ from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
 from app.schemas import GuardarMetasRequest, en_utc
+from app.services import cartera
 from app.services import indicadores_venta as iv
 from app.services.ventas_import import ExtractoVentas, leer_extracto
 
@@ -738,6 +739,8 @@ def confirmar_carga(carga_id: str):
             'UPDATE "VentaCarga" SET "estado" = \'CONFIRMADA\', "confirmadaEn" = now() WHERE "id" = %s',
             (carga_id,),
         )
+        # Las facturas y notas de entrega nuevas entran a la cartera de cobranzas.
+        cartera.sincronizar_documentos(cur, carga["empresa"])
         conn.commit()
         return {**_obtener_carga(cur, carga_id), "filasReemplazadas": reemplazadas}
 
@@ -819,5 +822,6 @@ def revertir_carga(carga_id: str):
         )
         for confirmada in cur.fetchall():
             _aplicar_dimensiones(cur, carga["empresa"], confirmada["dimensiones"])
+        cartera.sincronizar_documentos(cur, carga["empresa"])
         conn.commit()
         return {**_obtener_carga(cur, carga_id), "filasRestauradas": restauradas}

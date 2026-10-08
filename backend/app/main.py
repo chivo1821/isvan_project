@@ -20,11 +20,14 @@ from app.api import (
     auth,
     censo,
     clientes,
+    cobranzas,
     delivery,
     despachos,
     historial,
     indicadores,
     motorizados,
+    portal,
+    portal_auth,
     reportes,
     rutas,
     usuarios,
@@ -32,7 +35,7 @@ from app.api import (
     vendedor,
 )
 from app.core.auth import get_current_user
-from app.core.permisos import sin_acceso_vendedor
+from app.core.permisos import solo_su_modulo
 
 app = FastAPI(title="Gestion Logistica API")
 
@@ -99,7 +102,12 @@ async def dato_invalido(request: Request, exc: psycopg.DataError):
 # auth.router se deja sin la dependencia global de sesion (login/logout no
 # la requieren; GET /auth/me exige sesion por su cuenta). Todos los demas
 # routers exigen una sesion valida en cada endpoint.
-ROUTERS_PUBLICOS = [auth.router]
+# El portal de clientes (portal_auth y portal) tampoco usa la sesion interna:
+# tiene la suya (cookie portal_sesion, ver app/core/portal_auth.py). Una
+# cuenta de cliente no puede pasar get_current_user, asi que nunca entra a
+# los routers protegidos. cobranzas.tareas_router lo llama el cron de Vercel
+# con su propio secreto (CRON_SECRET).
+ROUTERS_PUBLICOS = [auth.router, portal_auth.router, portal.router, cobranzas.tareas_router]
 ROUTERS_PROTEGIDOS = [
     almacenes.router,
     censo.router,
@@ -114,14 +122,19 @@ ROUTERS_PROTEGIDOS = [
     indicadores.router,
     vendedor.router,
     motorizados.router,
+    cobranzas.router,
 ]
 
-# Los unicos routers a los que entra un VENDEDOR: el suyo, usuarios (su
-# propia ficha y su clave; lo demas de ese router es de ADMIN) y el censo
-# (lo llena el; la revision es de ADMIN, endpoint por endpoint). El resto de
-# la operacion se le cierra aca, de una sola vez, en vez de endpoint por
-# endpoint (ver sin_acceso_vendedor en app/core/permisos.py).
-ROUTERS_DEL_VENDEDOR = [usuarios.router, vendedor.router, censo.router]
+# Lista blanca de los roles de un solo modulo: los unicos routers a los que
+# entran. Un VENDEDOR: el suyo, usuarios (su propia ficha y su clave; lo demas
+# de ese router es de ADMIN) y el censo (lo llena el; la revision es de ADMIN,
+# endpoint por endpoint). COBRANZAS: el suyo y usuarios. El resto de la
+# operacion se les cierra aca, de una sola vez (ver solo_su_modulo en
+# app/core/permisos.py).
+ROUTERS_POR_ROL = {
+    "VENDEDOR": [usuarios.router, vendedor.router, censo.router],
+    "COBRANZAS": [usuarios.router, cobranzas.router],
+}
 
 # En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:
 # services + rewrites), con /api/backend/* -> este servicio. No hay forma de
@@ -135,9 +148,8 @@ for _router in ROUTERS_PUBLICOS:
     app.include_router(_router, prefix="/api/backend")
 
 for _router in ROUTERS_PROTEGIDOS:
-    _dependencias = [Depends(get_current_user)]
-    if _router not in ROUTERS_DEL_VENDEDOR:
-        _dependencias.append(Depends(sin_acceso_vendedor))
+    _permitidos = frozenset(rol for rol, routers in ROUTERS_POR_ROL.items() if _router in routers)
+    _dependencias = [Depends(get_current_user), Depends(solo_su_modulo(_permitidos))]
     app.include_router(_router, dependencies=_dependencias)
     app.include_router(_router, prefix="/api/backend", dependencies=_dependencias)
 

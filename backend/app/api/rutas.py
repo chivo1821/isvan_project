@@ -295,7 +295,7 @@ def configuracion_rutas():
 @router.put("/configuracion/{clave}")
 def guardar_configuracion(clave: str, data: ValorAjuste, usuario: dict = Depends(requiere_rol("ADMIN"))):
     """Cambia un ajuste. Solo ADMIN."""
-    if clave not in cfg.AJUSTES:
+    if clave not in cfg.AJUSTES or cfg.AJUSTES[clave]["grupo"] != "planificacion":
         raise HTTPException(404, "Ajuste desconocido")
     with get_connection() as conn, conn.cursor() as cur:
         try:
