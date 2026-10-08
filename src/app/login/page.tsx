@@ -1,7 +1,9 @@
 import { Suspense } from "react";
 import { IceCreamConeIcon } from "lucide-react";
 import { LoginForm } from "@/components/modules/auth/login-form";
+import { LoginMotorizado } from "@/components/modules/auth/login-motorizado";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // LoginForm usa useSearchParams() (para volver a "?from=" tras iniciar
 // sesion) — en el build de produccion, Next.js exige que cualquier
@@ -32,9 +34,22 @@ export default function LoginPage() {
             <p className="text-sm text-muted-foreground">Helados &amp; Pizzas — ISVAN / TRALOG</p>
           </div>
         </div>
-        <Suspense fallback={<LoginFormSkeleton />}>
-          <LoginForm />
-        </Suspense>
+        {/* Dos formas de entrar: el personal con correo y contraseña, y los
+            motorizados (alta rotación) con la placa de su moto y un PIN. */}
+        <Tabs defaultValue="personal" className="gap-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="personal">Personal</TabsTrigger>
+            <TabsTrigger value="motorizado">Soy motorizado</TabsTrigger>
+          </TabsList>
+          <TabsContent value="personal">
+            <Suspense fallback={<LoginFormSkeleton />}>
+              <LoginForm />
+            </Suspense>
+          </TabsContent>
+          <TabsContent value="motorizado">
+            <LoginMotorizado />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

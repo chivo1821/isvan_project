@@ -30,11 +30,13 @@ def _validar_periodo(desde: date, hasta: date) -> None:
 
 
 def _motorizados(cur) -> list[dict]:
-    """Los repartidores con una moto asignada: los que pueden cobrar."""
+    """Los repartidores con una moto asignada: los que pueden cobrar. Un
+    motorizado autogestionado dado de baja sigue en la lista, por si se fue
+    con entregas sin pagar (ver REPARTIDOR_DEL_VEHICULO)."""
     cur.execute(
         'SELECT u."id", u."nombre", v."placa" FROM "Usuario" u '
         'JOIN "Vehiculo" v ON v."id" = u."vehiculoAsignadoId" '
-        "WHERE u.\"rol\" = 'REPARTIDOR' AND u.\"activo\" AND v.\"tipo\" = 'MOTO' "
+        "WHERE u.\"rol\" = 'REPARTIDOR' AND (u.\"activo\" OR u.\"autogestionado\") AND v.\"tipo\" = 'MOTO' "
         'ORDER BY u."nombre"'
     )
     return cur.fetchall()

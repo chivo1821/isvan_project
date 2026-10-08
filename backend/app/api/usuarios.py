@@ -113,12 +113,22 @@ def asignar_vehiculo(usuario_id: str, data: AsignarVehiculoRequest):
     queda sin vehiculo. Con dos, los dos verian la misma ruta y no se sabria
     quien la maneja."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT "rol" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
+        cur.execute('SELECT "rol", "autogestionado" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Usuario no encontrado")
         if row["rol"] != "REPARTIDOR":
             raise HTTPException(400, "Solo un usuario con rol REPARTIDOR puede tener un vehiculo asignado")
+        # Un motorizado autogestionado anda en su propia moto: ni se le cambia
+        # ni se la asigna a otro (ver app/services/motorizados.py).
+        if row["autogestionado"]:
+            raise HTTPException(400, "Un motorizado anda en su propia moto: no se le puede cambiar el vehiculo")
+        if data.vehiculoAsignadoId:
+            cur.execute(
+                'SELECT 1 FROM "Usuario" WHERE "vehiculoAsignadoId" = %s AND "autogestionado"', (data.vehiculoAsignadoId,)
+            )
+            if cur.fetchone():
+                raise HTTPException(400, "Esa moto es de un motorizado: no se puede asignar a otro chofer")
 
         if data.vehiculoAsignadoId:
             cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoAsignadoId,))

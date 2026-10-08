@@ -24,6 +24,7 @@ from app.api import (
     despachos,
     historial,
     indicadores,
+    motorizados,
     reportes,
     rutas,
     usuarios,
@@ -112,6 +113,7 @@ ROUTERS_PROTEGIDOS = [
     historial.router,
     indicadores.router,
     vendedor.router,
+    motorizados.router,
 ]
 
 # Los unicos routers a los que entra un VENDEDOR: el suyo, usuarios (su

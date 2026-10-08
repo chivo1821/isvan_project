@@ -14,7 +14,7 @@ import { INICIO_POR_ROL } from "@/lib/constants";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserNav } from "@/components/layout/user-nav";
-import type { RolUsuario } from "@prisma/client";
+import type { Usuario } from "@/lib/mock-data";
 
 const SEGMENT_LABELS: Record<string, string> = {
   despachos: "Despachos",
@@ -41,7 +41,7 @@ function labelForSegment(segment: string) {
 export function Topbar({
   user,
 }: {
-  user: { id: string; nombre: string; email: string; rol: RolUsuario; avatarUrl?: string | null };
+  user: Pick<Usuario, "id" | "nombre" | "email" | "rol" | "avatarUrl" | "autogestionado" | "telefono">;
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);

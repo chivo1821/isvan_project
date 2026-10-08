@@ -72,7 +72,8 @@ const DIA_CORTO = new Intl.DateTimeFormat("es-VE", {
  * medianoche de la máquina, y en un servidor en UTC eso ya es el día
  * anterior en Caracas. */
 export function formatDia(dia: string): string {
-  return DIA_CORTO.format(new Date(`${dia}T12:00:00Z`));
+  // Sin espacios de no separacion (ver espaciosComunes en constants.ts).
+  return DIA_CORTO.format(new Date(`${dia}T12:00:00Z`)).replace(/[  ]/g, " ");
 }
 
 /** "Hoy", "Mañana" o "Lunes, 5 de octubre" para una fecha AAAA-MM-DD. */
@@ -80,7 +81,7 @@ export function etiquetaDia(dia: string, hoy = diaCaracas()): string {
   if (dia === hoy) return "Hoy";
   if (dia === sumarDias(hoy, 1)) return "Mañana";
   if (dia === sumarDias(hoy, -1)) return "Ayer";
-  const texto = DIA_LARGO.format(new Date(`${dia}T12:00:00Z`));
+  const texto = DIA_LARGO.format(new Date(`${dia}T12:00:00Z`)).replace(/[  ]/g, " ");
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 

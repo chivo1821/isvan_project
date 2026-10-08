@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ROL_USUARIO_META, TIPO_VEHICULO_META } from "@/lib/constants";
+import { ROL_USUARIO_META, TIPO_VEHICULO_META, formatTelefono } from "@/lib/constants";
 import type { Usuario, Vehiculo } from "@/lib/mock-data";
 
 function iniciales(nombre: string) {
@@ -78,7 +78,16 @@ export function UsuariosTable({
                       <span className="font-medium text-foreground">{u.nombre}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {u.autogestionado ? (
+                      <span>
+                        {formatTelefono(u.telefono)}
+                        <span className="ml-1.5 text-xs">(motorizado, entra con placa y PIN)</span>
+                      </span>
+                    ) : (
+                      u.email
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge {...ROL_USUARIO_META[u.rol]} />
                   </TableCell>
@@ -106,11 +115,13 @@ export function UsuariosTable({
                   {esAdmin && (
                     <TableCell>
                       <div className="flex justify-end gap-2">
-                        {u.rol === "REPARTIDOR" && (
+                        {/* Un motorizado anda en su moto y entra con PIN: se administra
+                            en Vehículos › Choferes › Motorizados. */}
+                        {u.rol === "REPARTIDOR" && !u.autogestionado && (
                           <AsignarVehiculoDialog usuario={u} vehiculos={vehiculos} onAsignado={reemplazar} />
                         )}
                         {u.rol === "VENDEDOR" && <AsignarRutasDialog usuario={u} />}
-                        <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />
+                        {!u.autogestionado && <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />}
                       </div>
                     </TableCell>
                   )}

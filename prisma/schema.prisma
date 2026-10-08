@@ -80,12 +80,26 @@ enum TipoMovimientoVenta {
 model Usuario {
   id           String     @id @default(cuid())
   nombre       String
-  email        String     @unique
+  // Opcional solo para los motorizados autogestionados, que entran con
+  // placa + PIN (ver backend/app/services/motorizados.py). Los demas
+  // usuarios se crean siempre con correo.
+  email        String?    @unique
   passwordHash String
   rol          RolUsuario
   avatarUrl    String?
   activo       Boolean    @default(true)
   createdAt    DateTime   @default(now())
+
+  // Motorizados que se registran solos (alta rotacion, moto propia): entran
+  // con la placa de su moto y un PIN de 6 digitos. El telefono es para
+  // contactarlos y pagarles el delivery (11 digitos, ej. 04141234567).
+  autogestionado   Boolean   @default(false)
+  telefono         String?
+  pinHash          String?
+  // Freno contra adivinar el PIN: tras varios intentos fallidos la cuenta
+  // queda bloqueada un rato (ver motorizados.py).
+  intentosFallidos Int       @default(0)
+  bloqueadoHasta   DateTime?
 
   // Solo tiene sentido para el rol REPARTIDOR: el vehiculo que maneja. Es
   // lo que acota lo que ese usuario puede ver — su vehiculo lleva una sola

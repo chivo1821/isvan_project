@@ -65,6 +65,18 @@ export const INICIO_POR_ROL: Record<RolUsuario, string> = {
   VENDEDOR: "/vendedor",
 };
 
+/** "0414-1234567" a partir de los 11 dígitos guardados. */
+export function formatTelefono(telefono: string | null | undefined): string {
+  if (!telefono) return "";
+  return /^\d{11}$/.test(telefono) ? `${telefono.slice(0, 4)}-${telefono.slice(4)}` : telefono;
+}
+
+/** Lo que identifica a un usuario debajo de su nombre: el correo, o el
+ * teléfono si es un motorizado sin correo. */
+export function contactoDe(usuario: { email: string | null; telefono?: string | null }): string {
+  return usuario.email ?? formatTelefono(usuario.telefono);
+}
+
 export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
   ADMIN: { label: "Administrador", tone: "primary" },
   DESPACHOS: { label: "Despachos", tone: "neutral" },
@@ -100,23 +112,32 @@ function toLocalDate(value: Date | string) {
 // sin importar donde corra el servidor.
 const TIMEZONE = "America/Caracas";
 
+// Node y el navegador formatean igual salvo un detalle invisible: Node
+// separa "p. m." con un espacio de no separacion (U+00A0, a veces U+202F) y
+// Chrome con un espacio comun. El texto se ve identico pero React lo toma
+// como distinto y avisa de un error de hidratacion en los componentes de
+// cliente. Se normaliza a espacio comun.
+function espaciosComunes(texto: string) {
+  return texto.replace(/[  ]/g, " ");
+}
+
 export function formatDate(value: Date | string) {
-  return new Intl.DateTimeFormat("es-VE", {
+  return espaciosComunes(new Intl.DateTimeFormat("es-VE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
     timeZone: TIMEZONE,
-  }).format(toLocalDate(value));
+  }).format(toLocalDate(value)));
 }
 
 /** Solo la hora (HH:mm) — para las marcas de llegada y entrega en la calle.
  * Con la misma zona horaria fija que el resto, para no romper la hidratación. */
 export function formatHora(value: Date | string) {
-  return new Intl.DateTimeFormat("es-VE", {
+  return espaciosComunes(new Intl.DateTimeFormat("es-VE", {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: TIMEZONE,
-  }).format(toLocalDate(value));
+  }).format(toLocalDate(value)));
 }
 
 // Cifras de los indicadores de venta. Locale fijo (no el del navegador) por
@@ -141,12 +162,12 @@ export function formatPct(valor: number | null | undefined, decimales = 1) {
 }
 
 export function formatDateTime(value: Date | string) {
-  return new Intl.DateTimeFormat("es-VE", {
+  return espaciosComunes(new Intl.DateTimeFormat("es-VE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     timeZone: TIMEZONE,
-  }).format(toLocalDate(value));
+  }).format(toLocalDate(value)));
 }

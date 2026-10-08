@@ -15,7 +15,9 @@ import re
 from datetime import date, datetime, timezone
 from typing import Annotated, Literal, Optional
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel
+from pydantic import AfterValidator, AwareDatetime, BaseModel, Field
+
+from app.services import motorizados as mt
 
 
 def en_utc(valor: datetime) -> datetime:
@@ -71,10 +73,13 @@ ClaveNueva = Annotated[str, AfterValidator(_clave_dentro_de_bcrypt)]
 class Usuario(BaseModel):
     id: str
     nombre: str
-    email: str
+    # None solo en los motorizados autogestionados (entran con placa + PIN).
+    email: Optional[str] = None
     rol: str
     avatarUrl: Optional[str] = None
     activo: bool
+    autogestionado: bool = False
+    telefono: Optional[str] = None
     # Solo aplica al rol REPARTIDOR: el vehiculo que maneja, y por lo tanto
     # la unica ruta que puede ver (ver app/core/permisos.py).
     vehiculoAsignadoId: Optional[str] = None
@@ -220,6 +225,58 @@ class RendimientoVendedores(BaseModel):
     mesVenta: Optional[date] = None
     distanciaMaxM: int
     porVendedor: list[RendimientoVendedor]
+
+
+# ---------- Motorizados autogestionados (ver app/services/motorizados.py) ----------
+
+
+def _nombre_motorizado(valor: str) -> str:
+    valor = " ".join(valor.split())
+    if not 3 <= len(valor) <= 80:
+        raise ValueError("Escribe tu nombre y apellido (entre 3 y 80 caracteres)")
+    return valor
+
+
+class RegistroMotorizadoRequest(BaseModel):
+    codigoRegistro: Annotated[str, Field(max_length=64)]
+    nombre: Annotated[str, AfterValidator(_nombre_motorizado)]
+    placa: Annotated[str, Field(max_length=20), AfterValidator(mt.validar_placa)]
+    telefono: Annotated[str, Field(max_length=20), AfterValidator(mt.validar_telefono)]
+    pin: Annotated[str, AfterValidator(mt.validar_pin)]
+
+
+class LoginMotorizadoRequest(BaseModel):
+    placa: Annotated[str, Field(max_length=20)]
+    pin: Annotated[str, Field(max_length=12)]
+
+
+class Motorizado(BaseModel):
+    id: str
+    nombre: str
+    telefono: Optional[str] = None
+    activo: bool
+    vehiculoId: Optional[str] = None
+    placa: Optional[str] = None
+    estadoVehiculo: Optional[str] = None
+    capacidadKg: Optional[float] = None
+    registradoEn: Instante
+    bloqueadoHasta: Optional[Instante] = None
+    rutas: int
+    ultimaRuta: Optional[Instante] = None
+
+
+class PinRestablecido(BaseModel):
+    pin: str
+
+
+class CodigoRegistro(BaseModel):
+    codigo: Optional[str] = None
+    actualizadoEn: Optional[Instante] = None
+    actualizadoPor: Optional[str] = None
+
+
+class CodigoRegistroUpdate(BaseModel):
+    codigo: Annotated[str, Field(max_length=64)]
 
 
 class LoginRequest(BaseModel):
@@ -573,6 +630,10 @@ class PlanRutasRequest(BaseModel):
     # viaje (restriccion dura). True = preferir agruparlos, pero permitir
     # mezclar antes que mandar un vehiculo a medio llenar.
     mezclarRutasComerciales: bool = True
+    # True = antes que los camiones, llenar las motos libres (motorizados)
+    # con los despachos livianos y cercanos que les caben. False = consolidar
+    # en la menor cantidad de vehiculos (las motos solo si sobra algo chico).
+    priorizarMotos: bool = True
     # Distancia maxima (km) entre una parada y las demas del mismo viaje.
     # Vacio = el valor por defecto del servicio
     # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).

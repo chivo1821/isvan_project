@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
 import type { Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
-import { proximaHoraEnPunto, salidaIso } from "@/lib/planificacion";
+import { salidaIso } from "@/lib/planificacion";
 
 type DespachoConCliente = Despacho & { destinoCliente: Cliente };
 type SugerenciaVehiculo = {
@@ -78,8 +78,14 @@ function ChoferDelVehiculo({ conductor }: { conductor?: string | null }) {
 
 export function NuevaRutaWizard({
   despachos,
+  salidaInicial,
 }: {
   despachos: DespachoConCliente[];
+  /** La salida por defecto (la próxima hora en punto). La calcula el
+   * servidor: si la calcularan el servidor y el navegador por separado y la
+   * página cargara justo al cambiar la hora, no coincidirían (error de
+   * hidratación). */
+  salidaInicial: { fecha: string; hora: string };
 }) {
   const router = useRouter();
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
@@ -90,13 +96,16 @@ export function NuevaRutaWizard({
   const [plan, setPlan] = useState<PlanRutas | null>(null);
   const [planeando, setPlaneando] = useState(false);
   const [mezclarRutasComerciales, setMezclarRutasComerciales] = useState(true);
+  // Primero las motos libres (motorizados) con lo liviano y cercano; sin
+  // esto el planificador consolida en camiones y las motos casi no salen.
+  const [priorizarMotos, setPriorizarMotos] = useState(true);
   // Qué tan lejos puede estar una parada de las demás del mismo viaje. Es el
   // freno contra viajes absurdos (un cliente en La Guaira y otro en
   // Charallave); bajarlo da viajes más compactos pero usa más vehículos.
   const [radioMaxKm, setRadioMaxKm] = useState("12");
   // Cuándo sale del almacén: define qué vehículos están libres y es la hora
   // de recogida que ve el repartidor.
-  const [salida, setSalida] = useState(proximaHoraEnPunto);
+  const [salida, setSalida] = useState(salidaInicial);
   const salidaProgramada = salidaIso(salida.fecha, salida.hora);
 
   function cambiarSalida(cambio: Partial<{ fecha: string; hora: string }>) {
@@ -124,6 +133,7 @@ export function NuevaRutaWizard({
       const data = await apiPost<PlanRutas>("/rutas/sugerencias", {
         despachoIds: despachos.map((d) => d.id),
         mezclarRutasComerciales,
+        priorizarMotos,
         radioMaxKm: Number(radioMaxKm),
         salidaProgramada,
       });
@@ -297,6 +307,19 @@ export function NuevaRutaWizard({
                 />
                 <Label htmlFor="no-mezclar" className="text-sm font-normal text-muted-foreground">
                   No mezclar clientes de rutas comerciales distintas
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="priorizar-motos"
+                  checked={priorizarMotos}
+                  onCheckedChange={(v) => {
+                    setPriorizarMotos(v === true);
+                    setPlan(null);
+                  }}
+                />
+                <Label htmlFor="priorizar-motos" className="text-sm font-normal text-muted-foreground">
+                  Priorizar motorizados para entregas livianas cercanas
                 </Label>
               </div>
             </div>

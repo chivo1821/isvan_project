@@ -23,5 +23,11 @@ CONDUCTOR_DEL_VEHICULO = f'COALESCE(({_REPARTIDOR_ASIGNADO % "nombre"}), v."cond
 
 # El usuario al que se le paga el delivery (ver app/services/delivery.py):
 # sin repartidor asignado no hay a quien liquidarle, y el nombre suelto de la
-# ficha del vehiculo no sirve para eso.
-REPARTIDOR_DEL_VEHICULO = f'({_REPARTIDOR_ASIGNADO % "id"})' 
+# ficha del vehiculo no sirve para eso. Un motorizado autogestionado cobra
+# aunque ya este dado de baja: la moto es suya, y si se fue antes de que le
+# pagaran sus entregas no pueden quedar sin dueno.
+REPARTIDOR_DEL_VEHICULO = (
+    '(SELECT u."id" FROM "Usuario" u '
+    "WHERE u.\"vehiculoAsignadoId\" = v.\"id\" AND u.\"rol\" = 'REPARTIDOR' "
+    'AND (u."activo" OR u."autogestionado") ORDER BY u."activo" DESC, u."nombre" LIMIT 1)'
+) 

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -30,13 +29,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es"
       translate="no"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Siempre en claro. Antes lo forzaba next-themes (forcedTheme="light"),
+      // pero su <script> de arranque hace que React 19.2 avise en consola
+      // ("Encountered a script tag"), y para un tema fijo no hace falta.
+      // color-scheme mantiene en claro los controles nativos (fecha, scroll).
+      style={{ colorScheme: "light" }}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false}>
-          <TooltipProvider>{children}</TooltipProvider>
-          <Toaster position="top-right" />
-        </ThemeProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+        <Toaster position="top-right" />
       </body>
     </html>
   );

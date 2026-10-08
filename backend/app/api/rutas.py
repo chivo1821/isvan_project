@@ -33,6 +33,7 @@ from app.schemas import (
     en_utc,
 )
 from app.services import configuracion as cfg
+from app.services.motorizados import actualizar_capacidad_motos
 from app.services import planificacion as pl
 from app.services.plan_rutas import sugerir_plan_rutas
 from app.services.delivery import guardar_distancias_de_ruta
@@ -299,6 +300,10 @@ def guardar_configuracion(clave: str, data: ValorAjuste, usuario: dict = Depends
     with get_connection() as conn, conn.cursor() as cur:
         try:
             cfg.guardar(cur, clave, data.valor, usuario["id"])
+            if clave == "motoCapacidadKg":
+                # El bolso es el mismo para todos: la moto de cada motorizado
+                # toma la capacidad nueva.
+                actualizar_capacidad_motos(cur, data.valor)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         conn.commit()
@@ -342,7 +347,13 @@ def sugerir_rutas(data: PlanRutasRequest):
     que es donde se calcula el trazado real."""
     if data.radioMaxKm is not None and data.radioMaxKm <= 0:
         raise HTTPException(400, "El radio maximo entre paradas debe ser mayor que 0")
-    return sugerir_plan_rutas(data.despachoIds, data.mezclarRutasComerciales, data.radioMaxKm, data.salidaProgramada)
+    return sugerir_plan_rutas(
+        data.despachoIds,
+        data.mezclarRutasComerciales,
+        data.radioMaxKm,
+        data.salidaProgramada,
+        priorizar_motos=data.priorizarMotos,
+    )
 
 
 @router.post("", response_model=Ruta, status_code=201)

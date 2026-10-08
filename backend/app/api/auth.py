@@ -15,7 +15,8 @@ from app.core.auth import (
     verify_password,
 )
 from app.core.db import get_connection
-from app.schemas import LoginRequest, Usuario
+from app.schemas import LoginMotorizadoRequest, LoginRequest, RegistroMotorizadoRequest, Usuario
+from app.services import motorizados
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,6 +47,34 @@ def login(data: LoginRequest, response: Response):
         token = crear_sesion(cur, usuario["id"])
         conn.commit()
 
+    _set_session_cookie(response, token)
+    return usuario
+
+
+# ---------- Motorizados: se registran solos y entran con placa + PIN ----------
+# (ver app/services/motorizados.py)
+
+
+@router.post("/motorizado/registro", response_model=Usuario, status_code=201)
+def registrar_motorizado(data: RegistroMotorizadoRequest, response: Response):
+    """Publico, pero exige el codigo de registro de la empresa. Crea al
+    motorizado con su moto y lo deja con la sesion iniciada."""
+    with get_connection() as conn, conn.cursor() as cur:
+        usuario = motorizados.registrar(
+            cur, codigo=data.codigoRegistro, nombre=data.nombre, placa=data.placa, telefono=data.telefono, pin=data.pin
+        )
+        token = crear_sesion(cur, usuario["id"])
+        conn.commit()
+    _set_session_cookie(response, token)
+    return usuario
+
+
+@router.post("/motorizado/login", response_model=Usuario)
+def login_motorizado(data: LoginMotorizadoRequest, response: Response):
+    with get_connection() as conn, conn.cursor() as cur:
+        usuario = motorizados.autenticar(cur, data.placa, data.pin)
+        token = crear_sesion(cur, usuario["id"])
+        conn.commit()
     _set_session_cookie(response, token)
     return usuario
 
