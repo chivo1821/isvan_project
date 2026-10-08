@@ -16,10 +16,14 @@ from __future__ import annotations
 import html
 import logging
 import os
+from datetime import datetime
+from pathlib import Path
 
 import httpx
 
 URL_RESEND = "https://api.resend.com/emails"
+# Solo modo consola (desarrollo): los correos "enviados", uno por linea.
+BUZON_LOCAL = Path(__file__).resolve().parents[2] / "media" / "correos-dev.log"
 TIEMPO_MAXIMO = 10.0
 
 _log = logging.getLogger(__name__)
@@ -45,7 +49,16 @@ def enviar(destino: str, asunto: str, parrafos: list[str], destacado: str | None
     texto = "\n\n".join(parrafos + ([destacado] if destacado else []))
     elegido = modo()
     if elegido == "consola":
-        _log.warning("CORREO (modo consola) para %s | %s | %s", destino, asunto, texto.replace("\n\n", " | "))
+        linea = f"{destino} | {asunto} | {texto.replace(chr(10) * 2, ' | ')}"
+        _log.warning("CORREO (modo consola) para %s", linea)
+        # Ademas a un archivo (backend/media, fuera de git), para leer el
+        # codigo sin buscar la consola del backend.
+        try:
+            BUZON_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+            with BUZON_LOCAL.open("a", encoding="utf-8") as f:
+                f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} | {linea}\n")
+        except OSError:
+            pass
         return
     if elegido != "resend":
         raise CorreoNoDisponible("El envio de correos no esta configurado en este servidor (CORREO_MODO)")
