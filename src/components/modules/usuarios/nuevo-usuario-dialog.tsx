@@ -31,12 +31,12 @@ import { ROL_USUARIO_META, TIPO_VEHICULO_META } from "@/lib/constants";
 import type { Usuario, Vehiculo } from "@/lib/mock-data";
 import type { RolUsuario } from "@prisma/client";
 
-const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"];
+const ROLES: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR", "COBRANZAS"];
 
 const usuarioSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   email: z.email("Ingresa un email válido"),
-  rol: z.enum(["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"], {
+  rol: z.enum(["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR", "COBRANZAS"], {
     error: "Selecciona un rol",
   }),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),

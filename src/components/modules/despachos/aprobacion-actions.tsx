@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, XIcon } from "lucide-react";
+import { AlertTriangleIcon, CheckIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiPost } from "@/lib/api-client";
+import { apiPost, mensajeDeError } from "@/lib/api-client";
+import { formatUsd } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,12 +20,17 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+/** Deuda del cliente del despacho (ver backend/app/services/cartera.py). */
+export type BloqueoCartera = { vencidoUsd: number; documentosVencidos: number; diasAtraso: number };
+
 export function AprobacionDespachoActions({
   despachoId,
   despachoNumero,
   destinoNombre,
   size = "default",
   stopPropagation = false,
+  bloqueo = null,
+  puedeAutorizar = false,
 }: {
   despachoId: string;
   despachoNumero: string;
@@ -32,9 +38,14 @@ export function AprobacionDespachoActions({
   size?: "default" | "sm";
   /** Util cuando el componente vive dentro de una fila clickeable de una tabla. */
   stopPropagation?: boolean;
+  /** Si el cliente tiene deuda vencida: solo se aprueba como excepción. */
+  bloqueo?: BloqueoCartera | null;
+  /** Si quien mira puede aprobar esa excepción (ADMIN o con el permiso). */
+  puedeAutorizar?: boolean;
 }) {
   const router = useRouter();
   const [comentario, setComentario] = useState("");
+  const [motivo, setMotivo] = useState("");
   const [open, setOpen] = useState<"aprobar" | "rechazar" | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -44,6 +55,7 @@ export function AprobacionDespachoActions({
       await apiPost(`/despachos/${despachoId}/aprobacion`, {
         accion: accion === "aprobar" ? "APROBADA" : "RECHAZADA",
         comentario: comentario.trim() || undefined,
+        excepcion: accion === "aprobar" && bloqueo ? { motivo: motivo.trim() } : undefined,
       });
       if (accion === "aprobar") {
         toast.success(`Despacho ${despachoNumero} aprobado`, {
@@ -56,11 +68,12 @@ export function AprobacionDespachoActions({
       }
       setOpen(null);
       setComentario("");
+      setMotivo("");
       router.push("/despachos/aprobacion");
       router.refresh();
     } catch (err) {
       toast.error("No se pudo registrar la aprobación", {
-        description: err instanceof Error ? err.message : undefined,
+        description: mensajeDeError(err, "Intenta de nuevo"),
       });
     } finally {
       setEnviando(false);
@@ -103,16 +116,40 @@ export function AprobacionDespachoActions({
 
       <Dialog open={open === "aprobar"} onOpenChange={(v) => setOpen(v ? "aprobar" : null)}>
         <DialogTrigger asChild>
-          <Button size={size}>
-            <CheckIcon />
-            Aprobar
-          </Button>
+          {bloqueo && !puedeAutorizar ? (
+            // Sin permiso no hay excepción posible: el botón explica por qué.
+            <Button size={size} variant="outline" disabled title="Cliente con deuda vencida: solo un usuario autorizado puede aprobarlo">
+              <AlertTriangleIcon />
+              Bloqueado por deuda
+            </Button>
+          ) : (
+            <Button size={size} variant={bloqueo ? "outline" : "default"}>
+              {bloqueo ? <AlertTriangleIcon /> : <CheckIcon />}
+              {bloqueo ? "Aprobar como excepción" : "Aprobar"}
+            </Button>
+          )}
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Aprobar {despachoNumero}</DialogTitle>
-            <DialogDescription>El despacho pasará a preparación.</DialogDescription>
+            <DialogTitle>{bloqueo ? `Aprobar ${despachoNumero} como excepción` : `Aprobar ${despachoNumero}`}</DialogTitle>
+            <DialogDescription>
+              {bloqueo
+                ? `${destinoNombre} tiene ${bloqueo.documentosVencidos} documento(s) vencido(s) por ${formatUsd(bloqueo.vencidoUsd, 2)} (hasta ${bloqueo.diasAtraso} días de atraso). La excepción queda registrada a tu nombre con el motivo.`
+                : "El despacho pasará a preparación."}
+            </DialogDescription>
           </DialogHeader>
+          {bloqueo && (
+            <div className="space-y-1.5">
+              <Label htmlFor={`motivo-excepcion-${despachoId}`}>Motivo de la excepción (obligatorio)</Label>
+              <Textarea
+                id={`motivo-excepcion-${despachoId}`}
+                value={motivo}
+                maxLength={300}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ej: acuerdo de pago firmado con cobranzas para el 15/10"
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="comentario-aprobacion-despacho">Comentario (opcional)</Label>
             <Textarea
@@ -125,8 +162,8 @@ export function AprobacionDespachoActions({
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button disabled={enviando} onClick={() => confirmar("aprobar")}>
-              Confirmar aprobación
+            <Button disabled={enviando || (bloqueo != null && motivo.trim().length < 5)} onClick={() => confirmar("aprobar")}>
+              {bloqueo ? "Aprobar como excepción" : "Confirmar aprobación"}
             </Button>
           </DialogFooter>
         </DialogContent>

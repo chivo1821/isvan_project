@@ -29,7 +29,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 function destinoTrasLogin(rol: RolUsuario, from: string | null) {
   const inicio = INICIO_POR_ROL[rol];
   if (!from || from === "/" || !from.startsWith("/")) return inicio;
-  const moduloUnico = rol === "REPARTIDOR" || rol === "VENDEDOR";
+  const moduloUnico = rol === "REPARTIDOR" || rol === "VENDEDOR" || rol === "COBRANZAS";
   return !moduloUnico || from.startsWith(inicio) ? from : inicio;
 }
 

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { AprobacionDespachoActions } from "@/components/modules/despachos/aprobacion-actions";
 import { AprobarTodosButton } from "@/components/modules/despachos/aprobar-todos-button";
 import { DetalleDespachoDialog } from "@/components/modules/despachos/detalle-despacho-dialog";
@@ -12,12 +13,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate } from "@/lib/constants";
+import { apiGet } from "@/lib/api-client";
+import type { CarteraCola } from "@/lib/cobranzas";
+import { formatDate, formatUsd } from "@/lib/constants";
 import { getDespachosPendientesAprobacion } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
 
 export default async function AprobacionDespachosPage() {
-  const [despachos, usuarioActual] = await Promise.all([getDespachosPendientesAprobacion(), getUsuarioActual()]);
+  const [despachos, usuarioActual, cartera] = await Promise.all([
+    getDespachosPendientesAprobacion(),
+    getUsuarioActual(),
+    // La cola sigue funcionando aunque cobranzas no responda: sin datos, nada se marca.
+    apiGet<CarteraCola>("/despachos/aprobacion/cartera").catch(() => null),
+  ]);
   if (!usuarioActual) redirect("/login");
 
   // Aprobar toda la cola de una es acción de administración: solo ADMIN ve
@@ -62,7 +70,16 @@ export default async function AprobacionDespachosPage() {
                       <DetalleDespachoDialog despacho={d} />
                     </TableCell>
                     <TableCell>{d.origen.nombre}</TableCell>
-                    <TableCell>{d.destinoCliente.nombre}</TableCell>
+                    <TableCell>
+                      {d.destinoCliente.nombre}
+                      {cartera?.despachos[d.id]?.bloqueado && (
+                        <StatusBadge
+                          className="mt-1 block w-fit"
+                          tone="destructive"
+                          label={`Deuda vencida ${formatUsd(cartera.despachos[d.id].vencidoUsd, 2)}`}
+                        />
+                      )}
+                    </TableCell>
                     <TableCell>{d.items.length}</TableCell>
                     <TableCell>{d.creadoPor.nombre}</TableCell>
                     <TableCell>{formatDate(d.fechaCreacion)}</TableCell>
@@ -73,6 +90,8 @@ export default async function AprobacionDespachosPage() {
                           despachoNumero={d.numero}
                           destinoNombre={d.destinoCliente.nombre}
                           size="sm"
+                          bloqueo={cartera?.despachos[d.id]?.bloqueado ? cartera.despachos[d.id] : null}
+                          puedeAutorizar={cartera?.puedeAutorizarExcepciones ?? false}
                         />
                       </div>
                     </TableCell>

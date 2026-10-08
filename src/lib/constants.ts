@@ -63,6 +63,7 @@ export const INICIO_POR_ROL: Record<RolUsuario, string> = {
   APROBADOR: "/despachos/aprobacion",
   REPARTIDOR: "/despachador",
   VENDEDOR: "/vendedor",
+  COBRANZAS: "/cobranzas",
 };
 
 /** "0414-1234567" a partir de los 11 dígitos guardados. */
@@ -83,6 +84,7 @@ export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
   APROBADOR: { label: "Aprobador", tone: "warning" },
   REPARTIDOR: { label: "Repartidor", tone: "success" },
   VENDEDOR: { label: "Vendedor", tone: "info" },
+  COBRANZAS: { label: "Cobranzas", tone: "success" },
 };
 
 export const TIPO_VEHICULO_META: Record<TipoVehiculo, { label: string }> = {
@@ -150,6 +152,12 @@ function numeroEsVe(valor: number, decimales: number) {
 export function formatUsd(valor: number | null | undefined, decimales = 0) {
   if (valor == null) return "—";
   return `${valor < 0 ? "-" : ""}$${numeroEsVe(Math.abs(valor), decimales)}`;
+}
+
+/** Bolívares: "Bs 1.234,56". */
+export function formatBs(valor: number | null | undefined) {
+  if (valor == null) return "—";
+  return `${valor < 0 ? "-" : ""}Bs ${numeroEsVe(Math.abs(valor), 2)}`;
 }
 
 export function formatNumero(valor: number | null | undefined, decimales = 0) {

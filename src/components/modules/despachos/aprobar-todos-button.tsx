@@ -19,7 +19,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-type Resultado = { aprobados: number; numeros: string[] };
+type Resultado = { aprobados: number; numeros: string[]; omitidos: { numero: string; vencidoUsd: number }[] };
 
 /** Aprueba de una vez toda la cola de despachos pendientes. Solo se le
  * muestra a un ADMIN (la página decide si renderizarlo) y el endpoint
@@ -40,6 +40,11 @@ export function AprobarTodosButton({ pendientes }: { pendientes: number }) {
       toast.success(`${resultado.aprobados} despacho(s) aprobado(s)`, {
         description: "Ya están disponibles para armar rutas.",
       });
+      if (resultado.omitidos.length > 0) {
+        toast.warning(`${resultado.omitidos.length} quedaron pendientes por deuda vencida`, {
+          description: `${resultado.omitidos.map((o) => o.numero).join(", ")}: se aprueban uno por uno, como excepción.`,
+        });
+      }
       setOpen(false);
       setComentario("");
       router.refresh();
@@ -71,7 +76,8 @@ export function AprobarTodosButton({ pendientes }: { pendientes: number }) {
           <DialogTitle>Aprobar los {pendientes} despachos pendientes</DialogTitle>
           <DialogDescription>
             Se aprueban todos de una vez y quedan listos para agregarse a una ruta. Queda registrado a tu
-            nombre en el historial de cada uno. No se puede deshacer desde la aplicación.
+            nombre en el historial de cada uno. No se puede deshacer desde la aplicación. Los de clientes con
+            deuda vencida no se incluyen: esos se aprueban uno por uno, como excepción.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">

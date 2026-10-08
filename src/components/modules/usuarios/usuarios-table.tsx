@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AsignarRutasDialog } from "@/components/modules/usuarios/asignar-rutas-dialog";
 import { AsignarVehiculoDialog } from "@/components/modules/usuarios/asignar-vehiculo-dialog";
+import { PermisoExcepciones } from "@/components/modules/usuarios/permiso-excepciones";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
 import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -90,6 +91,14 @@ export function UsuariosTable({
                   </TableCell>
                   <TableCell>
                     <StatusBadge {...ROL_USUARIO_META[u.rol]} />
+                    {/* Aprobar despachos de clientes con deuda vencida
+                        (ver backend/app/services/cartera.py). */}
+                    {(u.rol === "APROBADOR" || u.rol === "COBRANZAS") &&
+                      (esAdmin ? (
+                        <PermisoExcepciones usuario={u} onCambio={reemplazar} />
+                      ) : (
+                        u.autorizaExcepciones && <span className="mt-1 block text-xs text-muted-foreground">Autoriza excepciones</span>
+                      ))}
                   </TableCell>
                   <TableCell>
                     {u.rol !== "REPARTIDOR" ? (

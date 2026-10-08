@@ -31,6 +31,9 @@ export type Usuario = {
    * única ruta que ese usuario puede ver (ver backend/app/core/permisos.py).
    */
   vehiculoAsignadoId?: string | null;
+  /** Puede aprobar despachos de clientes con deuda vencida (APROBADOR o
+   * COBRANZAS; el ADMIN siempre puede). */
+  autorizaExcepciones?: boolean;
 };
 
 export type Almacen = {

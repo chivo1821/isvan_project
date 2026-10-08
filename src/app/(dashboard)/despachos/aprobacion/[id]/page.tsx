@@ -12,18 +12,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ESTADO_DESPACHO_META } from "@/lib/constants";
+import { apiGet } from "@/lib/api-client";
+import type { CarteraCola } from "@/lib/cobranzas";
+import { ESTADO_DESPACHO_META, formatUsd } from "@/lib/constants";
 import { getDespachoConDetalle } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
 import { redirect } from "next/navigation";
 
 export default async function AprobacionDespachoDetallePage({ params }: PageProps<"/despachos/aprobacion/[id]">) {
   const { id } = await params;
-  const [despacho, usuarioActual] = await Promise.all([getDespachoConDetalle(id), getUsuarioActual()]);
+  const [despacho, usuarioActual, cartera] = await Promise.all([
+    getDespachoConDetalle(id),
+    getUsuarioActual(),
+    apiGet<CarteraCola>(`/despachos/aprobacion/cartera?ids=${encodeURIComponent(id)}`).catch(() => null),
+  ]);
   if (!despacho) notFound();
   if (!usuarioActual) redirect("/login");
 
   const requiereCadenaFrio = despacho.items.some((item) => item.requiereFrio);
+  const deuda = cartera?.despachos[despacho.id];
+  const bloqueo = deuda?.bloqueado ? deuda : null;
 
   return (
     <div className="space-y-6">
@@ -80,6 +88,17 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
         </CardContent>
       </Card>
 
+      {bloqueo && (
+        <div role="status" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          <p className="font-semibold text-destructive">Cliente con deuda vencida</p>
+          <p>
+            {bloqueo.documentosVencidos} documento(s) vencido(s) por {formatUsd(bloqueo.vencidoUsd, 2)}, hasta{" "}
+            {bloqueo.diasAtraso} días de atraso. Solo se puede aprobar como excepción, con un motivo
+            {cartera?.puedeAutorizarExcepciones ? "." : ", y lo hace un usuario autorizado."}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
         <Link href={`/despachos/${despacho.id}`} className="text-sm text-muted-foreground hover:underline">
           Ver despacho completo →
@@ -88,6 +107,8 @@ export default async function AprobacionDespachoDetallePage({ params }: PageProp
           despachoId={despacho.id}
           despachoNumero={despacho.numero}
           destinoNombre={despacho.destinoCliente.nombre}
+          bloqueo={bloqueo}
+          puedeAutorizar={cartera?.puedeAutorizarExcepciones ?? false}
         />
       </div>
     </div>

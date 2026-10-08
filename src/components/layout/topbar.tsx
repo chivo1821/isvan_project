@@ -32,6 +32,10 @@ const SEGMENT_LABELS: Record<string, string> = {
   choferes: "Choferes",
   vendedor: "Mis despachos",
   visitas: "Visitas",
+  cobranzas: "Cobranzas",
+  pagos: "Pagos",
+  cuentas: "Cuentas del portal",
+  ajustes: "Ajustes",
 };
 
 function labelForSegment(segment: string) {
@@ -49,7 +53,7 @@ export function Topbar({
   // devolvería a su propio módulo (ver (dashboard)/layout.tsx).
   // Repartidor y vendedor tienen un solo módulo, que ya es la raíz de la
   // miga: su primer segmento no se repite.
-  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR";
+  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR" || user.rol === "COBRANZAS";
   const raiz =
     user.rol === "ADMIN"
       ? { href: "/", label: "Inicio" }
