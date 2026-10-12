@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ESTADO_DOCUMENTO_META, nombreDocumento, type Documento } from "@/lib/cobranzas";
@@ -10,10 +11,13 @@ export function DocumentosTabla({
   documentos,
   mostrarCliente = false,
   vacio = "No hay documentos.",
+  enlaceDocumento,
 }: {
   documentos: (Documento & { nombreCliente?: string })[];
   mostrarCliente?: boolean;
   vacio?: string;
+  /** Si se pasa, el nombre del documento lleva a su detalle (cobranzas). */
+  enlaceDocumento?: (d: Documento) => string;
 }) {
   if (documentos.length === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground">{vacio}</p>;
@@ -37,7 +41,13 @@ export function DocumentosTabla({
           return (
             <TableRow key={d.id}>
               <TableCell>
-                <span className="font-medium">{nombreDocumento(d)}</span>
+                {enlaceDocumento ? (
+                  <Link href={enlaceDocumento(d)} className="font-medium text-primary underline-offset-4 hover:underline">
+                    {nombreDocumento(d)}
+                  </Link>
+                ) : (
+                  <span className="font-medium">{nombreDocumento(d)}</span>
+                )}
                 {mostrarCliente && d.nombreCliente && (
                   <span className="block text-xs text-muted-foreground">
                     {d.nombreCliente} · {d.empresa}

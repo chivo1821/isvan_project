@@ -153,7 +153,9 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
                     {vistaPrevia.map(({ doc, monto }) => (
                       <TableRow key={doc.id}>
                         <TableCell>
-                          <span className="font-medium">{nombreDocumento(doc)}</span>
+                          <Link href={`/cobranzas/documentos/${doc.id}`} className="font-medium text-primary underline-offset-4 hover:underline">
+                            {nombreDocumento(doc)}
+                          </Link>
                           <span className="block text-xs text-muted-foreground">del {formatDate(doc.fecha)}</span>
                         </TableCell>
                         <TableCell className="hidden tabular-nums sm:table-cell">{formatDate(doc.vence)}</TableCell>
@@ -185,9 +187,9 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
                   {pago.aplicaciones.map((a) => (
                     <TableRow key={a.documentoId}>
                       <TableCell>
-                        <span className="font-medium">
+                        <Link href={`/cobranzas/documentos/${a.documentoId}`} className="font-medium text-primary underline-offset-4 hover:underline">
                           {TIPO_DOCUMENTO_LABEL[a.tipoDoc] ?? a.tipoDoc} {a.numero}
-                        </span>
+                        </Link>
                         <span className="block text-xs text-muted-foreground">
                           del {formatDate(a.fecha)}
                           {a.automatica && " · reparto automático"}

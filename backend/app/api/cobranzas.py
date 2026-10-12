@@ -36,7 +36,7 @@ from app.schemas import (
     VincularClienteRequest,
     en_utc,
 )
-from app.services import bancos, cartera, configuracion, correo, pagos, tablero_cobranzas, tasa_bcv
+from app.services import bancos, cartera, configuracion, correo, documento_cobro, pagos, tablero_cobranzas, tasa_bcv
 from app.services.motorizados import validar_telefono
 
 router = APIRouter(prefix="/cobranzas", tags=["cobranzas"], dependencies=[Depends(requiere_rol("COBRANZAS"))])
@@ -163,6 +163,20 @@ def cliente(empresa: Empresa, codigo: CodigoPath):
         "pagos": lista_pagos,
         "cuentasPortal": cuentas,
     }
+
+
+@router.get("/documentos/{documento_id}")
+def documento(documento_id: Annotated[str, Path(max_length=64)]):
+    """Una factura o nota de entrega: productos, despacho y ruta, y abonos."""
+    with get_connection() as conn, conn.cursor() as cur:
+        salida = documento_cobro.detalle(cur, documento_id)
+    if salida is None:
+        raise HTTPException(404, "Documento no encontrado")
+    if salida["despacho"]:
+        salida["despacho"] = _instantes(
+            salida["despacho"], "fechaCreacion", "llegadaEn", "entregadoEn", "salidaProgramada", "iniciadaEn", "completadaEn"
+        )
+    return salida
 
 
 @router.get("/clientes/{empresa}/{codigo}/estado-cuenta")

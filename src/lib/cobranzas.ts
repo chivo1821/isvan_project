@@ -260,3 +260,54 @@ export type CarteraCola = {
   puedeAutorizarExcepciones: boolean;
   despachos: Record<string, Omit<ResumenCliente, "nombre">>;
 };
+
+/** GET /cobranzas/documentos/{id} */
+export type DetalleDocumento = {
+  id: string;
+  empresa: Empresa;
+  codigoCliente: string;
+  cliente: string;
+  rutaComercial: string | null;
+  tipoDoc: string;
+  numero: string;
+  fecha: string;
+  origen: string;
+  vigente: boolean;
+  montoUsd: number;
+  montoBs: number;
+  /** false si el documento es anterior al inicio de la cartera o su carga se revirtió. */
+  enCartera: boolean;
+  vence: string | null;
+  abonadoUsd: number | null;
+  saldoUsd: number | null;
+  estado: EstadoDocumento | null;
+  diasAtraso: number;
+  productos: {
+    codigo: string;
+    producto: string;
+    grupo: string | null;
+    cajas: number;
+    unidades: number;
+    litros: number;
+    montoUsd: number;
+    montoBs: number;
+    precioUnitarioUsd: number | null;
+  }[];
+  despacho: {
+    id: string;
+    numero: string;
+    estado: string;
+    fechaCreacion: string;
+    llegadaEn: string | null;
+    entregadoEn: string | null;
+    ruta: string | null;
+    estadoRuta: string | null;
+    salidaProgramada: string | null;
+    iniciadaEn: string | null;
+    completadaEn: string | null;
+    placa: string | null;
+    conductor: string | null;
+    items: { descripcion: string; cantidadSolicitada: number; cantidad: number; pesoUnitarioKg: number }[];
+  } | null;
+  abonos: { id: string; numero: string; metodo: MetodoPago; estado: EstadoPago; fechaPago: string; montoUsd: number; automatica: boolean }[];
+};

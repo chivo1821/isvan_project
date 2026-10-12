@@ -92,7 +92,11 @@ export default async function CobranzasClientePage({ params }: PageProps<"/cobra
         <TabsContent value="pendientes">
           <Card>
             <CardContent>
-              <DocumentosTabla documentos={pendientes} vacio="Sin documentos pendientes." />
+              <DocumentosTabla
+                documentos={pendientes}
+                vacio="Sin documentos pendientes."
+                enlaceDocumento={(d) => `/cobranzas/documentos/${d.id}`}
+              />
             </CardContent>
           </Card>
         </TabsContent>

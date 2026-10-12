@@ -36,6 +36,9 @@ const SEGMENT_LABELS: Record<string, string> = {
   pagos: "Pagos",
   cuentas: "Cuentas del portal",
   ajustes: "Ajustes",
+  documentos: "Documentos",
+  ISVAN: "ISVAN",
+  TRALOG: "TRALOG",
 };
 
 function labelForSegment(segment: string) {
