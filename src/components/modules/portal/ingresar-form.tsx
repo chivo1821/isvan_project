@@ -94,6 +94,9 @@ export function IngresarForm() {
             Crea tu cuenta
           </Link>
         </p>
+        <Link href="/login" className="text-xs text-muted-foreground underline-offset-4 hover:underline">
+          ¿Trabajas en la empresa? Ingresa por aquí
+        </Link>
       </CardFooter>
     </Card>
   );
