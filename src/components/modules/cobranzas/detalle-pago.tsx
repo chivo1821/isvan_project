@@ -88,7 +88,7 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2">
-              Pago {pago.numero}
+              Pago {pago.numero}{" "}
               <StatusBadge label={meta.label} tone={meta.tone} />
             </DialogTitle>
             <DialogDescription>
@@ -116,9 +116,9 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
             </dl>
             <p className="text-xs text-muted-foreground">
               {pago.reportadoPor
-                ? `Reportado por ${pago.reportadoPor} (${pago.reportadoPorEmail}) el ${formatDateTime(pago.reportadoEn)}.`
-                : `Registrado por ${pago.registradoPor ?? "cobranzas"} el ${formatDateTime(pago.reportadoEn)}.`}
-              {pago.revisadoEn && pago.revisadoPor && ` Revisado por ${pago.revisadoPor} el ${formatDateTime(pago.revisadoEn)}.`}
+                ? `Reportado por ${pago.reportadoPor} (${pago.reportadoPorEmail}) el ${formatDateTime(pago.reportadoEn)}`
+                : `Registrado por ${pago.registradoPor ?? "cobranzas"} el ${formatDateTime(pago.reportadoEn)}`}
+              {pago.revisadoEn && pago.revisadoPor && ` · revisado por ${pago.revisadoPor} el ${formatDateTime(pago.revisadoEn)}`}
             </p>
             {pago.nota && <p className="text-sm">Nota: {pago.nota}</p>}
             {pago.estado === "RECHAZADO" && pago.motivoRechazo && (
