@@ -63,7 +63,7 @@ def resumen():
         por_verificar = cur.fetchone()["porVerificar"]
         cur.execute("SELECT count(*) AS n FROM \"CuentaPortal\" WHERE \"estado\" = 'POR_VALIDAR'")
         cuentas = cur.fetchone()["n"]
-        tasa = tasa_bcv.vigente(cur, p.hoy)
+        tasa = tasa_bcv.ultima(cur)
     return {
         "carteraUsd": float(sum((e.saldo_usd() for e in estados.values()), Decimal(0))),
         "vencidoUsd": float(sum((e.vencido_usd(p.hoy) for e in estados.values()), Decimal(0))),

@@ -50,6 +50,8 @@ export type AplicacionPago = {
   /** El total del documento. */
   montoDocumentoUsd: number;
   vigente: boolean;
+  /** Nadie eligió el documento: se repartió solo a lo que vence primero. */
+  automatica: boolean;
   // Solo en el panel de cobranzas (null si el documento quedó fuera de la cartera):
   vence?: string | null;
   saldoUsd?: number | null;

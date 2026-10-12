@@ -325,14 +325,13 @@ def servir_comprobante(clave: str, tipo: str | None):
 
 
 @router.get("/tasa")
-def tasa(fecha: date, cuenta: dict = Depends(get_cuenta_portal)):
-    """La tasa BCV vigente en una fecha, para mostrar el equivalente en USD
-    mientras el cliente llena el reporte (el servidor la vuelve a calcular)."""
-    if fecha > hoy_caracas():
-        raise HTTPException(422, "La fecha no puede ser futura")
+def tasa(cuenta: dict = Depends(get_cuenta_portal)):
+    """La ultima tasa BCV publicada, para mostrar el equivalente en USD
+    mientras el cliente llena el reporte (el servidor la vuelve a tomar al
+    guardar)."""
     with get_connection() as conn, conn.cursor() as cur:
         try:
-            fila = tasa_bcv.tasa_para(cur, fecha)
+            fila = tasa_bcv.tasa_actual(cur)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, str(e)) from e
     return {"fecha": fila["fecha"], "tasa": float(fila["tasa"])}

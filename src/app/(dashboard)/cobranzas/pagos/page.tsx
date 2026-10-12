@@ -23,7 +23,7 @@ export default async function CobranzasPagosPage({ searchParams }: PageProps<"/c
       <PageHeader
         title="Pagos de clientes"
         subtitle="Busca cada pago en el banco con su referencia, fecha y monto, y verifícalo o recházalo. Al verificarlo se descuenta del saldo del cliente."
-        helpText="El monto en USD lo calcula el sistema con la tasa BCV vigente en la fecha del pago. Los pagos que se registran a mano (efectivo, divisas, retenciones) se cargan desde el detalle de cada cliente."
+        helpText="El monto en USD lo calcula el sistema con la última tasa BCV publicada al momento del reporte (queda guardada en el pago). Los pagos que se registran a mano (efectivo, divisas, retenciones) se cargan desde el detalle de cada cliente."
       />
       <nav aria-label="Estado de los pagos" className="flex flex-wrap gap-2">
         {ESTADOS.map((e) => (

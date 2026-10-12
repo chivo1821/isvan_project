@@ -54,7 +54,7 @@ export default async function PortalResumenPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Hola, {cuenta.nombre}</h1>
-          <p className="text-sm text-muted-foreground">Montos en dólares (USD). Los pagos en bolívares se convierten a la tasa BCV del día del pago.</p>
+          <p className="text-sm text-muted-foreground">Montos en dólares (USD). Los pagos en bolívares se convierten con la última tasa BCV publicada.</p>
         </div>
         <div className="flex flex-wrap gap-2 print:hidden">
           <Button variant="outline" asChild>

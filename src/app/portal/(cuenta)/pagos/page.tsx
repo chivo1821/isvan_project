@@ -90,7 +90,7 @@ export default async function PortalPagosPage() {
                     )}
                     {p.aplicaciones.length > 0 && (
                       <p className="text-sm text-muted-foreground">
-                        Abona a:{" "}
+                        {p.aplicaciones.every((a) => a.automatica) ? "Se abonó a lo que vencía primero:" : "Abona a:"}{" "}
                         {p.aplicaciones.map((a) => `${nombreDocumento(a)} (${formatUsd(a.montoUsd, 2)})`).join(", ")}
                       </p>
                     )}

@@ -16,7 +16,7 @@ export default async function ReportarPagoPage() {
       <div>
         <h1 className="text-2xl font-semibold">Reportar un pago</h1>
         <p className="text-sm text-muted-foreground">
-          Pago móvil o transferencia en bolívares. Lo convertimos a dólares con la tasa BCV del día del pago.
+          Pago móvil o transferencia en bolívares. Lo convertimos a dólares con la última tasa BCV publicada.
         </p>
       </div>
       <ReportarPagoWizard clientes={cuenta.clientes} pendientes={pendientes} cuentasEmpresa={cuentasEmpresa} />

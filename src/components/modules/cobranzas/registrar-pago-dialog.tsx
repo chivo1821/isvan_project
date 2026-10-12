@@ -142,7 +142,7 @@ export function RegistrarPagoDialog({ empresa, codigoCliente, nombre }: { empres
           <div className="space-y-1.5">
             <Label htmlFor="rp-monto">Monto ({enMoneda === "BS" ? "Bs" : "USD"})</Label>
             <Input id="rp-monto" inputMode="decimal" placeholder="0,00" value={monto} onChange={(e) => setMonto(e.target.value)} />
-            {enMoneda === "BS" && <p className="text-xs text-muted-foreground">Se convierte con la tasa BCV de la fecha.</p>}
+            {enMoneda === "BS" && <p className="text-xs text-muted-foreground">Se convierte con la última tasa BCV publicada.</p>}
           </div>
           {!monedaFija && (
             <div className="space-y-1.5">

@@ -124,12 +124,12 @@ export function ReportarPagoWizard({
   );
   const aFavor = montoUsd != null ? redondear(montoUsd - abonado) : null;
 
-  // La tasa BCV de la fecha del pago, para mostrar el equivalente en USD
-  // mientras se escribe (el servidor la vuelve a calcular al guardar).
+  // La última tasa BCV publicada (se usa siempre esa, sea cual sea la fecha
+  // del pago), para mostrar el equivalente en USD mientras se escribe. El
+  // servidor la vuelve a tomar al guardar.
   useEffect(() => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoyCaracas()) return;
     let vigente = true;
-    apiGet<{ fecha: string; tasa: number }>(`/portal/tasa?fecha=${fecha}`)
+    apiGet<{ fecha: string; tasa: number }>("/portal/tasa")
       .then((t) => {
         if (vigente) {
           setTasa(t);
@@ -139,13 +139,13 @@ export function ReportarPagoWizard({
       .catch((err) => {
         if (vigente) {
           setTasa(null);
-          setErrorTasa(mensajeDeError(err, "No hay tasa BCV para esa fecha"));
+          setErrorTasa(mensajeDeError(err, "No hay tasa BCV disponible"));
         }
       });
     return () => {
       vigente = false;
     };
-  }, [fecha]);
+  }, []);
 
   // Al cambiar de paso (no al abrir la página), el foco va al título del
   // paso nuevo, para lectores de pantalla y teclado.
@@ -173,7 +173,7 @@ export function ReportarPagoWizard({
         if (digitos.length !== 20) e.cuenta = "La cuenta tiene 20 dígitos";
         else if (!bancoDeCuenta(digitos)) e.cuenta = "Los primeros 4 dígitos no corresponden a ningún banco";
       }
-      if (!tasa) e.fecha = errorTasa ?? "Esperando la tasa BCV de esa fecha";
+      if (!tasa) e.montoBs = errorTasa ?? "Esperando la tasa BCV";
     }
     if (n === 3) {
       for (const d of docsCliente) {
@@ -384,7 +384,11 @@ export function ReportarPagoWizard({
                 id="montoBs"
                 label="Monto pagado (Bs)"
                 error={e("montoBs")}
-                ayuda={montoUsd != null && tasa ? `≈ ${formatUsd(montoUsd, 2)} a ${tasa.tasa.toLocaleString("es-VE")} Bs/USD (BCV)` : undefined}
+                ayuda={
+                  montoUsd != null && tasa
+                    ? `≈ ${formatUsd(montoUsd, 2)} a ${tasa.tasa.toLocaleString("es-VE")} Bs/USD (BCV del ${formatDate(tasa.fecha)})`
+                    : undefined
+                }
               >
                 <Input
                   inputMode="decimal"

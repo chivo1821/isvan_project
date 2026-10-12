@@ -117,8 +117,8 @@ export function TasasBcv({ tasas }: { tasas: TasaBcv[] }) {
       <CardHeader>
         <CardTitle>Tasa BCV</CardTitle>
         <CardDescription>
-          Bs por USD. Se toma de DolarApi automáticamente cada día; la de una fecha sin publicación (fin de semana,
-          feriado) es la del último día hábil.
+          Bs por USD. Se toma de DolarApi automáticamente. Cada pago se convierte con la última tasa publicada,
+          aunque su fecha valor sea del día hábil siguiente, y la tasa usada queda guardada en el pago.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

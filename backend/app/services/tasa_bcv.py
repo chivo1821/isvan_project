@@ -3,15 +3,16 @@
 DolarApi no es el BCV: lo replica. Por eso la tasa tambien se puede cargar a
 mano (fuente MANUAL), y una carga manual nunca la pisa la automatica.
 
-La tasa de una fecha es la de la fila mas reciente con fecha <= esa fecha:
-los fines de semana y feriados no hay publicacion y vale la del ultimo dia
-habil.
+Regla del negocio: un pago SIEMPRE se convierte con la ultima tasa
+publicada, sin importar la fecha del pago, aunque su fecha valor sea del dia
+habil siguiente (el BCV la publica la vispera). La tasa usada queda guardada
+en el pago, asi que publicar una nueva no cambia los pagos ya cargados.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -22,9 +23,11 @@ URL_ACTUAL = "https://ve.dolarapi.com/v1/dolares/oficial"
 URL_HISTORICO = "https://ve.dolarapi.com/v1/historicos/dolares/oficial"
 TIEMPO_MAXIMO = 10.0
 
-# Si la tasa mas reciente guardada tiene mas de estos dias respecto de la
-# fecha que se pide, se intenta actualizar antes de usarla.
-DIAS_DESACTUALIZADA = 4
+# Antes de usar la tasa se consulta DolarApi, como mucho cada tantos minutos
+# (por proceso): una tasa nueva se toma en cuanto se publica, sin pedirla en
+# cada reporte. El cron diario (tareas/tasa-bcv) la trae igual.
+MINUTOS_ENTRE_CONSULTAS = 30
+_ultima_consulta: datetime | None = None
 
 _log = logging.getLogger(__name__)
 
@@ -95,29 +98,30 @@ def guardar_manual(cur, fecha: date, tasa: Decimal, usuario_id: str) -> None:
     )
 
 
-def vigente(cur, fecha: date) -> dict | None:
-    cur.execute(
-        'SELECT "fecha", "tasa", "fuente" FROM "TasaCambio" WHERE "fecha" <= %s ORDER BY "fecha" DESC LIMIT 1',
-        (fecha,),
-    )
+def ultima(cur) -> dict | None:
+    """La tasa publicada mas reciente que hay guardada."""
+    cur.execute('SELECT "fecha", "tasa", "fuente" FROM "TasaCambio" ORDER BY "fecha" DESC LIMIT 1')
     return cur.fetchone()
 
 
-def tasa_para(cur, fecha: date) -> dict:
-    """{"fecha", "tasa", "fuente"} vigente en esa fecha. Si lo guardado esta
-    desactualizado, intenta traerla de DolarApi primero; si aun asi no hay,
-    TasaNoDisponible (cobranzas puede cargarla a mano).
+def tasa_actual(cur) -> dict:
+    """{"fecha", "tasa", "fuente"}: la ultima tasa publicada. Antes, si paso un
+    rato desde la ultima consulta, la pide a DolarApi; si DolarApi no responde
+    se usa la ultima guardada, y si no hay ninguna, TasaNoDisponible
+    (cobranzas puede cargarla a mano).
 
     Llamarla ANTES de escribir nada en la transaccion: si actualiza, hace
     commit para no perder las tasas aunque lo que sigue falle."""
-    fila = vigente(cur, fecha)
-    if fila is None or (fecha - fila["fecha"]).days > DIAS_DESACTUALIZADA:
+    global _ultima_consulta
+    ahora = ahora_utc()
+    if _ultima_consulta is None or ahora - _ultima_consulta > timedelta(minutes=MINUTOS_ENTRE_CONSULTAS):
+        _ultima_consulta = ahora
         try:
             actualizar(cur)
             cur.connection.commit()
         except TasaNoDisponible as e:
             _log.warning("%s", e)
-        fila = vigente(cur, fecha)
+    fila = ultima(cur)
     if fila is None:
-        raise TasaNoDisponible(f"No hay tasa BCV registrada para el {fecha:%d/%m/%Y}")
+        raise TasaNoDisponible("No hay tasa BCV registrada")
     return fila

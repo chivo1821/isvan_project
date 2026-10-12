@@ -14,9 +14,26 @@ import {
   ESTADO_PAGO_META,
   METODO_PAGO_LABEL,
   TIPO_DOCUMENTO_LABEL,
+  nombreDocumento,
+  type Documento,
   type Pago,
 } from "@/lib/cobranzas";
 import { formatBs, formatDate, formatDateTime, formatNumero, formatTelefono, formatUsd } from "@/lib/constants";
+
+/** El reparto a lo que vence primero (como pagos.reparto_automatico del
+ * backend) sobre la deuda pendiente del cliente. */
+function repartoAutomatico(pago: Pago): { doc: Documento; monto: number }[] {
+  let resto = pago.montoUsd;
+  const salida: { doc: Documento; monto: number }[] = [];
+  const pendientes = (pago.pendientes ?? []).toSorted((a, b) => a.vence.localeCompare(b.vence) || a.fecha.localeCompare(b.fecha));
+  for (const doc of pendientes) {
+    if (resto <= 0.009) break;
+    const monto = Math.round(Math.min(resto, doc.saldoUsd) * 100) / 100;
+    salida.push({ doc, monto });
+    resto = Math.round((resto - monto) * 100) / 100;
+  }
+  return salida;
+}
 
 function Dato({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
@@ -37,6 +54,10 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
   const abonado = Math.round(pago.aplicaciones.reduce((s, a) => s + a.montoUsd, 0) * 100) / 100;
   const aFavor = Math.round((pago.montoUsd - abonado) * 100) / 100;
   const esImagen = pago.comprobanteTipo?.startsWith("image/");
+  const automatica = pago.aplicaciones.length > 0 && pago.aplicaciones.every((a) => a.automatica);
+  // En revisión y sin documentos elegidos: cómo quedaría si se verifica sin
+  // cambios (el mismo reparto que hace el servidor al verificar).
+  const vistaPrevia = pago.estado === "REPORTADO" && pago.aplicaciones.length === 0 ? repartoAutomatico(pago) : [];
   const urlComprobante = `${API_URL}/cobranzas/pagos/${pago.id}/comprobante`;
 
   return (
@@ -109,10 +130,45 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
             <h3 id={`pago-${pago.id}-docs`} className="text-sm font-semibold">
               Documentos que abona
             </h3>
-            {pago.aplicaciones.length === 0 ? (
+            {automatica && (
+              <p className="rounded-lg bg-info/10 p-3 text-sm text-info">
+                Nadie eligió documentos: al verificarlo se repartió automáticamente a lo que vencía primero.
+              </p>
+            )}
+            {pago.aplicaciones.length === 0 && vistaPrevia.length > 0 ? (
+              <>
+                <p className="rounded-lg bg-info/10 p-3 text-sm text-info">
+                  El cliente no eligió documentos. Si lo verificas sin cambios, se abonará así, a lo que vence primero:
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Documento</TableHead>
+                      <TableHead className="hidden sm:table-cell">Vence</TableHead>
+                      <TableHead className="text-right">Saldo hoy</TableHead>
+                      <TableHead className="text-right">Abonaría</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {vistaPrevia.map(({ doc, monto }) => (
+                      <TableRow key={doc.id}>
+                        <TableCell>
+                          <span className="font-medium">{nombreDocumento(doc)}</span>
+                          <span className="block text-xs text-muted-foreground">del {formatDate(doc.fecha)}</span>
+                        </TableCell>
+                        <TableCell className="hidden tabular-nums sm:table-cell">{formatDate(doc.vence)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatUsd(doc.saldoUsd, 2)}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatUsd(monto, 2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            ) : pago.aplicaciones.length === 0 ? (
               <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                {pago.estado === "REPORTADO" ? "El cliente no indicó documentos" : "Sin documentos indicados"}: el pago se
-                aplica a lo que vence primero.
+                {pago.estado === "REPORTADO"
+                  ? "El cliente no eligió documentos y no tiene deuda pendiente: el pago quedará a su favor."
+                  : "Sin documentos: el pago quedó como saldo a favor del cliente."}
               </p>
             ) : (
               <Table>
@@ -132,7 +188,10 @@ export function PagoEncabezado({ pago, conCliente }: { pago: Pago; conCliente: b
                         <span className="font-medium">
                           {TIPO_DOCUMENTO_LABEL[a.tipoDoc] ?? a.tipoDoc} {a.numero}
                         </span>
-                        <span className="block text-xs text-muted-foreground">del {formatDate(a.fecha)}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          del {formatDate(a.fecha)}
+                          {a.automatica && " · reparto automático"}
+                        </span>
                       </TableCell>
                       <TableCell className="hidden tabular-nums sm:table-cell">{a.vence ? formatDate(a.vence) : "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatUsd(a.montoDocumentoUsd, 2)}</TableCell>

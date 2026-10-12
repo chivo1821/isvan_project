@@ -928,6 +928,9 @@ model PagoAplicacion {
   documentoId String
   documento   DocumentoCobro @relation(fields: [documentoId], references: [id], onDelete: Restrict)
   montoUsd    Decimal        @db.Decimal(20, 2)
+  // true si nadie eligio el documento: el pago se repartio solo a lo que
+  // vence primero al verificarlo (ver pagos.reparto_automatico).
+  automatica  Boolean        @default(false)
 
   @@unique([pagoId, documentoId])
   @@index([documentoId])

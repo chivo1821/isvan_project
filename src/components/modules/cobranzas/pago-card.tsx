@@ -74,7 +74,11 @@ export function PagoCard({ pago, conCliente = true }: { pago: Pago; conCliente?:
         )}
         {pago.aplicaciones.length > 0 && (
           <p className="text-sm text-muted-foreground">
-            {pago.estado === "REPORTADO" ? "El cliente lo abona a: " : "Abona a: "}
+            {pago.estado === "REPORTADO"
+              ? "El cliente lo abona a: "
+              : pago.aplicaciones.every((a) => a.automatica)
+                ? "Repartido automáticamente a: "
+                : "Abona a: "}
             {pago.aplicaciones.map((a) => `${nombreDocumento(a)} (${formatUsd(a.montoUsd, 2)})`).join(", ")}
           </p>
         )}

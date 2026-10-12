@@ -3,9 +3,9 @@ transferencia, quedan REPORTADOS hasta que cobranzas los verifica) y los que
 registra cobranzas a mano (efectivo, divisas, retenciones, ajustes; quedan
 VERIFICADOS de una vez).
 
-La deuda esta en USD. Un pago en Bs se convierte con la tasa BCV vigente en
-la fecha del pago (app/services/tasa_bcv.py); el monto en USD lo calcula
-siempre el servidor.
+La deuda esta en USD. Un pago en Bs se convierte con la ultima tasa BCV
+publicada al momento de cargarlo (app/services/tasa_bcv.py); el monto en USD
+lo calcula siempre el servidor.
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ def registrar(cur, *, empresa: str, codigo: str, datos: dict, aplicaciones: list
     monto_usd = datos["montoUsd"]
     if datos["montoBs"] is not None:
         try:
-            vigente = tasa_bcv.tasa_para(cur, datos["fechaPago"])
+            vigente = tasa_bcv.tasa_actual(cur)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, f"{e}. Intenta más tarde.") from e
         tasa = Decimal(vigente["tasa"])
@@ -150,6 +150,11 @@ def registrar(cur, *, empresa: str, codigo: str, datos: dict, aplicaciones: list
             raise ValueError("El monto es muy pequeño")
 
     lista = _aplicaciones_validas(cur, empresa, codigo, aplicaciones, monto_usd)
+    automatica = False
+    if usuario_id is not None and not lista:
+        # Registrado por cobranzas sin documentos: queda repartido ya, a lo
+        # que vence primero (ver reparto_automatico).
+        lista, automatica = reparto_automatico(cur, empresa, codigo, monto_usd), True
 
     # Numeracion correlativa sin choques entre dos reportes simultaneos.
     cur.execute("SELECT pg_advisory_xact_lock(hashtext('Pago.numero'))")
@@ -164,7 +169,7 @@ def registrar(cur, *, empresa: str, codigo: str, datos: dict, aplicaciones: list
     except psycopg.errors.UniqueViolation as e:
         cur.execute("ROLLBACK TO SAVEPOINT pago_nuevo")
         raise HTTPException(409, "Ese pago ya fue reportado (mismo banco, referencia y fecha)") from e
-    _guardar_aplicaciones(cur, pago_id, lista)
+    _guardar_aplicaciones(cur, pago_id, lista, automatica)
     return pago_id
 
 
@@ -187,11 +192,27 @@ def _insertar(cur, pago_id, numero, empresa, codigo, cuenta_portal_id, usuario_i
     )
 
 
-def _guardar_aplicaciones(cur, pago_id: str, lista: list[tuple[str, Decimal]]) -> None:
+def reparto_automatico(cur, empresa: str, codigo: str, monto_usd: Decimal) -> list[tuple[str, Decimal]]:
+    """Un pago sin documentos elegidos, repartido a lo que vence primero
+    sobre la deuda de hoy (sin contar el propio pago). Lo que sobra queda a
+    favor. Se guarda como aplicaciones (marcadas automaticas) al verificarlo,
+    para que quede escrito a que documentos fue."""
+    resto = monto_usd
+    lista: list[tuple[str, Decimal]] = []
+    for doc in sorted(cartera.estado_cliente(cur, empresa, codigo).pendientes(), key=lambda d: (d.vence, d.fecha, d.numero)):
+        if resto <= CERO:
+            break
+        parte = min(resto, doc.saldoUsd)
+        lista.append((doc.id, parte))
+        resto -= parte
+    return lista
+
+
+def _guardar_aplicaciones(cur, pago_id: str, lista: list[tuple[str, Decimal]], automatica: bool = False) -> None:
     cur.execute('DELETE FROM "PagoAplicacion" WHERE "pagoId" = %s', (pago_id,))
     cur.executemany(
-        'INSERT INTO "PagoAplicacion" ("id", "pagoId", "documentoId", "montoUsd") VALUES (%s, %s, %s, %s)',
-        [(f"papl-{uuid.uuid4().hex[:16]}", pago_id, doc_id, monto) for doc_id, monto in lista],
+        'INSERT INTO "PagoAplicacion" ("id", "pagoId", "documentoId", "montoUsd", "automatica") VALUES (%s, %s, %s, %s, %s)',
+        [(f"papl-{uuid.uuid4().hex[:16]}", pago_id, doc_id, monto, automatica) for doc_id, monto in lista],
     )
 
 
@@ -207,16 +228,21 @@ def _para_revisar(cur, pago_id: str) -> dict:
 
 def verificar(cur, pago_id: str, usuario_id: str, aplicaciones: list[dict] | None) -> dict:
     """Cobranzas confirma que el dinero llego. Puede corregir a que
-    documentos se abona; si no manda aplicaciones, quedan las del cliente."""
+    documentos se abona; si no manda aplicaciones, quedan las del cliente.
+    Si al final no queda ninguna, se reparte a lo que vence primero y queda
+    guardado (marcado automatico)."""
     pago = _para_revisar(cur, pago_id)
-    if aplicaciones is not None:
-        lista = _aplicaciones_validas(cur, pago["empresa"], pago["codigoCliente"], aplicaciones, Decimal(pago["montoUsd"]))
-        _guardar_aplicaciones(cur, pago_id, lista)
-    else:
+    monto = Decimal(pago["montoUsd"])
+    if aplicaciones is None:
         # Las del cliente pueden haber quedado de mas si otro pago ya saldo
         # esos documentos: se validan igual.
         cur.execute('SELECT "documentoId", "montoUsd" FROM "PagoAplicacion" WHERE "pagoId" = %s', (pago_id,))
-        _aplicaciones_validas(cur, pago["empresa"], pago["codigoCliente"], cur.fetchall(), Decimal(pago["montoUsd"]))
+        aplicaciones = cur.fetchall()
+    lista = _aplicaciones_validas(cur, pago["empresa"], pago["codigoCliente"], aplicaciones, monto)
+    automatica = not lista
+    if automatica:
+        lista = reparto_automatico(cur, pago["empresa"], pago["codigoCliente"], monto)
+    _guardar_aplicaciones(cur, pago_id, lista, automatica)
     cur.execute(
         "UPDATE \"Pago\" SET \"estado\" = 'VERIFICADO', \"revisadoPorId\" = %s, \"revisadoEn\" = %s, "
         "\"metodoVerificacion\" = 'MANUAL' WHERE \"id\" = %s",
@@ -259,7 +285,7 @@ def listar(cur, where: str, params: dict | tuple = ()) -> list[dict]:
         return []
     cur.execute(
         'SELECT a."pagoId", a."documentoId", a."montoUsd", d."tipoDoc", d."numero", d."fecha", '
-        'd."montoUsd" AS "montoDocumentoUsd", d."vigente" '
+        'd."montoUsd" AS "montoDocumentoUsd", d."vigente", a."automatica" '
         'FROM "PagoAplicacion" a JOIN "DocumentoCobro" d ON d."id" = a."documentoId" '
         'WHERE a."pagoId" = ANY(%s) ORDER BY d."fecha", d."numero"',
         ([f["id"] for f in filas],),
@@ -269,7 +295,8 @@ def listar(cur, where: str, params: dict | tuple = ()) -> list[dict]:
         por_pago.setdefault(a["pagoId"], []).append(
             {"documentoId": a["documentoId"], "tipoDoc": a["tipoDoc"], "numero": a["numero"],
              "fecha": a["fecha"], "montoUsd": float(a["montoUsd"]),
-             "montoDocumentoUsd": float(a["montoDocumentoUsd"]), "vigente": a["vigente"]}
+             "montoDocumentoUsd": float(a["montoDocumentoUsd"]), "vigente": a["vigente"],
+             "automatica": a["automatica"]}
         )
     return [
         {
