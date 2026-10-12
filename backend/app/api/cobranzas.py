@@ -147,7 +147,7 @@ def cliente(empresa: Empresa, codigo: CodigoPath):
         dato = cartera.datos_clientes(cur, [clave]).get(clave)
         if dato is None and not est.documentos:
             raise HTTPException(404, "Cliente no encontrado")
-        lista_pagos = pagos.listar(cur, 'p."empresa" = %s AND p."codigoCliente" = %s', (empresa, codigo))
+        lista_pagos = _con_detalle(cur, pagos.listar(cur, 'p."empresa" = %s AND p."codigoCliente" = %s', (empresa, codigo)))
         cur.execute(
             'SELECT c."id", c."email", c."nombre", c."estado", l."origen", l."vinculadoEn" '
             'FROM "CuentaPortalCliente" l JOIN "CuentaPortal" c ON c."id" = l."cuentaId" '
@@ -160,7 +160,7 @@ def cliente(empresa: Empresa, codigo: CodigoPath):
         "nombre": (dato or {}).get("nombre") or f"Cliente {codigo}",
         "datos": dato,
         "documentos": sorted((d.como_dict(p.hoy) for d in est.documentos), key=lambda d: (d["vence"], d["numero"]), reverse=True),
-        "pagos": [_instantes(g, "reportadoEn", "revisadoEn") for g in lista_pagos],
+        "pagos": lista_pagos,
         "cuentasPortal": cuentas,
     }
 
@@ -196,14 +196,27 @@ def listar_pagos(
         condiciones.append('p."empresa" = %s')
         params.append(empresa)
     with get_connection() as conn, conn.cursor() as cur:
-        lista = pagos.listar(cur, " AND ".join(condiciones), tuple(params))
-        # Para verificar hace falta ver que debe cada cliente.
-        claves = sorted({(g["empresa"], g["codigoCliente"]) for g in lista if g["estado"] == "REPORTADO"})
-        p = cartera.parametros(cur)
-        estados = cartera.estados(cur, claves, p=p) if claves else {}
+        return _con_detalle(cur, pagos.listar(cur, " AND ".join(condiciones), tuple(params)))
+
+
+def _con_detalle(cur, lista: list[dict]) -> list[dict]:
+    """Agrega a cada pago lo que hace falta para revisarlo: de cada documento
+    que abona, su vencimiento y su saldo de hoy; y si esta por verificar,
+    todo lo que el cliente tiene pendiente (para corregir a que se abona)."""
+    claves = sorted({(g["empresa"], g["codigoCliente"]) for g in lista})
+    p = cartera.parametros(cur)
+    estados = cartera.estados(cur, claves, p=p) if claves else {}
+    documentos = {d.id: d for est in estados.values() for d in est.documentos}
     salida = []
     for g in lista:
         g = _instantes(g, "reportadoEn", "revisadoEn")
+        for a in g["aplicaciones"]:
+            doc = documentos.get(a["documentoId"])
+            # Fuera de la cartera (anterior al inicio o carga revertida): sin
+            # saldo que mostrar; lo abonado cuenta como credito a favor.
+            a["vence"] = doc.vence if doc else None
+            a["saldoUsd"] = float(doc.saldoUsd) if doc else None
+            a["estadoDocumento"] = doc.como_dict(p.hoy)["estado"] if doc else None
         if g["estado"] == "REPORTADO":
             est = estados.get((g["empresa"], g["codigoCliente"]))
             g["pendientes"] = [d.como_dict(p.hoy) for d in est.pendientes()] if est else []

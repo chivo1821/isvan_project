@@ -258,7 +258,8 @@ def listar(cur, where: str, params: dict | tuple = ()) -> list[dict]:
     if not filas:
         return []
     cur.execute(
-        'SELECT a."pagoId", a."documentoId", a."montoUsd", d."tipoDoc", d."numero", d."fecha" '
+        'SELECT a."pagoId", a."documentoId", a."montoUsd", d."tipoDoc", d."numero", d."fecha", '
+        'd."montoUsd" AS "montoDocumentoUsd", d."vigente" '
         'FROM "PagoAplicacion" a JOIN "DocumentoCobro" d ON d."id" = a."documentoId" '
         'WHERE a."pagoId" = ANY(%s) ORDER BY d."fecha", d."numero"',
         ([f["id"] for f in filas],),
@@ -267,7 +268,8 @@ def listar(cur, where: str, params: dict | tuple = ()) -> list[dict]:
     for a in cur.fetchall():
         por_pago.setdefault(a["pagoId"], []).append(
             {"documentoId": a["documentoId"], "tipoDoc": a["tipoDoc"], "numero": a["numero"],
-             "fecha": a["fecha"], "montoUsd": float(a["montoUsd"])}
+             "fecha": a["fecha"], "montoUsd": float(a["montoUsd"]),
+             "montoDocumentoUsd": float(a["montoDocumentoUsd"]), "vigente": a["vigente"]}
         )
     return [
         {

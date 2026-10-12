@@ -40,7 +40,21 @@ export type ResumenCliente = {
   bloqueado: boolean;
 };
 
-export type AplicacionPago = { documentoId: string; tipoDoc: string; numero: string; fecha: string; montoUsd: number };
+export type AplicacionPago = {
+  documentoId: string;
+  tipoDoc: string;
+  numero: string;
+  fecha: string;
+  /** Lo que este pago le abona al documento. */
+  montoUsd: number;
+  /** El total del documento. */
+  montoDocumentoUsd: number;
+  vigente: boolean;
+  // Solo en el panel de cobranzas (null si el documento quedó fuera de la cartera):
+  vence?: string | null;
+  saldoUsd?: number | null;
+  estadoDocumento?: EstadoDocumento | null;
+};
 
 export type Pago = {
   id: string;

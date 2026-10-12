@@ -1,12 +1,12 @@
-import Link from "next/link";
 import { PaperclipIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PagoEncabezado } from "@/components/modules/cobranzas/detalle-pago";
 import { RechazarPagoDialog, VerificarPagoDialog } from "@/components/modules/cobranzas/revisar-pago-dialogs";
 import { API_URL } from "@/lib/api-client";
 import { formatCuenta } from "@/lib/bancos";
-import { ESTADO_PAGO_META, METODO_PAGO_LABEL, nombreDocumento, type Pago } from "@/lib/cobranzas";
-import { formatBs, formatDate, formatDateTime, formatTelefono, formatUsd } from "@/lib/constants";
+import { ESTADO_PAGO_META, nombreDocumento, type Pago } from "@/lib/cobranzas";
+import { formatBs, formatDateTime, formatTelefono, formatUsd } from "@/lib/constants";
 
 /** Un pago tal como lo revisa cobranzas: quién, cuánto, con qué datos
  * bancarios (para buscarlo en el banco) y a qué documentos abona. */
@@ -25,17 +25,8 @@ export function PagoCard({ pago, conCliente = true }: { pago: Pago; conCliente?:
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-semibold">
-              {pago.numero} · {METODO_PAGO_LABEL[pago.metodo]} · {formatDate(pago.fechaPago)}
-            </p>
-            {conCliente && (
-              <Link
-                href={`/cobranzas/clientes/${pago.empresa}/${encodeURIComponent(pago.codigoCliente)}`}
-                className="text-sm text-primary underline-offset-4 hover:underline"
-              >
-                {pago.cliente ?? `Cliente ${pago.codigoCliente}`} · {pago.empresa} {pago.codigoCliente}
-              </Link>
-            )}
+            {/* Número y cliente abren el desglose del pago (ver detalle-pago.tsx). */}
+            <PagoEncabezado pago={pago} conCliente={conCliente} />
             <p className="text-xs text-muted-foreground">
               {pago.reportadoPor
                 ? `Reportado por ${pago.reportadoPor} (${pago.reportadoPorEmail}) el ${formatDateTime(pago.reportadoEn)}`
