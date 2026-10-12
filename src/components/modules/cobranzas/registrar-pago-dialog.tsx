@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CedulaRif, CuentaBancaria, TelefonoVe, filtrarMonto, filtrarReferencia } from "@/components/shared/campos-venezuela";
 
 // Lo que cobranzas registra a mano. Pago móvil y transferencia también, por
 // si el cliente pagó y no lo reportó en el portal.
@@ -141,7 +142,7 @@ export function RegistrarPagoDialog({ empresa, codigoCliente, nombre }: { empres
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="rp-monto">Monto ({enMoneda === "BS" ? "Bs" : "USD"})</Label>
-            <Input id="rp-monto" inputMode="decimal" placeholder="0,00" value={monto} onChange={(e) => setMonto(e.target.value)} />
+            <Input id="rp-monto" inputMode="decimal" placeholder="0,00" value={monto} onChange={(e) => setMonto(filtrarMonto(e.target.value))} />
             {enMoneda === "BS" && <p className="text-xs text-muted-foreground">Se convierte con la última tasa BCV publicada.</p>}
           </div>
           {!monedaFija && (
@@ -160,8 +161,8 @@ export function RegistrarPagoDialog({ empresa, codigoCliente, nombre }: { empres
           )}
           {metodo === "TRANSFERENCIA" ? (
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="rp-cuenta">Cuenta de origen (20 dígitos)</Label>
-              <Input id="rp-cuenta" inputMode="numeric" value={cuenta} onChange={(e) => setCuenta(e.target.value)} />
+              <Label htmlFor="rp-cuenta">Cuenta de origen</Label>
+              <CuentaBancaria id="rp-cuenta" value={cuenta} onChange={setCuenta} />
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -184,18 +185,18 @@ export function RegistrarPagoDialog({ empresa, codigoCliente, nombre }: { empres
           {metodo === "PAGO_MOVIL" && (
             <div className="space-y-1.5">
               <Label htmlFor="rp-telefono">Celular</Label>
-              <Input id="rp-telefono" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} />
+              <TelefonoVe id="rp-telefono" value={telefono} onChange={setTelefono} />
             </div>
           )}
           {(metodo === "PAGO_MOVIL" || metodo === "TRANSFERENCIA") && (
             <div className="space-y-1.5">
               <Label htmlFor="rp-cedula">Cédula o RIF</Label>
-              <Input id="rp-cedula" value={cedula} onChange={(e) => setCedula(e.target.value)} />
+              <CedulaRif id="rp-cedula" value={cedula} onChange={setCedula} />
             </div>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="rp-referencia">Referencia {metodo === "PAGO_MOVIL" || metodo === "TRANSFERENCIA" ? "" : "(opcional)"}</Label>
-            <Input id="rp-referencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
+            <Input id="rp-referencia" autoComplete="off" value={referencia} onChange={(e) => setReferencia(filtrarReferencia(e.target.value))} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="rp-nota">Nota {metodo === "AJUSTE" ? "(obligatoria)" : "(opcional)"}</Label>

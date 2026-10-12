@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { filtrarMonto } from "@/components/shared/campos-venezuela";
 
 const redondear = (v: number) => Math.round(v * 100) / 100;
 
@@ -127,7 +128,7 @@ export function VerificarPagoDialog({ pago }: { pago: Pago }) {
                   className="text-right tabular-nums"
                   placeholder="0,00"
                   value={abonos[d.id] ?? ""}
-                  onChange={(e) => setAbonos((a) => ({ ...a, [d.id]: e.target.value }))}
+                  onChange={(e) => setAbonos((a) => ({ ...a, [d.id]: filtrarMonto(e.target.value) }))}
                 />
               </span>
             </li>

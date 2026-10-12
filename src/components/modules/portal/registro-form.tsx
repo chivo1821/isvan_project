@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Campo, ariaCampo } from "@/components/modules/portal/campo";
+import { CedulaRif, TelefonoVe } from "@/components/shared/campos-venezuela";
 
 const NO_SE = "__no_se";
 
@@ -20,14 +21,8 @@ const NO_SE = "__no_se";
 const esquema = z
   .object({
     nombre: z.string().trim().min(2, "Escribe tu nombre o el de tu negocio").max(120),
-    rif: z
-      .string()
-      .trim()
-      .regex(/^[VEJGPvejgp]?[\s.-]?\d{6,9}[\s.-]?\d?$/, "Escribe tu cédula o RIF (ej. J-40123456-7)"),
-    telefono: z
-      .string()
-      .trim()
-      .regex(/^(\+?58|0)?\s?4(12|14|16|22|24|26)[\s-]?\d{3}[\s-]?\d{4}$/, "Un celular venezolano (ej. 0414-1234567)"),
+    rif: z.string().regex(/^[VEJGPC]\d{6,9}$/, "Elige el tipo y escribe el número de tu cédula o RIF"),
+    telefono: z.string().regex(/^04(12|14|16|22|24|26)\d{7}$/, "Elige el prefijo y escribe los 7 números"),
     email: z.email("Escribe un correo válido"),
     password: z
       .string()
@@ -89,25 +84,34 @@ export function RegistroForm() {
       <CardContent>
         <form onSubmit={handleSubmit(registrar)} className="space-y-4" noValidate>
           <Campo id="nombre" label="Nombre o razón social" error={e("nombre")}>
-            <Input autoComplete="organization" {...ariaCampo("nombre", e("nombre"))} {...register("nombre")} />
+            <Input autoComplete="organization" maxLength={120} {...ariaCampo("nombre", e("nombre"))} {...register("nombre")} />
           </Campo>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Campo id="rif" label="Cédula o RIF" error={e("rif")}>
-              <Input placeholder="J-40123456-7" {...ariaCampo("rif", e("rif"))} {...register("rif")} />
-            </Campo>
-            <Campo id="telefono" label="Celular" error={e("telefono")}>
-              <Input
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="0414-1234567"
-                {...ariaCampo("telefono", e("telefono"))}
-                {...register("telefono")}
-              />
-            </Campo>
-          </div>
+          <Campo id="rif" label="Cédula o RIF" error={e("rif")}>
+            <Controller
+              control={control}
+              name="rif"
+              render={({ field }) => (
+                <CedulaRif id="rif" value={field.value} onChange={field.onChange} invalido={Boolean(e("rif"))} describedBy={e("rif") ? "rif-error" : undefined} />
+              )}
+            />
+          </Campo>
+          <Campo id="telefono" label="Celular" error={e("telefono")}>
+            <Controller
+              control={control}
+              name="telefono"
+              render={({ field }) => (
+                <TelefonoVe
+                  id="telefono"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalido={Boolean(e("telefono"))}
+                  describedBy={e("telefono") ? "telefono-error" : undefined}
+                />
+              )}
+            />
+          </Campo>
           <Campo id="email" label="Correo" error={e("email")}>
-            <Input type="email" inputMode="email" autoComplete="email" {...ariaCampo("email", e("email"))} {...register("email")} />
+            <Input type="email" inputMode="email" autoComplete="email" maxLength={200} {...ariaCampo("email", e("email"))} {...register("email")} />
           </Campo>
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo id="password" label="Contraseña" error={e("password")} ayuda="8 caracteres o más, con letras y números">
@@ -148,7 +152,7 @@ export function RegistroForm() {
                 />
               </Campo>
               <Campo id="codigoCliente" label="Código de cliente" error={e("codigoCliente")}>
-                <Input inputMode="numeric" {...ariaCampo("codigoCliente", e("codigoCliente"))} {...register("codigoCliente")} />
+                <Input inputMode="numeric" maxLength={20} {...ariaCampo("codigoCliente", e("codigoCliente"))} {...register("codigoCliente")} />
               </Campo>
             </div>
           </fieldset>

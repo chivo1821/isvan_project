@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Campo, ariaCampo } from "@/components/modules/portal/campo";
+import { CedulaRif, CuentaBancaria, TelefonoVe, filtrarMonto, filtrarReferencia } from "@/components/shared/campos-venezuela";
 import { cn } from "@/lib/utils";
 
 type Metodo = "PAGO_MOVIL" | "TRANSFERENCIA";
@@ -161,17 +162,15 @@ export function ReportarPagoWizard({
     if (n === 2) {
       if (!fecha || fecha > hoyCaracas()) e.fecha = "La fecha no puede ser futura";
       if (montoBs == null) e.montoBs = "Escribe el monto pagado en bolívares";
-      if (!/^[A-Za-z0-9\s-]{4,30}$/.test(referencia.trim())) e.referencia = "Entre 4 y 30 letras o números";
-      if (!/^[VEJGPvejgp]?[\s.-]?\d{6,9}[\s.-]?\d?$/.test(cedula.trim())) e.cedula = "Cédula o RIF de quien pagó (ej. V-12345678)";
+      if (!/^[A-Za-z0-9]{4,30}$/.test(referencia)) e.referencia = "Entre 4 y 30 letras o números";
+      if (!/^[VEJGPC]\d{6,9}$/.test(cedula)) e.cedula = "Elige el tipo y escribe el número de quien pagó";
       if (metodo === "PAGO_MOVIL") {
         if (!banco) e.banco = "Elige el banco desde el que pagaste";
-        if (!/^(\+?58|0)?\s?4(12|14|16|22|24|26)[\s-]?\d{3}[\s-]?\d{4}$/.test(telefono.trim()))
-          e.telefono = "Celular desde el que pagaste (ej. 0414-1234567)";
+        if (!/^04(12|14|16|22|24|26)\d{7}$/.test(telefono)) e.telefono = "Elige el prefijo y escribe los 7 números";
       }
       if (metodo === "TRANSFERENCIA") {
-        const digitos = cuenta.replace(/\D/g, "");
-        if (digitos.length !== 20) e.cuenta = "La cuenta tiene 20 dígitos";
-        else if (!bancoDeCuenta(digitos)) e.cuenta = "Los primeros 4 dígitos no corresponden a ningún banco";
+        if (cuenta.length !== 20) e.cuenta = `Faltan ${20 - cuenta.length} dígito(s): la cuenta tiene 20`;
+        else if (!bancoDeCuenta(cuenta)) e.cuenta = "Los primeros 4 dígitos no corresponden a ningún banco";
       }
       if (!tasa) e.montoBs = errorTasa ?? "Esperando la tasa BCV";
     }
@@ -243,7 +242,7 @@ export function ReportarPagoWizard({
         telefono: metodo === "PAGO_MOVIL" ? telefono : null,
         cedulaRif: cedula,
         cuenta: metodo === "TRANSFERENCIA" ? cuenta : null,
-        referencia: referencia.trim(),
+        referencia,
         comprobanteClave,
         aplicaciones: docsCliente
           .map((d) => ({ documentoId: d.id, montoUsd: leerMonto(abonos[d.id] ?? "") }))
@@ -394,7 +393,7 @@ export function ReportarPagoWizard({
                   inputMode="decimal"
                   placeholder="0,00"
                   value={montoBsTexto}
-                  onChange={(ev) => setMontoBsTexto(ev.target.value)}
+                  onChange={(ev) => setMontoBsTexto(filtrarMonto(ev.target.value))}
                   {...ariaCampo("montoBs", e("montoBs"), montoUsd != null ? "equivalente" : undefined)}
                 />
               </Campo>
@@ -415,30 +414,44 @@ export function ReportarPagoWizard({
                     </Select>
                   </Campo>
                   <Campo id="telefono" label="Celular desde el que pagaste" error={e("telefono")}>
-                    <Input type="tel" inputMode="tel" placeholder="0414-1234567" value={telefono} onChange={(ev) => setTelefono(ev.target.value)} {...ariaCampo("telefono", e("telefono"))} />
+                    <TelefonoVe
+                      id="telefono"
+                      value={telefono}
+                      onChange={setTelefono}
+                      invalido={Boolean(e("telefono"))}
+                      describedBy={e("telefono") ? "telefono-error" : undefined}
+                    />
                   </Campo>
                 </>
               ) : (
-                <Campo
-                  id="cuenta"
-                  label="Cuenta desde la que transferiste"
-                  error={e("cuenta")}
-                  ayuda={bancoDeCuenta(cuenta) ?? "20 dígitos; el banco se reconoce solo"}
-                >
-                  <Input
-                    inputMode="numeric"
-                    placeholder="0134 0000 0000 0000 0000"
-                    value={cuenta}
-                    onChange={(ev) => setCuenta(ev.target.value)}
-                    {...ariaCampo("cuenta", e("cuenta"), "banco")}
-                  />
-                </Campo>
+                <div className="sm:col-span-2">
+                  <Campo id="cuenta" label="Cuenta desde la que transferiste" error={e("cuenta")}>
+                    <CuentaBancaria
+                      id="cuenta"
+                      value={cuenta}
+                      onChange={setCuenta}
+                      invalido={Boolean(e("cuenta"))}
+                      describedBy={e("cuenta") ? "cuenta-error" : undefined}
+                    />
+                  </Campo>
+                </div>
               )}
               <Campo id="cedula" label="Cédula o RIF de quien pagó" error={e("cedula")}>
-                <Input placeholder="V-12345678" value={cedula} onChange={(ev) => setCedula(ev.target.value)} {...ariaCampo("cedula", e("cedula"))} />
+                <CedulaRif
+                  id="cedula"
+                  value={cedula}
+                  onChange={setCedula}
+                  invalido={Boolean(e("cedula"))}
+                  describedBy={e("cedula") ? "cedula-error" : undefined}
+                />
               </Campo>
               <Campo id="referencia" label="Número de referencia" error={e("referencia")}>
-                <Input value={referencia} onChange={(ev) => setReferencia(ev.target.value)} {...ariaCampo("referencia", e("referencia"))} />
+                <Input
+                  autoComplete="off"
+                  value={referencia}
+                  onChange={(ev) => setReferencia(filtrarReferencia(ev.target.value))}
+                  {...ariaCampo("referencia", e("referencia"))}
+                />
               </Campo>
             </div>
           )}
@@ -485,7 +498,7 @@ export function ReportarPagoWizard({
                           inputMode="decimal"
                           placeholder="USD 0,00"
                           value={abonos[d.id] ?? ""}
-                          onChange={(ev) => setAbonos((a) => ({ ...a, [d.id]: ev.target.value }))}
+                          onChange={(ev) => setAbonos((a) => ({ ...a, [d.id]: filtrarMonto(ev.target.value) }))}
                           aria-invalid={e(`abono-${d.id}`) ? true : undefined}
                           aria-describedby={e(`abono-${d.id}`) ? `abono-${d.id}-error` : undefined}
                           className="text-right tabular-nums"
@@ -538,7 +551,7 @@ export function ReportarPagoWizard({
                 <div>
                   <dt className="text-muted-foreground">Medio</dt>
                   <dd className="font-medium">
-                    {metodo === "PAGO_MOVIL" ? "Pago móvil" : "Transferencia"} · ref. {referencia.trim()}
+                    {metodo === "PAGO_MOVIL" ? "Pago móvil" : "Transferencia"} · ref. {referencia}
                   </dd>
                 </div>
                 <div>

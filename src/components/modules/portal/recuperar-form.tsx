@@ -95,7 +95,6 @@ export function RecuperarForm() {
               <Input
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={6}
                 className="text-center text-lg tracking-[0.5em] tabular-nums"
                 value={codigo}
                 onChange={(ev) => setCodigo(ev.target.value.replace(/\D/g, "").slice(0, 6))}

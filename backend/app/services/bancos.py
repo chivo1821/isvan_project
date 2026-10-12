@@ -36,8 +36,10 @@ BANCOS: dict[str, str] = {
 }
 
 _CUENTA = re.compile(r"\d{20}")
-# V/E/J/G/P + 6 a 9 digitos (cedula o RIF, sin el digito verificador aparte).
-_CEDULA_RIF = re.compile(r"([VEJGP])(\d{6,9})(\d)?")
+# V/E/J/G/P/C + 6 a 9 digitos: una cedula tiene hasta 8 y un RIF, 8 mas el
+# digito verificador (ninguno pasa de 9). C: RIF de comunas y consejos
+# comunales.
+_CEDULA_RIF = re.compile(r"([VEJGPC])(\d{6,9})")
 
 
 def nombre(codigo: str | None) -> str | None:
@@ -70,5 +72,5 @@ def normalizar_cedula_rif(valor: str) -> str:
         limpio = "V" + limpio
     m = _CEDULA_RIF.fullmatch(limpio)
     if not m:
-        raise ValueError("Cédula o RIF no válido (ej. V12345678 o J401234567)")
+        raise ValueError("Cédula o RIF no válido (ej. V12345678 o J401234567; tipos V, E, J, G, P o C)")
     return limpio

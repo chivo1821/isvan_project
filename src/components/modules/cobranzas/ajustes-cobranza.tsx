@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CedulaRif, CuentaBancaria, TelefonoVe, filtrarMonto } from "@/components/shared/campos-venezuela";
 
 /** Tolerancia e inicio de la cartera. Solo el ADMIN los cambia (la API lo
  * exige); cobranzas los ve. */
@@ -129,7 +130,7 @@ export function TasasBcv({ tasas }: { tasas: TasaBcv[] }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tasa-valor">Tasa (Bs/USD)</Label>
-            <Input id="tasa-valor" inputMode="decimal" placeholder="0,0000" value={tasa} onChange={(e) => setTasa(e.target.value)} className="w-40" />
+            <Input id="tasa-valor" inputMode="decimal" placeholder="0,0000" value={tasa} onChange={(e) => setTasa(filtrarMonto(e.target.value))} className="w-40" />
           </div>
           <Button onClick={guardar} disabled={guardando || !(valor > 0) || !fecha}>
             Guardar a mano
@@ -246,7 +247,13 @@ export function CuentasEmpresa({ cuentas, editable }: { cuentas: CuentaEmpresa[]
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ce-tipo">Tipo</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo(v as "PAGO_MOVIL" | "TRANSFERENCIA")}>
+              <Select
+                value={tipo}
+                onValueChange={(v) => {
+                  setTipo(v as "PAGO_MOVIL" | "TRANSFERENCIA");
+                  setNumero("");
+                }}
+              >
                 <SelectTrigger id="ce-tipo" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -273,15 +280,19 @@ export function CuentasEmpresa({ cuentas, editable }: { cuentas: CuentaEmpresa[]
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ce-numero">{tipo === "PAGO_MOVIL" ? "Celular" : "Cuenta (20 dígitos)"}</Label>
-              <Input id="ce-numero" value={numero} onChange={(e) => setNumero(e.target.value)} />
+              {tipo === "PAGO_MOVIL" ? (
+                <TelefonoVe key="tel" id="ce-numero" value={numero} onChange={setNumero} />
+              ) : (
+                <CuentaBancaria key="cta" id="ce-numero" value={numero} onChange={setNumero} />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ce-rif">RIF</Label>
-              <Input id="ce-rif" value={rif} onChange={(e) => setRif(e.target.value)} placeholder="J-12345678-9" />
+              <CedulaRif id="ce-rif" value={rif} onChange={setRif} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ce-titular">Titular</Label>
-              <Input id="ce-titular" value={titular} onChange={(e) => setTitular(e.target.value)} />
+              <Input id="ce-titular" maxLength={120} value={titular} onChange={(e) => setTitular(e.target.value)} />
             </div>
             <div className="sm:col-span-3">
               <Button onClick={agregar} disabled={guardando || !banco || !numero.trim() || !rif.trim() || titular.trim().length < 2}>
