@@ -13,7 +13,7 @@ import uuid
 from datetime import date
 
 import openpyxl
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,7 @@ from app.core.fechas import hoy_caracas
 from app.core.portal_auth import cuenta_de_sesion, get_cuenta_portal
 from app.schemas import PagoPortalCreate, en_utc
 from app.services import almacen_fotos as af
-from app.services import bancos, cartera, pagos, tasa_bcv
+from app.services import bancos, cartera, documento_cobro, pagos, tasa_bcv
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -114,6 +114,26 @@ def documentos(
         salida = [d for d in salida if d["saldoUsd"] > 0]
     salida.sort(key=lambda d: (d["vence"], d["numero"]), reverse=estado == "todos")
     return salida
+
+
+@router.get("/documentos/{documento_id}")
+def documento(documento_id: str = Path(max_length=64), cuenta: dict = Depends(get_cuenta_portal)):
+    """Una factura o nota de entrega del cliente: sus productos y sus abonos.
+    Del despacho solo si ya se entrego y cuando (sin chofer, vehiculo ni
+    ruta: eso es de la operacion interna)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        d = documento_cobro.detalle(cur, documento_id)
+    # 404 tambien si es de otro cliente: no revelar que existe.
+    if d is None or (d["empresa"], d["codigoCliente"]) not in cuenta["clientes"]:
+        raise HTTPException(404, "Documento no encontrado")
+    despacho = d.pop("despacho")
+    d.pop("rutaComercial", None)
+    d.pop("origen", None)
+    d["entrega"] = (
+        {"estado": despacho["estado"], "entregadoEn": en_utc(despacho["entregadoEn"]) if despacho["entregadoEn"] else None}
+        if despacho else None
+    )
+    return d
 
 
 def _rango(desde: date | None, hasta: date | None) -> tuple[date | None, date | None]:

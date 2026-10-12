@@ -6,7 +6,8 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ProductosDocumento } from "@/components/modules/cobranzas/productos-documento";
 import { ApiError, apiGet } from "@/lib/api-client";
 import {
   ESTADO_DOCUMENTO_META,
@@ -52,8 +53,6 @@ export default async function DocumentoCobroPage({ params }: PageProps<"/cobranz
   }
   const esAdmin = usuario?.rol === "ADMIN";
   const fichaCliente = `/cobranzas/clientes/${doc.empresa}/${encodeURIComponent(doc.codigoCliente)}`;
-  const totalUsd = doc.productos.reduce((s, p) => s + p.montoUsd, 0);
-  const totalBs = doc.productos.reduce((s, p) => s + p.montoBs, 0);
   const d = doc.despacho;
 
   return (
@@ -111,54 +110,7 @@ export default async function DocumentoCobroPage({ params }: PageProps<"/cobranz
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {doc.productos.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No hay líneas de venta para este documento (no viene del extracto o su carga se revirtió).
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead className="hidden text-right md:table-cell">Cajas</TableHead>
-                  <TableHead className="text-right">Unidades</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">Precio unit.</TableHead>
-                  <TableHead className="text-right">Total USD</TableHead>
-                  <TableHead className="hidden text-right lg:table-cell">Total Bs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {doc.productos.map((p, i) => (
-                  <TableRow key={`${p.codigo}-${i}`}>
-                    <TableCell>
-                      <span className="font-medium">{p.producto}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {p.codigo}
-                        {p.grupo && ` · ${p.grupo}`}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-right tabular-nums md:table-cell">{formatNumero(p.cajas, 2)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(p.unidades)}</TableCell>
-                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                      {p.precioUnitarioUsd != null ? formatUsd(p.precioUnitarioUsd, 2) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{formatUsd(p.montoUsd, 2)}</TableCell>
-                    <TableCell className="hidden text-right tabular-nums lg:table-cell">{formatBs(p.montoBs)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell className="font-semibold">Total del documento</TableCell>
-                  <TableCell className="hidden md:table-cell" />
-                  <TableCell className="text-right tabular-nums">{formatNumero(doc.productos.reduce((s, p) => s + p.unidades, 0))}</TableCell>
-                  <TableCell className="hidden sm:table-cell" />
-                  <TableCell className="text-right font-semibold tabular-nums">{formatUsd(totalUsd, 2)}</TableCell>
-                  <TableCell className="hidden text-right font-semibold tabular-nums lg:table-cell">{formatBs(totalBs)}</TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
+          <ProductosDocumento productos={doc.productos} />
         </CardContent>
       </Card>
 

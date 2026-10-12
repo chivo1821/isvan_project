@@ -141,6 +141,7 @@ export default async function PortalResumenPage() {
             documentos={pendientes.slice(0, 8).map((d) => ({ ...d, nombreCliente: nombres.get(`${d.empresa}:${d.codigoCliente}`) }))}
             mostrarCliente={varios}
             vacio="No tienes documentos pendientes. ¡Estás al día!"
+            enlaceDocumento={(d) => `/portal/documentos/${d.id}`}
           />
         </CardContent>
       </Card>

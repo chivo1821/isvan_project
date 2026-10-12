@@ -71,6 +71,7 @@ export default async function PortalDocumentosPage({ searchParams }: PageProps<"
           <DocumentosTabla
             documentos={documentos.map((d) => ({ ...d, nombreCliente: nombres.get(claveCliente(d)) }))}
             mostrarCliente={cuenta.clientes.length > 1 && !cliente}
+            enlaceDocumento={(d) => `/portal/documentos/${d.id}`}
             vacio={estado === "pendientes" ? "No tienes documentos por pagar." : "No hay documentos en tu cuenta."}
           />
         </CardContent>

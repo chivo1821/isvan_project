@@ -311,3 +311,9 @@ export type DetalleDocumento = {
   } | null;
   abonos: { id: string; numero: string; metodo: MetodoPago; estado: EstadoPago; fechaPago: string; montoUsd: number; automatica: boolean }[];
 };
+
+/** GET /portal/documentos/{id}: lo mismo, sin la operación interna (chofer,
+ * vehículo, ruta): del despacho solo si ya se entregó y cuándo. */
+export type DetalleDocumentoPortal = Omit<DetalleDocumento, "despacho" | "rutaComercial" | "origen"> & {
+  entrega: { estado: string; entregadoEn: string | null } | null;
+};
