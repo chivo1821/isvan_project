@@ -3,16 +3,19 @@ raiz del proyecto, o las variables de entorno), sin pasar por el portal.
 
     backend/.venv/Scripts/python.exe backend/scripts/probar_correo.py destino@correo.com
 
-Sirve para comprobar RESEND_API_KEY y CORREO_REMITENTE antes de desplegar.
-Mientras el dominio no este verificado en Resend, el remitente tiene que ser
-onboarding@resend.dev y el destino, el correo de la propia cuenta de Resend
-(si no, Resend responde 403).
+Sirve para comprobar la configuracion de correo antes de desplegar:
+- SMTP (CORREO_MODO=smtp): SMTP_SERVIDOR, SMTP_PUERTO, SMTP_USUARIO,
+  SMTP_CLAVE y, opcional, CORREO_REMITENTE.
+- Resend: RESEND_API_KEY y CORREO_REMITENTE. Mientras el dominio no este
+  verificado, el remitente tiene que ser onboarding@resend.dev y el destino,
+  el correo de la propia cuenta de Resend (si no, Resend responde 403).
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -30,6 +33,10 @@ def main() -> None:
 
     modo = correo.modo() or "(sin configurar)"
     print(f"Modo de correo: {modo}")
+    if modo == "smtp":
+        # Sin la clave: solo a donde se conecta y con que cuenta.
+        print(f"Servidor: {os.getenv('SMTP_SERVIDOR')}:{os.getenv('SMTP_PUERTO') or 587} "
+              f"| cuenta: {os.getenv('SMTP_USUARIO')} | remitente: {os.getenv('CORREO_REMITENTE') or '(la cuenta)'}")
     if modo == "consola":
         print(f"No se envia nada: queda en el log y en {correo.BUZON_LOCAL}")
     try:
@@ -41,9 +48,12 @@ def main() -> None:
         )
     except correo.CorreoNoDisponible as e:
         print(f"FALLO: {e}")
-        print("Revisa RESEND_API_KEY, CORREO_REMITENTE y que el dominio del remitente este verificado en Resend.")
+        if modo == "smtp":
+            print("Revisa SMTP_SERVIDOR, SMTP_PUERTO (587 o 465), SMTP_USUARIO y SMTP_CLAVE; el detalle esta arriba.")
+        else:
+            print("Revisa RESEND_API_KEY, CORREO_REMITENTE y que el dominio del remitente este verificado en Resend.")
         raise SystemExit(1) from None
-    print("Enviado." if modo == "resend" else "Listo.")
+    print("Enviado." if modo in ("resend", "smtp") else "Listo.")
 
 
 if __name__ == "__main__":
