@@ -297,7 +297,7 @@ def tablero(cur, where: str, params: dict, empresas_filtro: list[str], rutas_fil
             "vendeCompetencia": _de_rama(c["r"], "helados_competencia"),
             "marcas": _de_rama(c["r"], "marcas_competencia") or [],
             "poseeActivo": r(c, "posee_activo"), "activoCompetencia": r(c, "posee_activo_competencia"),
-            "posibleCliente": c["posibleCliente"], "fotos": c["fotos"],
+            "posibleCliente": c["posibleCliente"], "fotos": c["fotos"], "origen": c["origen"],
         }
         for c in vigentes
         if c["lat"] is not None

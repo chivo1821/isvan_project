@@ -2,23 +2,17 @@
 
 import Link from "next/link";
 import { CircleMarker, Popup } from "react-leaflet";
-import { API_URL } from "@/lib/api-client";
+import { EncuestaEnPopup } from "@/components/modules/censo/encuesta-popup";
 import type { PuntoTablero } from "@/lib/censo";
+import type { DefinicionFormulario } from "@/lib/formulario/motor";
 
 // Mismos colores en el mapa y en su leyenda (tablero-censo.tsx).
 export const COLOR_COMPETENCIA = { Si: "#E8492C", No: "#2563EB", otro: "#9CA3AF" } as const;
 
-const NOMBRE_FOTO: Record<string, string> = {
-  foto_fachada: "Fachada",
-  foto_activo: "Activo",
-  foto_activo2: "Activo",
-  foto_serial_activo: "Serial del activo",
-};
-
 /** Un censo en el mapa del tablero. El color dice si vende helados de la
- * competencia; el popup trae ese detalle y las fotos (las de la página por
- * la API; las importadas, del servidor de Survey123). */
-export function PuntoTableroCenso({ punto }: { punto: PuntoTablero }) {
+ * competencia; el popup trae la encuesta completa, con sus fotos (las de la
+ * página por la API; las importadas, del servidor de Survey123). */
+export function PuntoTableroCenso({ punto, definicion }: { punto: PuntoTablero; definicion: DefinicionFormulario }) {
   const color =
     punto.vendeCompetencia === "Si"
       ? COLOR_COMPETENCIA.Si
@@ -31,41 +25,17 @@ export function PuntoTableroCenso({ punto }: { punto: PuntoTablero }) {
       radius={6}
       pathOptions={{ color, weight: 1.5, fillColor: color, fillOpacity: 0.5 }}
     >
-      <Popup maxWidth={320}>
+      <Popup maxWidth={340} minWidth={280}>
         <div className="space-y-1 text-sm">
           <Link href={`/censo/${punto.id}`} className="font-medium">
             {punto.nombre ?? "Sin nombre"}
           </Link>
           <p className="text-xs text-muted-foreground">
-            {[punto.tipoCliente, punto.empresa, punto.ruta, punto.encuestador, punto.fecha].filter(Boolean).join(" · ")}
+            {[punto.encuestador, punto.fecha, punto.origen === "SURVEY123" ? "Survey123" : null]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
-          <p className="text-xs">
-            Competencia: {punto.vendeCompetencia ?? "sin dato"}
-            {punto.marcas.length ? ` (${punto.marcas.join(", ")})` : ""}
-            {punto.activoCompetencia === "Si" ? " · con activo de la competencia" : ""}
-            {punto.poseeActivo === "Si" ? " · con activo asignado" : ""}
-          </p>
-          {punto.fotos.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Sin fotos</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-1.5 pt-1">
-              {punto.fotos.map((f) => {
-                const url = f.id ? `${API_URL}/censo/fotos/${f.id}` : f.url!;
-                return (
-                  <a key={f.pregunta} href={url} target="_blank" rel="noreferrer" className="block text-xs">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- fotos de la API (con sesión) o de Survey123 */}
-                    <img
-                      src={url}
-                      alt={NOMBRE_FOTO[f.pregunta] ?? f.pregunta}
-                      loading="lazy"
-                      className="h-24 w-full rounded border object-cover"
-                    />
-                    <span className="text-muted-foreground">{NOMBRE_FOTO[f.pregunta] ?? f.pregunta}</span>
-                  </a>
-                );
-              })}
-            </div>
-          )}
+          <EncuestaEnPopup id={punto.id} definicion={definicion} />
         </div>
       </Popup>
     </CircleMarker>

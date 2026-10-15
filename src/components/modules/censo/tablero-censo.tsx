@@ -47,6 +47,7 @@ import {
   type VistaCenso,
 } from "@/lib/censo";
 import { formatNumero, formatPct } from "@/lib/constants";
+import type { DefinicionFormulario } from "@/lib/formulario/motor";
 import { BarrasConteo, BarrasPorDia } from "./graficos-censo";
 import { ListaDeCensos } from "./lista-censos";
 
@@ -98,14 +99,14 @@ function Detalle({ censo }: { censo: CensoBreve }) {
   );
 }
 
-function Mapa({ puntos }: { puntos: PuntoTablero[] }) {
+function Mapa({ puntos, definicion }: { puntos: PuntoTablero[]; definicion: DefinicionFormulario }) {
   const centro: [number, number] = puntos.length ? [puntos[0].lat, puntos[0].lng] : [10.49, -66.88];
   const limites = puntos.length > 1 ? puntos.map((p) => [p.lat, p.lng] as [number, number]) : undefined;
   if (!puntos.length) return <p className="py-10 text-center text-sm text-muted-foreground">Ningún censo con ubicación.</p>;
   return (
     <LeafletMap center={centro} zoom={12} bounds={limites} className="h-[28rem]">
       {puntos.map((p) => (
-        <PuntoTableroCenso key={p.id} punto={p} />
+        <PuntoTableroCenso key={p.id} punto={p} definicion={definicion} />
       ))}
     </LeafletMap>
   );
@@ -196,7 +197,7 @@ function Principal({ t }: { t: TableroCenso }) {
 
 // ---------- Mapa (competencia y fotos) ----------
 
-function MapaCompetencia({ t }: { t: TableroCenso }) {
+function MapaCompetencia({ t, definicion }: { t: TableroCenso; definicion: DefinicionFormulario }) {
   const m = t.mapa;
   const conFotos = t.puntos.filter((p) => p.fotos.length).length;
   return (
@@ -232,7 +233,7 @@ function MapaCompetencia({ t }: { t: TableroCenso }) {
             <CardTitle className="text-base">Mapa del censo</CardTitle>
             <CardDescription>
               {formatNumero(conFotos)} de {formatNumero(t.puntos.length)} censos con fotos. Toca un punto para ver la
-              competencia y las fotos; las importadas se abren desde el servidor de Survey123.
+              encuesta completa con sus fotos; las importadas se abren desde el servidor de Survey123.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -245,7 +246,7 @@ function MapaCompetencia({ t }: { t: TableroCenso }) {
           </div>
         </CardHeader>
         <CardContent>
-          <Mapa puntos={t.puntos} />
+          <Mapa puntos={t.puntos} definicion={definicion} />
         </CardContent>
       </Card>
     </div>
@@ -620,7 +621,9 @@ export function TableroDelCenso({
   tablero,
   lista,
   filtros,
+  definicion,
 }: {
+  definicion: DefinicionFormulario;
   tablero: TableroCenso;
   lista: ListaCensos;
   filtros: FiltrosCenso;
@@ -651,7 +654,7 @@ export function TableroDelCenso({
         <Principal t={tablero} />
       </TabsContent>
       <TabsContent value="mapa" className="mt-4">
-        {vista === "mapa" && <MapaCompetencia t={tablero} />}
+        {vista === "mapa" && <MapaCompetencia t={tablero} definicion={definicion} />}
       </TabsContent>
       <TabsContent value="avance" className="mt-4">
         <Avance t={tablero} filtros={filtros} />
