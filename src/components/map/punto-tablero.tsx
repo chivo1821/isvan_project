@@ -15,19 +15,15 @@ const NOMBRE_FOTO: Record<string, string> = {
   foto_serial_activo: "Serial del activo",
 };
 
-/** Un censo en los mapas del tablero. En "competencia" el color dice si
- * vende helados de la competencia; en "imagenes" el popup trae las fotos
- * (las de la página por la API; las importadas, del servidor de Survey123). */
-export function PuntoTableroCenso({ punto, modo }: { punto: PuntoTablero; modo: "competencia" | "imagenes" }) {
+/** Un censo en el mapa del tablero. El color dice si vende helados de la
+ * competencia; el popup trae ese detalle y las fotos (las de la página por
+ * la API; las importadas, del servidor de Survey123). */
+export function PuntoTableroCenso({ punto }: { punto: PuntoTablero }) {
   const color =
-    modo === "competencia"
-      ? punto.vendeCompetencia === "Si"
-        ? COLOR_COMPETENCIA.Si
-        : punto.vendeCompetencia === "No"
-          ? COLOR_COMPETENCIA.No
-          : COLOR_COMPETENCIA.otro
-      : punto.fotos.length
-        ? "#7C3AED"
+    punto.vendeCompetencia === "Si"
+      ? COLOR_COMPETENCIA.Si
+      : punto.vendeCompetencia === "No"
+        ? COLOR_COMPETENCIA.No
         : COLOR_COMPETENCIA.otro;
   return (
     <CircleMarker
@@ -35,7 +31,7 @@ export function PuntoTableroCenso({ punto, modo }: { punto: PuntoTablero; modo: 
       radius={6}
       pathOptions={{ color, weight: 1.5, fillColor: color, fillOpacity: 0.5 }}
     >
-      <Popup maxWidth={modo === "imagenes" ? 320 : 260}>
+      <Popup maxWidth={320}>
         <div className="space-y-1 text-sm">
           <Link href={`/censo/${punto.id}`} className="font-medium">
             {punto.nombre ?? "Sin nombre"}
@@ -43,13 +39,13 @@ export function PuntoTableroCenso({ punto, modo }: { punto: PuntoTablero; modo: 
           <p className="text-xs text-muted-foreground">
             {[punto.tipoCliente, punto.empresa, punto.ruta, punto.encuestador, punto.fecha].filter(Boolean).join(" · ")}
           </p>
-          {modo === "competencia" ? (
-            <p className="text-xs">
-              Competencia: {punto.vendeCompetencia ?? "sin dato"}
-              {punto.marcas.length ? ` (${punto.marcas.join(", ")})` : ""}
-              {punto.activoCompetencia === "Si" ? " · con activo de la competencia" : ""}
-            </p>
-          ) : punto.fotos.length === 0 ? (
+          <p className="text-xs">
+            Competencia: {punto.vendeCompetencia ?? "sin dato"}
+            {punto.marcas.length ? ` (${punto.marcas.join(", ")})` : ""}
+            {punto.activoCompetencia === "Si" ? " · con activo de la competencia" : ""}
+            {punto.poseeActivo === "Si" ? " · con activo asignado" : ""}
+          </p>
+          {punto.fotos.length === 0 ? (
             <p className="text-xs text-muted-foreground">Sin fotos</p>
           ) : (
             <div className="grid grid-cols-2 gap-1.5 pt-1">

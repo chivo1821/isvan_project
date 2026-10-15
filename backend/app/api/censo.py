@@ -504,7 +504,7 @@ def excel(f: _Filtros = Depends()):
 
 @router.get("/tablero", dependencies=[Depends(requiere_rol("ADMIN"))])
 def tablero(f: _Filtros = Depends()):
-    """Indicadores (principal, mapa, imagenes), avance contra la maestra y
+    """Indicadores (principal y mapa con fotos), avance contra la maestra y
     alertas, con los mismos filtros que la lista."""
     with get_connection() as conn, conn.cursor() as cur:
         datos = tc.tablero(cur, f.sql, f.params, f.empresa, f.ruta)

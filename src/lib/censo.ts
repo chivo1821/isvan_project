@@ -59,7 +59,7 @@ export type FiltrosCenso = {
   vista: VistaCenso;
 };
 
-export const VISTAS_CENSO = ["principal", "mapa", "imagenes", "avance", "registros"] as const;
+export const VISTAS_CENSO = ["principal", "mapa", "avance", "registros"] as const;
 export type VistaCenso = (typeof VISTAS_CENSO)[number];
 
 type Params = Record<string, string | string[] | undefined>;
@@ -79,9 +79,13 @@ export function leerFiltrosCenso(params: Params): FiltrosCenso {
     ruta: lista(params.ruta),
     q: uno(params.q) ?? "",
     pagina: Math.max(1, Number(uno(params.pagina)) || 1),
-    vista: (VISTAS_CENSO as readonly string[]).includes(uno(params.vista) ?? "")
-      ? (uno(params.vista) as VistaCenso)
-      : "principal",
+    // "imagenes" era la pestaña aparte del mapa de fotos: hoy va en "mapa".
+    vista:
+      uno(params.vista) === "imagenes"
+        ? "mapa"
+        : (VISTAS_CENSO as readonly string[]).includes(uno(params.vista) ?? "")
+          ? (uno(params.vista) as VistaCenso)
+          : "principal",
   };
 }
 

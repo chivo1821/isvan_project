@@ -1,5 +1,5 @@
 """Tablero del censo: los indicadores que el cliente tenia en Survey123
-(principal, mapa, mapa de imagenes), el avance contra la maestra y las
+(principal y mapa, que une el de imagenes), el avance contra la maestra y las
 alertas. Tambien lo que ve cada vendedor de sus rutas.
 
 Reglas:

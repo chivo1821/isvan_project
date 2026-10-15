@@ -98,14 +98,14 @@ function Detalle({ censo }: { censo: CensoBreve }) {
   );
 }
 
-function Mapa({ puntos, modo }: { puntos: PuntoTablero[]; modo: "competencia" | "imagenes" }) {
+function Mapa({ puntos }: { puntos: PuntoTablero[] }) {
   const centro: [number, number] = puntos.length ? [puntos[0].lat, puntos[0].lng] : [10.49, -66.88];
   const limites = puntos.length > 1 ? puntos.map((p) => [p.lat, p.lng] as [number, number]) : undefined;
   if (!puntos.length) return <p className="py-10 text-center text-sm text-muted-foreground">Ningún censo con ubicación.</p>;
   return (
     <LeafletMap center={centro} zoom={12} bounds={limites} className="h-[28rem]">
       {puntos.map((p) => (
-        <PuntoTableroCenso key={p.id} punto={p} modo={modo} />
+        <PuntoTableroCenso key={p.id} punto={p} />
       ))}
     </LeafletMap>
   );
@@ -194,10 +194,11 @@ function Principal({ t }: { t: TableroCenso }) {
   );
 }
 
-// ---------- Mapa (competencia) ----------
+// ---------- Mapa (competencia y fotos) ----------
 
 function MapaCompetencia({ t }: { t: TableroCenso }) {
   const m = t.mapa;
+  const conFotos = t.puntos.filter((p) => p.fotos.length).length;
   return (
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2">
@@ -226,8 +227,14 @@ function MapaCompetencia({ t }: { t: TableroCenso }) {
         </Grafico>
       </div>
       <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">Competencia en el mapa</CardTitle>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
+          <div>
+            <CardTitle className="text-base">Mapa del censo</CardTitle>
+            <CardDescription>
+              {formatNumero(conFotos)} de {formatNumero(t.puntos.length)} censos con fotos. Toca un punto para ver la
+              competencia y las fotos; las importadas se abren desde el servidor de Survey123.
+            </CardDescription>
+          </div>
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
             {LEYENDA_COMPETENCIA.map((l) => (
               <span key={l.texto} className="flex items-center gap-1.5">
@@ -238,30 +245,10 @@ function MapaCompetencia({ t }: { t: TableroCenso }) {
           </div>
         </CardHeader>
         <CardContent>
-          <Mapa puntos={t.puntos} modo="competencia" />
+          <Mapa puntos={t.puntos} />
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// ---------- Mapa de imágenes ----------
-
-function MapaImagenes({ t }: { t: TableroCenso }) {
-  const conFotos = t.puntos.filter((p) => p.fotos.length);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Mapa de imágenes</CardTitle>
-        <CardDescription>
-          {formatNumero(conFotos.length)} de {formatNumero(t.puntos.length)} censos con fotos. Toca un punto para verlas;
-          las importadas se abren desde el servidor de Survey123.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Mapa puntos={conFotos} modo="imagenes" />
-      </CardContent>
-    </Card>
   );
 }
 
@@ -627,7 +614,7 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
 // ---------- Contenedor ----------
 
 /** El tablero del censo, con las pestañas que el cliente tenía en Survey123
- * (Principal, Mapa, Mapa de imágenes) más Avance y Registros. La pestaña
+ * (Principal y Mapa, que une el mapa y el de imágenes) más Avance y Registros. La pestaña
  * va en la URL sin volver a pedir la página: todos los datos ya llegaron. */
 export function TableroDelCenso({
   tablero,
@@ -652,7 +639,6 @@ export function TableroDelCenso({
       <TabsList className="flex-wrap">
         <TabsTrigger value="principal">Principal</TabsTrigger>
         <TabsTrigger value="mapa">Mapa</TabsTrigger>
-        <TabsTrigger value="imagenes">Mapa de imágenes</TabsTrigger>
         <TabsTrigger value="avance">
           Avance
           {alertas > 0 && (
@@ -666,9 +652,6 @@ export function TableroDelCenso({
       </TabsContent>
       <TabsContent value="mapa" className="mt-4">
         {vista === "mapa" && <MapaCompetencia t={tablero} />}
-      </TabsContent>
-      <TabsContent value="imagenes" className="mt-4">
-        {vista === "imagenes" && <MapaImagenes t={tablero} />}
       </TabsContent>
       <TabsContent value="avance" className="mt-4">
         <Avance t={tablero} filtros={filtros} />
