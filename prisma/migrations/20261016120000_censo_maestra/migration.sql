@@ -12,7 +12,8 @@ CREATE TYPE "AccionCensoCliente" AS ENUM ('CREADO', 'COMPLETADO', 'EXISTENTE', '
 -- AlterTable
 ALTER TABLE "Censo" ADD COLUMN "origen" "OrigenCenso" NOT NULL DEFAULT 'PAGINA',
 ADD COLUMN "externoId" TEXT,
-ADD COLUMN "duplicadoDeId" TEXT;
+ADD COLUMN "duplicadoDeId" TEXT,
+ADD COLUMN "descartadoEn" TIMESTAMP(3);
 
 -- CreateTable
 CREATE TABLE "CensoCliente" (

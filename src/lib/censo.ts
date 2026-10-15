@@ -165,3 +165,22 @@ export function avisoDeEnvio(r: ResultadoEnvioCenso): { titulo: string; detalle?
     return { titulo: "Censo enviado", detalle: "El cliente quedó creado en el sistema.", revisar: false };
   return { titulo: "Censo enviado", revisar: false };
 }
+
+/** Resumen de importar el histórico de Survey123 (vista previa o importación). */
+export type ResumenImportacion = {
+  filas: number;
+  errores: string[];
+  totalErrores: number;
+  yaImportadas: number;
+  nuevas: number;
+  sinUbicacion: number;
+  ubicacionInvalida: number;
+  invertidas: number;
+  duplicados: number;
+  ejemplosDuplicados: { smid: string; nombre: string | null }[];
+  posiblesClientes: number;
+  sinCodigo: number;
+  clientes: Record<AccionCensoCliente, number>;
+  revisar: { smid: string; empresa: EmpresaMaestra; codigo: string; motivo: string }[];
+  encuestadoresSinUsuario: Record<string, number>;
+};

@@ -749,6 +749,9 @@ model Censo {
   duplicadoDeId  String?
   duplicadoDe    Censo?      @relation("CensoDuplicado", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
   duplicados     Censo[]     @relation("CensoDuplicado")
+  // Descartado por el ADMIN (un duplicado): sale de todo, pero la fila
+  // queda para que reimportar el historico no lo traiga de vuelta.
+  descartadoEn   DateTime?
 
   fotos    CensoFoto[]
   clientes CensoCliente[]

@@ -138,6 +138,55 @@ def mismo_cliente(a: str | None, b: str | None) -> bool:
     return SequenceMatcher(None, na, nb).ratio() >= MISMO_CLIENTE
 
 
+# Palabras que no distinguen a un negocio de otro: el rubro, la forma
+# juridica, sus abreviaturas en la maestra ("PAN Y PAST", "FRIG", "COML") y
+# conectores. Lo que queda es el nombre propio ("OFANTINA", "LAS BRISAS").
+_GENERICAS = frozenset("""
+    A AL C CA CIA COMPANIA DE DEL E EL EN F FP LA LAS LO LOS P S SA SRL RL Y
+    ABASTO ABASTOS ABAST AGROPEC AGROPECUARIA ALMACEN AUTOMERC AUTOMERCADO BAKERY BAR BODEGA BODEGON CAFE
+    CAFETERIA CARNICERIA CHARCUT CHARCUTERIA CLUB COMERCIAL COMERCIALIZADORA COML CORP CORPORACION DELI
+    DELICATESES DELICATESSEN DISTR DISTRIBUCIONES DISTRIBUIDORA EMPRENDIMIENTO EXPRES EXPRESS FARMACIA
+    FARMACIAS FOOD FOODS FRIG FRIGORIFICO FRUTERIA GRUPO HELADERIA HELADOS INV INVERSIONES KIOSCO KIOSKO
+    LEGUMBRES LICORERIA LICORES LUNCH LUNCHERIA MARKET MERCADO MINI MINIMARKET MULTISERVICIOS PAN PAND
+    PANADERIA PANDERIA PAST PASTELERIA PANIFICADORA REST RESTAURANT RESTAURANTE SERVICIOS SUPER
+    SUPERMERCADO SUPERMERCADOS TIENDA VIVERES
+    CENTRO ESTE GRAN NORTE OESTE SUR JOSE MARIA
+""".split())
+_ANIO = re.compile(r"^(19|20)\d\d$")
+
+
+def _distintivas(nombre: str | None) -> list[str]:
+    return [p for p in nombre_comparable(nombre).split() if p not in _GENERICAS and not _ANIO.match(p)]
+
+
+def _misma_palabra(a: str, b: str) -> bool:
+    if a == b:
+        return len(a) >= 2
+    corta, larga = sorted((a, b), key=len)
+    if len(corta) < 3 or corta.isdigit() or larga.isdigit():
+        return False
+    # Errores de tipeo ("EDELVYSE" y "EDELVAYS", "OTTU" y "OTU") y
+    # abreviaturas ("HIGU" por "HIGUEROTE").
+    if SequenceMatcher(None, a, b).ratio() >= MISMO_CLIENTE:
+        return True
+    return len(corta) >= 4 and larga.startswith(corta)
+
+
+def mismo_negocio(a: str | None, b: str | None) -> bool:
+    """El nombre que escribe el vendedor en el censo (el comercial, a mano)
+    contra la razon social de la maestra o de ventas: comparten una palabra
+    distintiva. "panadería la ofantina" y "PAN Y PAST OFANTINA C A" son el
+    mismo; "Licoreria Los Compadres" y "AUTOMERC LOS DOS COMPAÑEROS", no."""
+    if mismo_cliente(a, b):
+        return True
+    pa, pb = _distintivas(a), _distintivas(b)
+    if any(_misma_palabra(x, y) for x in pa for y in pb):
+        return True
+    # Palabras pegadas o partidas: "red vital" y "REDVITAL".
+    juntas_a, juntas_b = "".join(pa), "".join(pb)
+    return any(len(p) >= 5 and p in juntas_b for p in pa) or any(len(p) >= 5 and p in juntas_a for p in pb)
+
+
 # ---------- Lectura ----------
 
 

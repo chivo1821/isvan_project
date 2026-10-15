@@ -11,7 +11,22 @@ type Foto = DetalleCenso["fotos"][number];
 function ValorRespuesta({ pregunta: p, valor, definicion, fotos }: { pregunta: Pregunta; valor: Valor; definicion: DefinicionFormulario; fotos: Foto[] }) {
   if (p.type === "image") {
     const foto = fotos.find((f) => f.pregunta === p.name);
-    if (!foto) return <span className="text-muted-foreground">Sin foto</span>;
+    if (!foto) {
+      // Un censo importado de Survey123: la foto quedó allá, como enlace.
+      if (typeof valor === "string" && valor.startsWith("https://"))
+        return (
+          <a
+            href={valor}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
+          >
+            Ver en Survey123
+            <ExternalLinkIcon className="size-3.5" />
+          </a>
+        );
+      return <span className="text-muted-foreground">Sin foto</span>;
+    }
     const url = `${API_URL}/censo/fotos/${foto.id}`;
     return (
       <a href={url} target="_blank" rel="noreferrer" className="inline-block">
