@@ -266,7 +266,9 @@ def leer(contenido: bytes, nombre: str) -> Lectura:
             valor = _valor(p, cruda.get(p["name"]))
             if valor is not None:
                 respuestas[p["name"]] = valor
-        filas.append(Fila(PREFIJO_EXTERNO + externo, respuestas, lat, lng, *instantes, invertida=invertida, invalida=invalida))
+        filas.append(
+            Fila(PREFIJO_EXTERNO + externo, respuestas, lat, lng, *instantes, invertida=invertida, invalida=invalida)
+        )
     return Lectura(filas=filas, errores=errores)
 
 
@@ -288,7 +290,9 @@ def _usuario_tecnico(cur) -> str:
 
 
 def _usuarios_por_nombre(cur) -> dict[str, str]:
-    cur.execute('SELECT "id", "nombre" FROM "Usuario" WHERE "rol" = \'VENDEDOR\' AND "id" <> %s', (USUARIO_TECNICO["id"],))
+    cur.execute(
+        'SELECT "id", "nombre" FROM "Usuario" WHERE "rol" = \'VENDEDOR\' AND "id" <> %s', (USUARIO_TECNICO["id"],)
+    )
     por_nombre: dict[str, list[str]] = {}
     for u in cur.fetchall():
         por_nombre.setdefault(nombre_comparable(u["nombre"]), []).append(u["id"])
