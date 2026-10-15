@@ -23,7 +23,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
@@ -35,7 +35,6 @@ from app.core.fechas import a_caracas, ahora_utc
 from app.schemas import en_utc
 from app.services import almacen_fotos as af
 from app.services import censo_clientes as cc
-from app.services import censo_survey123 as s123
 from app.services import censo_tablero as tc
 from app.services import formulario as fm
 from app.services import xlsform as xf
@@ -607,42 +606,6 @@ def descartar_duplicados(datos: Descarte):
         descartados = cur.rowcount
         conn.commit()
     return {"descartados": descartados}
-
-
-# ---------- Historico de Survey123 (ADMIN) ----------
-
-# El limite de Vercel por request; la exportacion real pesa ~1 MB.
-IMPORTACION_MAXIMA_BYTES = 4_500_000
-
-
-def _leer_exportacion(archivo: UploadFile) -> s123.Lectura:
-    contenido = archivo.file.read()
-    if len(contenido) > IMPORTACION_MAXIMA_BYTES:
-        raise HTTPException(413, "El archivo pesa más de 4,5 MB")
-    return s123.leer(contenido, archivo.filename or "")
-
-
-@router.post("/importar/preview", dependencies=[Depends(requiere_rol("ADMIN"))])
-def importar_preview(archivo: UploadFile = File(...)):
-    """Lo que pasaria al importar, sin guardar nada: se importa de verdad
-    dentro de una transaccion que se deshace, asi los numeros (duplicados,
-    clientes que se crearian, codigos a revisar) son exactos."""
-    lectura = _leer_exportacion(archivo)
-    with get_connection() as conn, conn.cursor() as cur:
-        resumen = s123.importar(cur, lectura)
-        conn.rollback()
-    return resumen
-
-
-@router.post("/importar", dependencies=[Depends(requiere_rol("ADMIN"))])
-def importar(archivo: UploadFile = File(...)):
-    """Importa los censos nuevos del archivo (los que ya estan, por su smid,
-    no se tocan) y crea o completa sus clientes."""
-    lectura = _leer_exportacion(archivo)
-    with get_connection() as conn, conn.cursor() as cur:
-        resumen = s123.importar(cur, lectura)
-        conn.commit()
-    return resumen
 
 
 # Va al final: /{censo_id} atraparia cualquier ruta de arriba (fotos, mios,

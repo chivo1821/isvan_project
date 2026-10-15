@@ -183,25 +183,6 @@ export function avisoDeEnvio(r: ResultadoEnvioCenso): { titulo: string; detalle?
   return { titulo: "Censo enviado", revisar: false };
 }
 
-/** Resumen de importar el histórico de Survey123 (vista previa o importación). */
-export type ResumenImportacion = {
-  filas: number;
-  errores: string[];
-  totalErrores: number;
-  yaImportadas: number;
-  nuevas: number;
-  sinUbicacion: number;
-  ubicacionInvalida: number;
-  invertidas: number;
-  duplicados: number;
-  ejemplosDuplicados: { smid: string; nombre: string | null }[];
-  posiblesClientes: number;
-  sinCodigo: number;
-  clientes: Record<AccionCensoCliente, number>;
-  revisar: { smid: string; empresa: EmpresaMaestra; codigo: string; motivo: string }[];
-  encuestadoresSinUsuario: Record<string, number>;
-};
-
 // ---------- Tablero (GET /censo/tablero) ----------
 
 export type Conteo = { clave: string; n: number };
@@ -224,6 +205,7 @@ export type PuntoTablero = {
   activoCompetencia: string | null;
   posibleCliente: boolean;
   fotos: FotoPunto[];
+  origen: "PAGINA" | "SURVEY123";
 };
 
 export type CensoBreve = {

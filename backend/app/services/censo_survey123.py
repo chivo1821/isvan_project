@@ -18,6 +18,9 @@ Rarezas del archivo real:
 
 Reimportar es seguro: cada censo se identifica por su smid (Censo.externoId)
 y los que ya estan no se tocan.
+
+No es una funcion de la pagina: se corre una vez por base con
+scripts/importar_survey123.py.
 """
 
 from __future__ import annotations
