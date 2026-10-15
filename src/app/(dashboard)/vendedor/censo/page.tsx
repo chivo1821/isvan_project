@@ -1,9 +1,10 @@
 import { ClipboardListIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { FormularioCenso } from "@/components/modules/censo/formulario-censo";
+import { PendientesDelVendedor } from "@/components/modules/censo/pendientes-vendedor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiGet } from "@/lib/api-client";
-import type { MiCenso } from "@/lib/censo";
+import type { MiCenso, PendientesVendedor } from "@/lib/censo";
 import { formatDateTime } from "@/lib/constants";
 import type { DefinicionFormulario } from "@/lib/formulario/motor";
 import { getUsuarioActual } from "@/lib/session";
@@ -11,10 +12,11 @@ import { getUsuarioActual } from "@/lib/session";
 /** El censo de clientes, como se llenaba en Survey123: la definición sale
  * del XLSForm (backend/app/formularios/censo.json). */
 export default async function CensoVendedorPage() {
-  const [definicion, mios, usuario] = await Promise.all([
+  const [definicion, mios, usuario, pendientes] = await Promise.all([
     apiGet<DefinicionFormulario>("/censo/formulario"),
     apiGet<MiCenso[]>("/censo/mios"),
     getUsuarioActual(),
+    apiGet<PendientesVendedor>("/vendedor/censo/pendientes"),
   ]);
 
   return (
@@ -23,6 +25,8 @@ export default async function CensoVendedorPage() {
         title={definicion.title}
         subtitle="Registro de clientes nuevos y existentes. Los campos con * son obligatorios."
       />
+
+      <PendientesDelVendedor datos={pendientes} />
 
       <FormularioCenso definicion={definicion} nombreUsuario={usuario?.nombre ?? ""} />
 

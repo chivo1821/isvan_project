@@ -36,7 +36,7 @@ export type ListaCensos = {
   porPagina: number;
   censos: CensoResumen[];
   puntos: { id: string; lat: number; lng: number; nombreComercio: string | null; tipoCliente: string | null }[];
-  opciones: { encuestador: string[]; tipoCliente: string[]; empresa: string[] };
+  opciones: { encuestador: string[]; tipoCliente: string[]; empresa: string[]; ruta: string[] };
 };
 
 export type DetalleCenso = Omit<CensoResumen, "fotos"> & {
@@ -52,9 +52,15 @@ export type FiltrosCenso = {
   encuestador: string[];
   tipoCliente: string[];
   empresa: string[];
+  ruta: string[];
   q: string;
   pagina: number;
+  /** Pestaña del tablero (no es un filtro de la API). */
+  vista: VistaCenso;
 };
+
+export const VISTAS_CENSO = ["principal", "mapa", "imagenes", "avance", "registros"] as const;
+export type VistaCenso = (typeof VISTAS_CENSO)[number];
 
 type Params = Record<string, string | string[] | undefined>;
 const lista = (v: string | string[] | undefined) => (v == null ? [] : (Array.isArray(v) ? v : [v]).filter(Boolean));
@@ -70,8 +76,12 @@ export function leerFiltrosCenso(params: Params): FiltrosCenso {
     encuestador: lista(params.encuestador),
     tipoCliente: lista(params.tipo_cliente),
     empresa: lista(params.empresa),
+    ruta: lista(params.ruta),
     q: uno(params.q) ?? "",
     pagina: Math.max(1, Number(uno(params.pagina)) || 1),
+    vista: (VISTAS_CENSO as readonly string[]).includes(uno(params.vista) ?? "")
+      ? (uno(params.vista) as VistaCenso)
+      : "principal",
   };
 }
 
@@ -83,8 +93,11 @@ export function queryCenso(f: FiltrosCenso, conPagina = true): string {
   f.encuestador.forEach((v) => q.append("encuestador", v));
   f.tipoCliente.forEach((v) => q.append("tipo_cliente", v));
   f.empresa.forEach((v) => q.append("empresa", v));
+  f.ruta.forEach((v) => q.append("ruta", v));
   if (f.q.trim()) q.set("q", f.q.trim());
   if (conPagina && f.pagina > 1) q.set("pagina", String(f.pagina));
+  // La pestaña solo va en la URL de la página (la API la ignora).
+  if (conPagina && f.vista !== "principal") q.set("vista", f.vista);
   return q.toString();
 }
 
@@ -183,4 +196,106 @@ export type ResumenImportacion = {
   clientes: Record<AccionCensoCliente, number>;
   revisar: { smid: string; empresa: EmpresaMaestra; codigo: string; motivo: string }[];
   encuestadoresSinUsuario: Record<string, number>;
+};
+
+// ---------- Tablero (GET /censo/tablero) ----------
+
+export type Conteo = { clave: string; n: number };
+
+export type FotoPunto = { pregunta: string; id?: string; url?: string };
+
+export type PuntoTablero = {
+  id: string;
+  lat: number;
+  lng: number;
+  nombre: string | null;
+  tipoCliente: string | null;
+  empresa: string | null;
+  ruta: string | null;
+  encuestador: string | null;
+  fecha: string;
+  vendeCompetencia: string | null;
+  marcas: string[];
+  poseeActivo: string | null;
+  activoCompetencia: string | null;
+  posibleCliente: boolean;
+  fotos: FotoPunto[];
+};
+
+export type CensoBreve = {
+  id: string;
+  nombre: string | null;
+  encuestador: string | null;
+  ruta: string | null;
+  fecha: string;
+  origen: "PAGINA" | "SURVEY123";
+};
+
+export type FilaAvance = { maestra: number; censados: number; porCensar: number; avance: number | null };
+
+export type ClientePorCensar = {
+  empresa: EmpresaMaestra;
+  codigo: string;
+  razonSocial: string;
+  ruta: string;
+  diaVisita: string | null;
+  direccion: string | null;
+  zona: string | null;
+  vendedores: string[];
+};
+
+export type TableroCenso = {
+  principal: {
+    visitas: number;
+    duplicados: number;
+    porDia: Conteo[];
+    porVendedor: Conteo[];
+    porRuta: Conteo[];
+    porTipoCliente: Conteo[];
+    poseeActivos: Conteo[];
+    propiedadActivo: Conteo[];
+    tablaVendedores: {
+      vendedor: string;
+      visitas: number;
+      existentes: number;
+      nuevos: number;
+      conActivo: number;
+      conCompetencia: number;
+    }[];
+  };
+  mapa: { vendeCompetencia: Conteo[]; marcas: Conteo[]; otrasMarcas: Conteo[]; activosCompetencia: Conteo[] };
+  puntos: PuntoTablero[];
+  avance: {
+    conMaestra: EmpresaMaestra[];
+    porEmpresa: (FilaAvance & { empresa: EmpresaMaestra })[];
+    porRuta: (FilaAvance & { empresa: EmpresaMaestra; ruta: string; vendedores: string[] })[];
+    porVendedor: (FilaAvance & { vendedor: string; rutas: string[] })[];
+    porCensarTotal: number;
+    porCensar: ClientePorCensar[];
+    creados: number;
+    completados: number;
+    pendientesVentasTotal: number;
+    pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; accion: AccionCensoCliente })[];
+    posiblesClientesTotal: number;
+    posiblesClientes: (CensoBreve & { rif: string | null; telefono: string | null; lat: number | null; lng: number | null })[];
+  };
+  alertas: {
+    duplicadosTotal: number;
+    duplicados: (CensoBreve & { claves: string[]; duplicadoDe: Partial<CensoBreve> & { id: string } })[];
+    mismoCodigoLejosTotal: number;
+    mismoCodigoLejos: { empresa: EmpresaMaestra; codigo: string; metros: number | null; censos: CensoBreve[] }[];
+    revisarTotal: number;
+    revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
+    sinCodigoTotal: number;
+    sinCodigo: (CensoBreve & { tipoCliente: string | null })[];
+  };
+};
+
+/** GET /vendedor/censo/pendientes: lo que le falta al vendedor en sus rutas. */
+export type PendientesVendedor = {
+  rutas: { empresa: EmpresaMaestra; ruta: string }[];
+  conMaestra: EmpresaMaestra[];
+  porCensar: ClientePorCensar[];
+  pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string })[];
+  revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
 };
