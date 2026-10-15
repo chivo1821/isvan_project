@@ -87,3 +87,51 @@ export function queryCenso(f: FiltrosCenso, conPagina = true): string {
   if (conPagina && f.pagina > 1) q.set("pagina", String(f.pagina));
   return q.toString();
 }
+
+// ---------- Maestra de clientes (por empresa) ----------
+
+export type EmpresaMaestra = "ISVAN" | "TRALOG";
+
+export type ResumenMaestra = {
+  hoja: string;
+  filaEncabezado: number;
+  clientes: number;
+  /** En la ruta 77 (dados de baja): fuera de "por censar". */
+  deBaja: number;
+  activos: number;
+  repetidasIdenticas: number;
+  conVariosActivos: number;
+  repetidosDistintos: number;
+  porRuta: Record<string, number>;
+  porTipo: Record<string, number>;
+  avisos: string[];
+};
+
+export type ContrasteMaestra = {
+  clientesConVentas: number;
+  codigosEnComun: number;
+  mismoCliente: number;
+  nombreDistinto: { codigo: string; nombreVentas: string; nombreMaestra: string }[];
+  nombreDistintoTotal: number;
+  rutaDistintaTotal: number;
+  conVentasSinMaestra: { codigo: string; nombre: string; ruta: string }[];
+  conVentasSinMaestraTotal: number;
+  soloEnLaMaestra: number;
+};
+
+export type MaestraCarga = {
+  id: string;
+  archivo: string;
+  filas: number;
+  resumen: ResumenMaestra & { contraste?: ContrasteMaestra };
+  subidaEn: string;
+  subidaPor: string | null;
+};
+
+export type MaestrasVigentes = Record<EmpresaMaestra, MaestraCarga | null>;
+
+export type PreviewMaestra = {
+  resumen: ResumenMaestra;
+  contraste: ContrasteMaestra;
+  vigente: MaestraCarga | null;
+};

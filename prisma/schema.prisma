@@ -155,6 +155,7 @@ model Usuario {
   redesViales           RedVialCarga[]        @relation("RedVialCargadaPor")
   metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
   censos                Censo[]               @relation("CensosLlenados")
+  maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
   configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta            VendedorRuta[]
@@ -246,6 +247,7 @@ model Cliente {
   despachos         Despacho[]                  @relation("DespachoDestino")
   distanciasAlmacen DistanciaCliente[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+  censos            CensoCliente[]
 
   @@unique([empresa, codigo])
 }
@@ -720,11 +722,11 @@ model RutaCalculada {
 // y las respuestas tal cual (solo las relevantes), mas unas columnas sacadas
 // de ellas para listar y filtrar sin abrir el JSON.
 model Censo {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   formulario     String
   version        String
   usuarioId      String
-  usuario        Usuario  @relation("CensosLlenados", fields: [usuarioId], references: [id])
+  usuario        Usuario     @relation("CensosLlenados", fields: [usuarioId], references: [id])
   respuestas     Json
   lat            Float?
   lng            Float?
@@ -736,12 +738,108 @@ model Censo {
   // Del telefono: cuando se abrio el formulario y cuando se envio.
   iniciadoEn     DateTime
   terminadoEn    DateTime
-  recibidoEn     DateTime @default(now())
+  recibidoEn     DateTime    @default(now())
+  // PAGINA: lleno aca. SURVEY123: importado del historico; externoId es su
+  // id alla, para que reimportar el mismo archivo no duplique.
+  origen         OrigenCenso @default(PAGINA)
+  externoId      String?     @unique
+  // Otro censo anterior del mismo cliente en el mismo lugar (ver
+  // backend/app/services/censo_clientes.py): no cuenta en los indicadores y
+  // queda listado para borrarlo.
+  duplicadoDeId  String?
+  duplicadoDe    Censo?      @relation("CensoDuplicado", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados     Censo[]     @relation("CensoDuplicado")
 
-  fotos CensoFoto[]
+  fotos    CensoFoto[]
+  clientes CensoCliente[]
 
   @@index([formulario, recibidoEn])
   @@index([usuarioId, recibidoEn])
+  @@index([duplicadoDeId])
+}
+
+enum OrigenCenso {
+  PAGINA
+  SURVEY123
+}
+
+// Que hizo el censo con cada cliente que nombra (uno por empresa; AMBAS son
+// dos filas). Un posible cliente (nuevo que no desea comprar) no tiene filas.
+enum AccionCensoCliente {
+  CREADO // no existia en Clientes y se creo
+  COMPLETADO // existia y se le llenaron campos vacios (coordenadas, ruta)
+  EXISTENTE // existia completo: no se toco
+  REVISAR // no se toco: el codigo parece equivocado (ver motivo)
+}
+
+model CensoCliente {
+  id          String             @id @default(cuid())
+  censoId     String
+  censo       Censo              @relation(fields: [censoId], references: [id], onDelete: Cascade)
+  empresa     Empresa
+  // Sin ceros a la izquierda, como en ventas.
+  codigo      String
+  // Contra la maestra vigente y los clientes con ventas, al procesarlo.
+  enMaestra   Boolean            @default(false)
+  enVentas    Boolean            @default(false)
+  clienteId   String?
+  cliente     Cliente?           @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  accion      AccionCensoCliente
+  motivo      String?
+  procesadoEn DateTime           @default(now())
+
+  @@unique([censoId, empresa])
+  @@index([empresa, codigo])
+}
+
+// ---------- Maestra de clientes ----------
+//
+// El padron que el cliente mantiene aparte del sistema de ventas, por
+// empresa. Cada carga es una foto completa: vale la ultima de cada empresa
+// (ver backend/app/services/maestra_import.py).
+model MaestraCarga {
+  id          String   @id @default(cuid())
+  empresa     Empresa
+  archivo     String
+  filas       Int
+  resumen     Json
+  subidaEn    DateTime @default(now())
+  subidaPorId String?
+  subidaPor   Usuario? @relation("MaestrasSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
+
+  clientes MaestraCliente[]
+
+  @@index([empresa, subidaEn])
+}
+
+model MaestraCliente {
+  id      String       @id @default(cuid())
+  cargaId String
+  carga   MaestraCarga @relation(fields: [cargaId], references: [id], onDelete: Cascade)
+  empresa Empresa
+  // Sin ceros a la izquierda, como en ventas.
+  codigo  String
+
+  razonSocial  String
+  // "5", "12"... ("77" son los dados de baja: fuera de "por censar").
+  ruta         String?
+  diaVisita    String?
+  frecuencia   String?
+  secuencia    String?
+  direccion    String?
+  condicion    String?
+  tipoCliente  String?
+  listaPrecio  String?
+  zona         String?
+  observacion  String?
+  // El activo que trae el archivo: se guarda pero todavia no se usa.
+  activoCodigo String?
+  activoTipo   String?
+  activoMarca  String?
+
+  @@unique([cargaId, codigo])
+  @@index([empresa, codigo])
+  @@index([empresa, ruta])
 }
 
 // Las fotos van en el almacenamiento de archivos (ver

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { ListaDeCensos } from "@/components/modules/censo/lista-censos";
+import { MaestraDialog } from "@/components/modules/censo/maestra-dialog";
 import { apiGet } from "@/lib/api-client";
 import { leerFiltrosCenso, queryCenso, type ListaCensos } from "@/lib/censo";
 
@@ -15,6 +16,7 @@ export default async function CensosPage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Censo de clientes"
         subtitle="Los censos que envían los vendedores desde la app, con su ubicación y sus fotos."
+        actions={<MaestraDialog />}
       />
       <ListaDeCensos datos={datos} filtros={filtros} />
     </div>

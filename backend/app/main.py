@@ -25,6 +25,7 @@ from app.api import (
     despachos,
     historial,
     indicadores,
+    maestra,
     motorizados,
     portal,
     portal_auth,
@@ -110,6 +111,8 @@ async def dato_invalido(request: Request, exc: psycopg.DataError):
 ROUTERS_PUBLICOS = [auth.router, portal_auth.router, portal.router, cobranzas.tareas_router]
 ROUTERS_PROTEGIDOS = [
     almacenes.router,
+    # Antes que censo.router: si no, /censo/{censo_id} se queda con /censo/maestra.
+    maestra.router,
     censo.router,
     clientes.router,
     usuarios.router,
