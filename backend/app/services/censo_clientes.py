@@ -249,7 +249,7 @@ def _ubicacion(censo: dict) -> tuple[float | None, float | None]:
     return lat, lng
 
 
-def _procesar_clave(ctx: Contexto, censo: dict, clave: Clave) -> dict:
+def _procesar_clave(ctx: Contexto, censo: dict, clave: Clave, confiar_en_codigo: bool = False) -> dict:
     cur = ctx.cur
     respuestas = censo["respuestas"]
     nombre = _dato(respuestas.get("nombre_comercio")) or censo.get("nombreComercio") or ""
@@ -258,7 +258,9 @@ def _procesar_clave(ctx: Contexto, censo: dict, clave: Clave) -> dict:
     cliente = ctx.clientes(clave.empresa).get(clave.codigo)
 
     motivo = clave.revisar
-    if not motivo:
+    # confiar_en_codigo: alguien confirmo desde Clientes que el codigo es el
+    # correcto aunque el nombre no se parezca (sucursal, cambio de dueño...).
+    if not motivo and not confiar_en_codigo:
         referencias = [n for n in (maestra and maestra["razonSocial"], venta and venta["nombre"]) if n]
         if referencias and not any(mismo_negocio(nombre, r) for r in referencias):
             de = "la maestra" if maestra else "ventas"
@@ -325,10 +327,10 @@ def _procesar_clave(ctx: Contexto, censo: dict, clave: Clave) -> dict:
             "enMaestra": maestra is not None, "enVentas": venta is not None}
 
 
-def procesar(cur, censo_id: str, ctx: Contexto | None = None) -> dict:
-    """Procesa un censo recien guardado: duplicado y clientes. Se llama en
-    la misma transaccion que lo inserta. Para procesar muchos, pasar el mismo
-    Contexto y hacerlo en orden de terminadoEn."""
+def procesar(cur, censo_id: str, ctx: Contexto | None = None, confiar_en_codigo: bool = False) -> dict:
+    """Procesa un censo recien guardado (o recien corregido): duplicado y
+    clientes. Se llama en la misma transaccion que lo inserta. Para procesar
+    muchos, pasar el mismo Contexto y hacerlo en orden de terminadoEn."""
     ctx = ctx or Contexto(cur)
     cur.execute(
         'SELECT "id", "respuestas", "lat", "lng", "terminadoEn", "nombreComercio", "ruta" FROM "Censo" WHERE "id" = %s',
@@ -344,7 +346,7 @@ def procesar(cur, censo_id: str, ctx: Contexto | None = None) -> dict:
         cur.execute('UPDATE "Censo" SET "duplicadoDeId" = %s WHERE "id" = %s', (duplicado_de, censo_id))
     else:
         ctx.registrar(censo, claves, rif)
-    clientes = [_procesar_clave(ctx, censo, c) for c in claves]
+    clientes = [_procesar_clave(ctx, censo, c, confiar_en_codigo) for c in claves]
     return {"duplicadoDe": duplicado_de, "posibleCliente": posible, "clientes": clientes}
 
 

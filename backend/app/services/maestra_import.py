@@ -172,6 +172,22 @@ def _misma_palabra(a: str, b: str) -> bool:
     return len(corta) >= 4 and larga.startswith(corta)
 
 
+def palabras_distintivas(nombre: str | None) -> list[str]:
+    """Las palabras que distinguen a un negocio (sin rubro, forma juridica
+    ni conectores). Para comparar muchos nombres, calcularlas una vez."""
+    return _distintivas(nombre)
+
+
+def palabra_comun_mas_larga(pa: list[str], pb: list[str]) -> int:
+    """El largo de la palabra distintiva mas larga (no numerica) que
+    comparten dos nombres, ya pasados por palabras_distintivas: "OFANTINA"
+    pesa mas que "PG" o "22"."""
+    return max(
+        (min(len(x), len(y)) for x in pa for y in pb if not x.isdigit() and _misma_palabra(x, y)),
+        default=0,
+    )
+
+
 def mismo_negocio(a: str | None, b: str | None) -> bool:
     """El nombre que escribe el vendedor en el censo (el comercial, a mano)
     contra la razon social de la maestra o de ventas: comparten una palabra

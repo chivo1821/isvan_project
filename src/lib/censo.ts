@@ -285,3 +285,60 @@ export type PendientesVendedor = {
   pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string })[];
   revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
 };
+
+// ---------- Censos por corregir (Clientes, GET /clientes/censo-pendientes) ----------
+
+export const CATEGORIAS_CORRECCION = ["revisar", "ambas", "sin_codigo", "no_encontrado"] as const;
+export type CategoriaCorreccion = (typeof CATEGORIAS_CORRECCION)[number];
+
+export type SugerenciaMaestra = {
+  empresa: EmpresaMaestra;
+  codigo: string;
+  razonSocial: string;
+  ruta: string;
+  enSuRuta: boolean;
+  yaCensado: boolean;
+};
+
+export type CensoPorCorregir = {
+  id: string;
+  categoria: CategoriaCorreccion;
+  nombre: string | null;
+  tipoCliente: string | null;
+  rif: string | null;
+  telefono: string | null;
+  ruta: string | null;
+  encuestador: string | null;
+  fecha: string;
+  origen: "PAGINA" | "SURVEY123";
+  direccion: string | null;
+  empresa: string | null;
+  codigoCliente: string | null;
+  codigoIsvan: string | null;
+  codigoTralog: string | null;
+  claves: {
+    empresa: EmpresaMaestra;
+    codigo: string;
+    accion: AccionCensoCliente;
+    motivo: string | null;
+    enMaestra: boolean;
+    enVentas: boolean;
+  }[];
+  sugerencias: SugerenciaMaestra[];
+};
+
+export type ConteoCorreccion = Record<CategoriaCorreccion, number>;
+
+export type CensosPorCorregir = {
+  conteo: ConteoCorreccion;
+  total: number;
+  pagina: number;
+  porPagina: number;
+  hayMaestra: boolean;
+  censos: CensoPorCorregir[];
+};
+
+export type ResultadoCorreccion = Omit<ResultadoEnvioCenso, "id"> & {
+  categoria: CategoriaCorreccion | null;
+  clientesEliminados: number;
+};

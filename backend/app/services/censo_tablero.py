@@ -37,7 +37,7 @@ PREGUNTAS_FOTO = ("foto_fachada", "foto_activo", "foto_activo2", "foto_serial_ac
 LIMITE_LISTA = 500
 
 
-def _dia(instante: datetime) -> str:
+def dia_caracas(instante: datetime) -> str:
     return (instante + _DESFASE_CARACAS).date().isoformat()
 
 
@@ -197,7 +197,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
 def _resumen_censo(c: dict) -> dict:
     return {
         "id": c["id"], "nombre": c["nombreComercio"], "encuestador": c["encuestador"], "ruta": c["ruta"],
-        "fecha": _dia(c["terminadoEn"]), "origen": c["origen"],
+        "fecha": dia_caracas(c["terminadoEn"]), "origen": c["origen"],
     }
 
 
@@ -275,7 +275,9 @@ def tablero(cur, where: str, params: dict, empresas_filtro: list[str], rutas_fil
     principal = {
         "visitas": len(vigentes),
         "duplicados": len(censos) - len(vigentes),
-        "porDia": [{"clave": k, "n": n} for k, n in sorted(Counter(_dia(c["terminadoEn"]) for c in vigentes).items())],
+        "porDia": [
+            {"clave": k, "n": n} for k, n in sorted(Counter(dia_caracas(c["terminadoEn"]) for c in vigentes).items())
+        ],
         "porVendedor": _conteo(c["encuestador"] for c in vigentes),
         "porRuta": sorted(_conteo(c["ruta"] for c in vigentes), key=lambda x: _orden_ruta(ruta_comparable(x["clave"]))),
         "porTipoCliente": _conteo(c["tipoCliente"] for c in vigentes),
@@ -293,7 +295,7 @@ def tablero(cur, where: str, params: dict, empresas_filtro: list[str], rutas_fil
         {
             "id": c["id"], "lat": c["lat"], "lng": c["lng"], "nombre": c["nombreComercio"],
             "tipoCliente": c["tipoCliente"], "empresa": c["empresa"], "ruta": c["ruta"],
-            "encuestador": c["encuestador"], "fecha": _dia(c["terminadoEn"]),
+            "encuestador": c["encuestador"], "fecha": dia_caracas(c["terminadoEn"]),
             "vendeCompetencia": _de_rama(c["r"], "helados_competencia"),
             "marcas": _de_rama(c["r"], "marcas_competencia") or [],
             "poseeActivo": r(c, "posee_activo"), "activoCompetencia": r(c, "posee_activo_competencia"),

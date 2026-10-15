@@ -156,6 +156,7 @@ model Usuario {
   metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
   censos                Censo[]               @relation("CensosLlenados")
   maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
+  censosCorregidos      Censo[]               @relation("CensosCorregidos")
   configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta            VendedorRuta[]
@@ -752,6 +753,10 @@ model Censo {
   // Descartado por el ADMIN (un duplicado): sale de todo, pero la fila
   // queda para que reimportar el historico no lo traiga de vuelta.
   descartadoEn   DateTime?
+  // Empresa o codigo corregidos desde Clientes (censos por corregir).
+  corregidoEn    DateTime?
+  corregidoPorId String?
+  corregidoPor   Usuario?    @relation("CensosCorregidos", fields: [corregidoPorId], references: [id], onDelete: SetNull)
 
   fotos    CensoFoto[]
   clientes CensoCliente[]
