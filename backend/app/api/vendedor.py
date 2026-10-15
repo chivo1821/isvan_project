@@ -37,6 +37,7 @@ from app.schemas import (
     Visita,
     VisitasSemana,
 )
+from app.services import censo_tablero
 from app.services import indicadores_venta as iv
 from app.services.route_analysis import LatLng, haversine_km
 
@@ -400,3 +401,12 @@ def tablero_indicadores(
         disponibles = tablero["opcionesDisponibles"]
         disponibles["rutas"] = [r for r in disponibles["rutas"] if r in rutas]
         return tablero
+
+
+@router.get("/censo/pendientes")
+def censo_pendientes(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
+    """Los clientes de sus rutas que faltan por censar (segun la maestra
+    vigente, sin la ruta 77) y sus censos que todavia no estan en ventas o
+    tienen un codigo para revisar."""
+    with get_connection() as conn, conn.cursor() as cur:
+        return censo_tablero.pendientes_de_vendedor(cur, usuario["id"])
