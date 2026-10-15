@@ -23,6 +23,7 @@ from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.schemas import en_utc
+from app.services import censo_clientes
 from app.services import maestra_import as mi
 
 router = APIRouter(prefix="/censo/maestra", tags=["censo"])
@@ -62,28 +63,6 @@ def carga_vigente(cur, empresa: str) -> dict | None:
     if carga:
         carga["subidaEn"] = en_utc(carga["subidaEn"])
     return carga
-
-
-def recalcular_en_maestra(cur, empresa: str) -> int:
-    """Al cambiar la maestra, cada cliente censado vuelve a mirar si esta en
-    la vigente. Devuelve cuantos cambiaron."""
-    cur.execute(
-        """
-        UPDATE "CensoCliente" cc SET "enMaestra" = n."esta"
-        FROM (
-            SELECT cc2."id", EXISTS (
-                SELECT 1 FROM "MaestraCliente" mc
-                WHERE mc."cargaId" = (
-                    SELECT "id" FROM "MaestraCarga" WHERE "empresa" = %(e)s ORDER BY "subidaEn" DESC LIMIT 1
-                ) AND mc."codigo" = cc2."codigo"
-            ) AS "esta"
-            FROM "CensoCliente" cc2 WHERE cc2."empresa" = %(e)s
-        ) n
-        WHERE cc."id" = n."id" AND cc."enMaestra" IS DISTINCT FROM n."esta"
-        """,
-        {"e": empresa},
-    )
-    return cur.rowcount
 
 
 @router.get("", dependencies=[Depends(requiere_rol("ADMIN"))])
@@ -137,7 +116,7 @@ def guardar(
                     f.diaVisita, f.frecuencia, f.secuencia, f.direccion, f.condicion, f.tipoCliente,
                     f.listaPrecio, f.zona, f.observacion, f.activoCodigo, f.activoTipo, f.activoMarca,
                 ))
-        censos_actualizados = recalcular_en_maestra(cur, empresa)
+        censos_actualizados = censo_clientes.recalcular_en_maestra(cur, empresa)
         conn.commit()
         vigente = carga_vigente(cur, empresa)
 

@@ -135,3 +135,33 @@ export type PreviewMaestra = {
   contraste: ContrasteMaestra;
   vigente: MaestraCarga | null;
 };
+
+/** Lo que responde POST /censo: que hizo el censo con los clientes que
+ * nombra (ver backend/app/services/censo_clientes.py). */
+export type AccionCensoCliente = "CREADO" | "COMPLETADO" | "EXISTENTE" | "REVISAR";
+
+export type ResultadoEnvioCenso = {
+  id: string;
+  duplicadoDe: string | null;
+  posibleCliente: boolean;
+  clientes: {
+    empresa: EmpresaMaestra;
+    codigo: string;
+    accion: AccionCensoCliente;
+    motivo: string | null;
+    enMaestra: boolean;
+    enVentas: boolean;
+  }[];
+};
+
+/** Una línea para el vendedor sobre lo que pasó con su censo. */
+export function avisoDeEnvio(r: ResultadoEnvioCenso): { titulo: string; detalle?: string; revisar: boolean } {
+  const revisar = r.clientes.find((c) => c.accion === "REVISAR");
+  if (revisar) return { titulo: "Censo enviado, con un código para revisar", detalle: revisar.motivo ?? undefined, revisar: true };
+  if (r.duplicadoDe)
+    return { titulo: "Censo enviado", detalle: "Este cliente ya estaba censado en este lugar: no se cuenta dos veces.", revisar: false };
+  if (r.posibleCliente) return { titulo: "Censo enviado", detalle: "Quedó registrado como posible cliente.", revisar: false };
+  if (r.clientes.some((c) => c.accion === "CREADO"))
+    return { titulo: "Censo enviado", detalle: "El cliente quedó creado en el sistema.", revisar: false };
+  return { titulo: "Censo enviado", revisar: false };
+}

@@ -7,6 +7,7 @@ import { Loader2Icon, SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError, apiPost, mensajeDeError } from "@/lib/api-client";
+import { avisoDeEnvio, type ResultadoEnvioCenso } from "@/lib/censo";
 import type { Valor } from "@/lib/formulario/expresiones";
 import {
   aplicarRelevancia,
@@ -195,13 +196,15 @@ export function FormularioCenso({ definicion, nombreUsuario }: { definicion: Def
         subidas.current.set(foto, claves[p.name]);
       }
       setProgreso("Enviando…");
-      await apiPost("/censo", {
+      const resultado = await apiPost<ResultadoEnvioCenso>("/censo", {
         respuestas: enviadas,
         fotos: claves,
         iniciadoEn: inicio.toISOString(),
         terminadoEn: new Date().toISOString(),
       });
-      toast.success("Censo enviado");
+      const aviso = avisoDeEnvio(resultado);
+      if (aviso.revisar) toast.warning(aviso.titulo, { description: aviso.detalle, duration: 12000 });
+      else toast.success(aviso.titulo, { description: aviso.detalle });
       limpiar();
       router.refresh();
     } catch (e) {

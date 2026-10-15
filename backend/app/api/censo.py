@@ -34,6 +34,7 @@ from app.core.db import get_connection
 from app.core.fechas import a_caracas, ahora_utc
 from app.schemas import en_utc
 from app.services import almacen_fotos as af
+from app.services import censo_clientes as cc
 from app.services import formulario as fm
 from app.services import xlsform as xf
 
@@ -236,7 +237,7 @@ def enviar(datos: EnvioCenso, usuario: dict = Depends(requiere_rol("VENDEDOR")))
         ahora=inicio_local.isoformat(timespec="seconds"),
         variables=variables,
     )
-    errores = {**errores, **errores_foto}
+    errores = {**errores, **cc.validar_codigos(limpias), **errores_foto}
     if errores:
         raise HTTPException(422, {"mensaje": "El formulario tiene errores", "errores": errores})
 
@@ -264,8 +265,10 @@ def enviar(datos: EnvioCenso, usuario: dict = Depends(requiere_rol("VENDEDOR")))
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (f"cfo-{uuid.uuid4().hex[:16]}", censo_id, pregunta, clave, tipo, peso, ahora),
             )
+        # En la misma transaccion: duplicado y alta o completado del cliente.
+        proceso = cc.procesar(cur, censo_id)
         conn.commit()
-    return {"id": censo_id, "recibidoEn": en_utc(ahora), "fotos": len(fotos)}
+    return {"id": censo_id, "recibidoEn": en_utc(ahora), "fotos": len(fotos), **proceso}
 
 
 # ---------- Del vendedor ----------
