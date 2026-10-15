@@ -24,16 +24,19 @@ export function EncuestaEnPopup({ id, definicion }: { id: string; definicion: De
     };
   }, [id]);
 
-  if (error) return <p className="text-xs text-destructive">{error}</p>;
-  if (!censo)
-    return (
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2Icon className="size-3.5 animate-spin" /> Cargando la encuesta…
-      </p>
-    );
+  // Alto fijo desde que se abre: Leaflet acomoda el mapa para que el popup
+  // quepa al abrirlo, no cuando el contenido crece despues.
   return (
-    <div className="max-h-[22rem] overflow-y-auto pr-1 [scrollbar-width:thin]">
-      <DetalleDeCenso censo={censo} definicion={definicion} compacto />
+    <div className="h-64 overflow-y-auto pr-1 [scrollbar-width:thin]">
+      {error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : !censo ? (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" /> Cargando la encuesta…
+        </p>
+      ) : (
+        <DetalleDeCenso censo={censo} definicion={definicion} compacto />
+      )}
     </div>
   );
 }

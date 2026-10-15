@@ -53,7 +53,7 @@ import { ListaDeCensos } from "./lista-censos";
 
 const LeafletMap = dynamic(() => import("@/components/map/leaflet-map").then((m) => m.LeafletMap), {
   ssr: false,
-  loading: () => <div className="h-[28rem] w-full animate-pulse rounded-lg bg-muted" />,
+  loading: () => <div className="h-[32rem] w-full animate-pulse rounded-lg bg-muted" />,
 });
 const PuntoTableroCenso = dynamic(() => import("@/components/map/punto-tablero").then((m) => m.PuntoTableroCenso), {
   ssr: false,
@@ -104,7 +104,7 @@ function Mapa({ puntos, definicion }: { puntos: PuntoTablero[]; definicion: Defi
   const limites = puntos.length > 1 ? puntos.map((p) => [p.lat, p.lng] as [number, number]) : undefined;
   if (!puntos.length) return <p className="py-10 text-center text-sm text-muted-foreground">Ningún censo con ubicación.</p>;
   return (
-    <LeafletMap center={centro} zoom={12} bounds={limites} className="h-[28rem]">
+    <LeafletMap center={centro} zoom={12} bounds={limites} className="h-[32rem]">
       {puntos.map((p) => (
         <PuntoTableroCenso key={p.id} punto={p} definicion={definicion} />
       ))}
