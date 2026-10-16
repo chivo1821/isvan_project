@@ -473,6 +473,9 @@ def sugerir_plan_rutas(
     pendientes = list(paradas)
     libres = list(libres_a_esa_hora)  # ya vienen de mayor a menor capacidad
     sugerencias: list[dict] = []
+    # Paradas que salieron en camion, camioneta o sin vehiculo: para avisar si
+    # los Morochos dejaron sin moto a paradas que cabian en una.
+    fuera_de_moto: list[_Parada] = []
 
     while pendientes:
         # Un pedido que no cabe en ninguna moto libre pero si en dos juntas
@@ -571,6 +574,8 @@ def sugerir_plan_rutas(
             "motivos": motivos,
         })
 
+        if not con_vehiculo or asignado["tipo"] != "MOTO":
+            fuera_de_moto.extend(grupo)
         clientes_del_grupo = {p.cliente_id for p in grupo}
         if con_vehiculo:
             libres = [v for v in libres if v["id"] != asignado["id"]]
@@ -607,4 +612,33 @@ def sugerir_plan_rutas(
     for motivo, grupo in motivos_fuera.items():
         sin_asignar.append({"despachoIds": [id_ for p in grupo for id_ in p.despacho_ids], "motivo": motivo})
 
-    return {"sugerencias": sugerencias, "sinAsignar": sin_asignar}
+    return {
+        "sugerencias": sugerencias,
+        "sinAsignar": sin_asignar,
+        "advertencias": _advertencias_morocho(sugerencias, fuera_de_moto + pendientes, flota, limite_moto),
+    }
+
+
+def _advertencias_morocho(
+    sugerencias: list[dict], fuera_de_moto: list[_Parada], flota: list[dict], limite_moto: float
+) -> list[str]:
+    """Los Morochos van primero (decision del cliente, no se limitan), pero
+    se lleva dos motos cada uno: si por eso quedaron paradas que cabian en
+    una moto yendo en otro vehiculo, se avisa para que lo tengan en cuenta."""
+    morochos = sum(1 for s in sugerencias if s.get("morocho"))
+    motos = [v for v in flota if v["tipo"] == "MOTO"]
+    if not morochos or not motos:
+        return []
+    capacidad_moto = max(v["capacidadKg"] for v in motos)
+    moto_con_frio = any(v["tieneRefrigeracion"] for v in motos)
+    livianas = [
+        p for p in fuera_de_moto
+        if p.peso_kg <= capacidad_moto and p.km_almacen <= limite_moto and (moto_con_frio or not p.requiere_frio)
+    ]
+    if not livianas:
+        return []
+    return [
+        f"{'El Morocho usa' if morochos == 1 else f'Los {morochos} Morochos usan'} {morochos * 2} motos: "
+        f"{len(livianas)} parada(s) livianas y cercanas, que cabían en una moto, van en otro vehículo. "
+        "Tenlo en cuenta: si prefieres llevarlas en moto, arma esas rutas a mano."
+    ]

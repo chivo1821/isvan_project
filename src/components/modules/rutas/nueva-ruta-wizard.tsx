@@ -57,6 +57,8 @@ type SugerenciaRuta = {
 type PlanRutas = {
   sugerencias: SugerenciaRuta[];
   sinAsignar: { despachoIds: string[]; motivo: string }[];
+  /** Lo que conviene tener en cuenta del plan (p. ej. lo que dejan los Morochos). */
+  advertencias?: string[];
 };
 
 function pesoTotal(despacho: Despacho) {
@@ -354,6 +356,17 @@ export function NuevaRutaWizard({
                 </Label>
               </div>
             </div>
+
+            {plan?.advertencias && plan.advertencias.length > 0 && (
+              <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                {plan.advertencias.map((a) => (
+                  <p key={a} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                    <span>{a}</span>
+                  </p>
+                ))}
+              </div>
+            )}
 
             {plan && plan.sugerencias.length > 0 && (
               <div className="space-y-3">

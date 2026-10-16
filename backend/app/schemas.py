@@ -656,6 +656,9 @@ class DespachosSinAsignar(BaseModel):
 class PlanRutasResponse(BaseModel):
     sugerencias: list[SugerenciaRuta]
     sinAsignar: list[DespachosSinAsignar]
+    # Lo que conviene saber del plan sin que lo cambie (p. ej. los Morochos
+    # dejaron paradas livianas fuera de las motos).
+    advertencias: list[str] = []
 
 
 class PlanRutasRequest(BaseModel):
