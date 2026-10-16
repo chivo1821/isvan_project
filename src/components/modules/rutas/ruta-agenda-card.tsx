@@ -29,6 +29,8 @@ export function RutaAgendaCard({
   mostrarFecha?: boolean;
 }) {
   const vehiculo = vehiculos.find((v) => v.id === ruta.vehiculoId);
+  // Morocho: un pedido grande en dos motos.
+  const apoyo = vehiculos.find((v) => v.id === ruta.vehiculoApoyoId);
   const programable = puedeProgramar && ruta.estado === "PLANIFICADA";
 
   return (
@@ -57,7 +59,14 @@ export function RutaAgendaCard({
       <div className="space-y-0.5 text-muted-foreground">
         <p className="flex items-center gap-1.5">
           <TruckIcon className="size-3.5 shrink-0" aria-hidden />
-          {vehiculo ? (
+          {vehiculo && apoyo ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-foreground">
+                {vehiculo.placa} + {apoyo.placa}
+              </span>
+              <StatusBadge tone="info" label="Morocho" />
+            </span>
+          ) : vehiculo ? (
             <span className="truncate">
               <span className="text-foreground">{vehiculo.placa}</span>
               {!compacta && ` — ${TIPO_VEHICULO_META[vehiculo.tipo].label}`}
@@ -70,6 +79,7 @@ export function RutaAgendaCard({
           <p className="flex items-center gap-1.5">
             <UserIcon className="size-3.5 shrink-0" aria-hidden />
             {vehiculo.conductor ?? <span className="text-warning">Sin chofer asignado</span>}
+            {apoyo && <> · {apoyo.conductor ?? <span className="text-warning">sin chofer</span>}</>}
           </p>
         )}
         <p className="flex items-center gap-1.5">

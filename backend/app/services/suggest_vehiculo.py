@@ -8,6 +8,9 @@ derivarlo). Un solo almacen -> la cercania ya no es un criterio.
 Disponible = libre a la hora de salida de la ruta (sin otra ruta que se
 pise, ver app/services/planificacion.py), y si es moto, sin paradas mas
 lejos del almacen que el limite configurado.
+
+Si el pedido no cabe en ninguna moto libre pero si en dos juntas, se ofrece
+ademas un Morocho (ver app/services/morocho.py), primero en la lista.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.ubicacion import sin_ubicacion
 from app.services import configuracion
+from app.services import morocho as mo
 from app.services import planificacion as pl
 from app.services.route_analysis import LatLng
 
@@ -74,6 +78,7 @@ def sugerir_vehiculos(
             else 0.0
         )
         limite_moto = configuracion.leer(cur, "motoDistanciaMaxKm")
+        limite_morocho = configuracion.leer(cur, "morochoMaxKg")
 
     candidatos = [
         v for v in libres
@@ -92,4 +97,18 @@ def sugerir_vehiculos(
         sugerencias.append({"vehiculo": vehiculo, "holguraKg": holgura_kg, "motivos": motivos})
 
     sugerencias.sort(key=lambda s: s["holguraKg"])
-    return sugerencias[:3]
+    sugerencias = sugerencias[:3]
+    par = mo.elegir_par(libres, peso_estimado_kg, requiere_cadena_frio, mas_lejos_km, limite_moto, limite_morocho)
+    if par:
+        sugerencias.insert(0, {
+            "vehiculo": par.principal,
+            "vehiculoApoyo": par.apoyo,
+            "morocho": True,
+            "holguraKg": par.capacidad_kg - peso_estimado_kg,
+            "motivos": [
+                f"Morocho: ~{peso_estimado_kg} kg no caben en una moto; van en dos "
+                f"({par.principal['placa']} y {par.apoyo['placa']}, hasta {par.capacidad_kg:,.0f} kg)",
+                "Las dos motos libres en ese horario",
+            ],
+        })
+    return sugerencias

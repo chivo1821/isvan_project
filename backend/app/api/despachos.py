@@ -122,7 +122,7 @@ def listar_despachos(usuario: dict = Depends(get_current_user)):
                 return []
             cur.execute(
                 'SELECT d.* FROM "Despacho" d JOIN "Ruta" r ON r."id" = d."rutaId" '
-                'WHERE r."vehiculoId" = %s ORDER BY d."fechaCreacion" DESC',
+                'WHERE %s IN (r."vehiculoId", r."vehiculoApoyoId") ORDER BY d."fechaCreacion" DESC',
                 (vehiculo_id,),
             )
         else:
@@ -177,7 +177,7 @@ def listar_despachos_disponibles_para_ruta():
 def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT d.*, r."vehiculoId" FROM "Despacho" d '
+            'SELECT d.*, r."vehiculoId", r."vehiculoApoyoId" FROM "Despacho" d '
             'LEFT JOIN "Ruta" r ON r."id" = d."rutaId" WHERE d."id" = %s',
             (despacho_id,),
         )
@@ -186,8 +186,8 @@ def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)
             raise HTTPException(404, "Despacho no encontrado")
         # Un despacho que no va en la ruta de su vehiculo no existe para un
         # repartidor (404, no 403, para no revelar que hay algo ahi).
-        vehiculo_de_la_ruta = row.pop("vehiculoId")
-        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, vehiculo_de_la_ruta):
+        vehiculos_de_la_ruta = (row.pop("vehiculoId"), row.pop("vehiculoApoyoId"))
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, *vehiculos_de_la_ruta):
             raise HTTPException(404, "Despacho no encontrado")
         return _con_items(cur, row)
 

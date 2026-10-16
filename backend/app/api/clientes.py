@@ -57,7 +57,8 @@ _CLIENTES_DE_MI_RUTA = (
     'SELECT DISTINCT c.* FROM "Cliente" c '
     'JOIN "Despacho" d ON d."destinoClienteId" = c."id" '
     'JOIN "Ruta" r ON r."id" = d."rutaId" '
-    'WHERE r."vehiculoId" = %s'
+    # En un Morocho, tambien los de la segunda moto.
+    'WHERE %s IN (r."vehiculoId", r."vehiculoApoyoId")'
 )
 
 

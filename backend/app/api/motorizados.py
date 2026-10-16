@@ -27,8 +27,10 @@ def listar_motorizados():
             # Solo si el bloqueo sigue vigente: lo decide la base, no el reloj de cada pantalla.
             """CASE WHEN u."bloqueadoHasta" > now() AT TIME ZONE 'UTC' THEN u."bloqueadoHasta" END AS "bloqueadoHasta", """
             'v."id" AS "vehiculoId", v."placa", v."estado" AS "estadoVehiculo", v."capacidadKg", '
-            '(SELECT count(*) FROM "Ruta" r WHERE r."vehiculoId" = v."id")::int AS "rutas", '
-            '(SELECT max(r."salidaProgramada") FROM "Ruta" r WHERE r."vehiculoId" = v."id") AS "ultimaRuta" '
+            # Con los Morochos en que fue la segunda moto.
+            '(SELECT count(*) FROM "Ruta" r WHERE v."id" IN (r."vehiculoId", r."vehiculoApoyoId"))::int AS "rutas", '
+            '(SELECT max(r."salidaProgramada") FROM "Ruta" r '
+            'WHERE v."id" IN (r."vehiculoId", r."vehiculoApoyoId")) AS "ultimaRuta" '
             'FROM "Usuario" u LEFT JOIN "Vehiculo" v ON v."id" = u."vehiculoAsignadoId" '
             'WHERE u."autogestionado" ORDER BY u."activo" DESC, u."createdAt" DESC'
         )

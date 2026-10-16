@@ -202,7 +202,7 @@ def reporte_rutas():
     duracion real contra la estimada."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT r.*, v."placa" AS "vehiculoPlaca", v."tipo" AS "vehiculoTipo", '
+            'SELECT r.*, v."placa" AS "vehiculoPlaca", v."tipo" AS "vehiculoTipo", va."placa" AS "apoyoPlaca", '
             'v."capacidadKg" AS "vehiculoCapacidad", '
             f'{_CONDUCTOR} AS "conductor", '
             'usr."nombre" AS "creadoPor" '
@@ -210,6 +210,7 @@ def reporte_rutas():
             # LEFT: una ruta planificada puede no tener vehiculo todavia y
             # tiene que salir igual en el reporte.
             'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'LEFT JOIN "Vehiculo" va ON va."id" = r."vehiculoApoyoId" '
             'JOIN "Usuario" usr ON usr."id" = r."creadoPorId" '
             'ORDER BY r."salidaProgramada" DESC'
         )
@@ -234,7 +235,13 @@ def reporte_rutas():
         duracion_real = _minutos(r["iniciadaEn"], r["completadaEn"])
         filas.append([
             r["numero"], r["estado"], r["fechaCreacion"], r["salidaProgramada"],
-            r["vehiculoPlaca"] or "Sin vehículo", r["vehiculoTipo"],
+            # Un Morocho lleva las dos motos.
+            (
+                f"{r['vehiculoPlaca']} + {r['apoyoPlaca']} (Morocho)"
+                if r["apoyoPlaca"]
+                else r["vehiculoPlaca"] or "Sin vehículo"
+            ),
+            r["vehiculoTipo"],
             r["vehiculoCapacidad"], r["conductor"],
             len(paradas), len(entregadas), round(sum(p["peso"] for p in paradas), 3),
             r["distanciaTotalKm"], r["tiempoTotalMin"],

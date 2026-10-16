@@ -149,6 +149,9 @@ export async function getDespachosPendientesAprobacion(): Promise<DespachoConDet
 export type RutaConDetalle = Omit<Ruta, "despachos"> & {
   /** null mientras la ruta se planifica sin vehículo. */
   vehiculo: Vehiculo | null;
+  /** Morocho: la segunda moto y quién la maneja. */
+  vehiculoApoyo: Vehiculo | null;
+  conductorApoyo: string | null;
   origen: Almacen;
   creadoPor: Usuario;
   /** Quién la reversó, si fue reversada (ver RutaConDetalle.canceladaEn). */
@@ -170,10 +173,16 @@ function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargar
   const repartidor = ruta.vehiculoId
     ? usuarios.find((u) => u.rol === "REPARTIDOR" && u.vehiculoAsignadoId === ruta.vehiculoId)
     : undefined;
+  const vehiculoApoyo = vehiculos.find((v) => v.id === ruta.vehiculoApoyoId) ?? null;
+  const repartidorApoyo = ruta.vehiculoApoyoId
+    ? usuarios.find((u) => u.rol === "REPARTIDOR" && u.vehiculoAsignadoId === ruta.vehiculoApoyoId)
+    : undefined;
   return {
     ...ruta,
     vehiculo,
     conductor: repartidor?.nombre ?? vehiculo?.conductorNombre ?? null,
+    vehiculoApoyo,
+    conductorApoyo: repartidorApoyo?.nombre ?? vehiculoApoyo?.conductorNombre ?? null,
     origen: almacenes.find((a) => a.id === ruta.origenId)!,
     creadoPor: usuarios.find((u) => u.id === ruta.creadoPorId)!,
     canceladaPor: ruta.canceladaPorId ? (usuarios.find((u) => u.id === ruta.canceladaPorId) ?? null) : null,
@@ -225,5 +234,6 @@ export async function getRutasActivas(): Promise<RutaConDetalle[]> {
 }
 
 export async function getRutasByVehiculoId(vehiculoId: string): Promise<RutaConDetalle[]> {
-  return (await getRutasConDetalle()).filter((r) => r.vehiculoId === vehiculoId);
+  // Con los Morochos en que fue la segunda moto.
+  return (await getRutasConDetalle()).filter((r) => r.vehiculoId === vehiculoId || r.vehiculoApoyoId === vehiculoId);
 }

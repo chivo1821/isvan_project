@@ -113,6 +113,8 @@ export type RutaAgenda = {
   tiempoTotalMin: number | null;
   distanciaTotalKm: number | null;
   vehiculoId: string | null;
+  /** Morocho: la segunda moto. */
+  vehiculoApoyoId: string | null;
   pedidos: PedidoAgenda[];
   pesoKg: number;
   avisos: AvisoRuta[];

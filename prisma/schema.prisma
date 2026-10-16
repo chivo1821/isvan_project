@@ -215,8 +215,10 @@ model Vehiculo {
   // referencia por tipo de vehiculo (ver plan_rutas.COSTO_POR_KM_POR_TIPO).
   costoPorKm         Float?
 
-  rutas       Ruta[]
-  conductores Usuario[] @relation("ConductorDelVehiculo")
+  rutas             Ruta[]
+  rutasApoyo        Ruta[]                      @relation("RutaVehiculoApoyo")
+  conductores       Usuario[]                   @relation("ConductorDelVehiculo")
+  paradasLiquidadas LiquidacionDeliveryParada[]
 }
 
 // ---------- Clientes ----------
@@ -334,6 +336,11 @@ model Ruta {
   // Sin vehiculo no la ve ningun repartidor ni se puede iniciar.
   vehiculoId       String?
   vehiculo         Vehiculo?  @relation(fields: [vehiculoId], references: [id], onDelete: Restrict)
+  // Morocho: un pedido grande que sale en dos motos. La segunda moto (la
+  // principal es vehiculoId); con ella la ruta es un Morocho. Su repartidor
+  // tambien ve la ruta y cobra cada parada (ver app/services/plan_rutas.py).
+  vehiculoApoyoId  String?
+  vehiculoApoyo    Vehiculo?  @relation("RutaVehiculoApoyo", fields: [vehiculoApoyoId], references: [id], onDelete: Restrict)
   origenId         String
   origen           Almacen    @relation(fields: [origenId], references: [id])
   creadoPorId      String
@@ -369,6 +376,7 @@ model Ruta {
 
   @@index([salidaProgramada])
   @@index([vehiculoId, estado])
+  @@index([vehiculoApoyoId, estado])
 }
 
 // Waypoints de la geometria de una Ruta multi-parada, usados tanto para
@@ -628,8 +636,11 @@ model LiquidacionDeliveryParada {
   montoUsd      Decimal             @db.Decimal(10, 2)
   // El rango del tabulador con el que se pago, tal como se mostro.
   rango         String
+  // A que moto se le pago: en un Morocho cada una cobra la parada.
+  vehiculoId    String?
+  vehiculo      Vehiculo?           @relation(fields: [vehiculoId], references: [id], onDelete: SetNull)
 
-  @@unique([rutaId, clienteId])
+  @@unique([rutaId, clienteId, vehiculoId])
   @@index([liquidacionId])
 }
 

@@ -345,6 +345,9 @@ class VehiculoEstadoUpdate(BaseModel):
 
 class SugerenciaVehiculo(BaseModel):
     vehiculo: Vehiculo
+    # Morocho: la segunda moto (ver app/services/morocho.py).
+    vehiculoApoyo: Optional[Vehiculo] = None
+    morocho: bool = False
     holguraKg: float
     motivos: list[str]
 
@@ -572,6 +575,8 @@ class Ruta(BaseModel):
     numero: str
     # Sin vehiculo mientras no se asigne (planificacion, ver app/services/planificacion.py).
     vehiculoId: Optional[str] = None
+    # Morocho: la segunda moto (ver app/services/morocho.py).
+    vehiculoApoyoId: Optional[str] = None
     origenId: str
     creadoPorId: str
     estado: str
@@ -602,6 +607,8 @@ class RutaCreate(BaseModel):
     despachoIds: list[str]
     # Opcional: la ruta se puede planificar y asignarle vehiculo despues.
     vehiculoId: Optional[str] = None
+    # Morocho: la segunda moto (la principal es vehiculoId).
+    vehiculoApoyoId: Optional[str] = None
     salidaProgramada: SalidaProgramada
 
 
@@ -611,6 +618,8 @@ class RutaProgramacion(BaseModel):
 
     salidaProgramada: Optional[SalidaProgramada] = None
     vehiculoId: Optional[str] = None
+    # Morocho: la segunda moto; en null se le quita (deja de ser Morocho).
+    vehiculoApoyoId: Optional[str] = None
 
 
 # ---------- Sugerencia de agrupacion de rutas ----------
@@ -624,6 +633,10 @@ class SugerenciaRuta(BaseModel):
     # None si a esa hora no queda ningun vehiculo libre: el viaje se propone
     # igual (no se frena la planificacion) y se le asigna vehiculo despues.
     vehiculo: Optional[Vehiculo] = None
+    # Morocho: un pedido que no cabe en una moto sale en dos; esta es la
+    # segunda (ver app/services/morocho.py).
+    vehiculoApoyo: Optional[Vehiculo] = None
+    morocho: bool = False
     despachoIds: list[str]
     paradas: int
     pesoKg: float
@@ -643,6 +656,9 @@ class DespachosSinAsignar(BaseModel):
 class PlanRutasResponse(BaseModel):
     sugerencias: list[SugerenciaRuta]
     sinAsignar: list[DespachosSinAsignar]
+    # Lo que conviene saber del plan sin que lo cambie (p. ej. los Morochos
+    # dejaron paradas livianas fuera de las motos).
+    advertencias: list[str] = []
 
 
 class PlanRutasRequest(BaseModel):

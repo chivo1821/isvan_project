@@ -61,12 +61,14 @@ def vehiculo_asignado(usuario: dict) -> str | None:
     return usuario.get("vehiculoAsignadoId")
 
 
-def es_de_su_vehiculo(usuario: dict, vehiculo_id: str | None) -> bool:
+def es_de_su_vehiculo(usuario: dict, *vehiculo_ids: str | None) -> bool:
     """Si una ruta (o el despacho de una ruta) es del vehiculo del
-    repartidor. Sin vehiculo asignado no es de nadie: comparar los dos None
-    dejaba ver las rutas sin vehiculo y los despachos sin ruta."""
+    repartidor. Se pasan los vehiculos de la ruta: el suyo y, en un Morocho,
+    la segunda moto (los dos repartidores la ven). Sin vehiculo asignado no
+    es de nadie: comparar los dos None dejaba ver las rutas sin vehiculo y los
+    despachos sin ruta."""
     propio = vehiculo_asignado(usuario)
-    return propio is not None and vehiculo_id == propio
+    return propio is not None and propio in vehiculo_ids
 
 
 def rutas_del_vendedor(cur, usuario_id: str) -> list[tuple[str, str]]:
@@ -90,5 +92,5 @@ def ids_rutas_visibles(cur, usuario: dict) -> list[str] | None:
     if not vehiculo_id:
         return []
 
-    cur.execute('SELECT "id" FROM "Ruta" WHERE "vehiculoId" = %s', (vehiculo_id,))
+    cur.execute('SELECT "id" FROM "Ruta" WHERE %s IN ("vehiculoId", "vehiculoApoyoId")', (vehiculo_id,))
     return [r["id"] for r in cur.fetchall()]
