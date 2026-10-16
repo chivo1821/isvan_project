@@ -64,14 +64,28 @@ def _dato(valor: object) -> str | None:
     return None if texto.upper() in SIN_DATO else texto
 
 
+def solo_ceros(codigo: str | None) -> bool:
+    """ "0", "0000": lo que se escribe para salir del paso cuando no se sabe
+    el codigo. No es un codigo: sin esto, crearia un cliente "0"."""
+    return bool(codigo) and set(codigo.strip()) == {"0"}
+
+
+def error_de_codigo(valor: str) -> str | None:
+    if not CODIGO_VALIDO.match(valor):
+        return "El código solo lleva letras, números o guiones (hasta 20)"
+    if solo_ceros(valor):
+        return "El código no puede ser solo ceros"
+    return None
+
+
 def validar_codigos(respuestas: dict) -> dict[str, str]:
     """Errores de formato de los codigos que vengan (la obligatoriedad segun
     el relevant ya la aplica formulario.validar)."""
     errores = {}
     for nombre in PREGUNTAS_DE_CODIGO:
         valor = _dato(respuestas.get(nombre))
-        if valor and not CODIGO_VALIDO.match(valor):
-            errores[nombre] = "El código solo lleva letras, números o guiones (hasta 20)"
+        if valor and (error := error_de_codigo(valor)):
+            errores[nombre] = error
     return errores
 
 
@@ -80,22 +94,29 @@ def es_posible_cliente(respuestas: dict) -> bool:
     return _dato(respuestas.get("tipo_cliente")) == "Nuevo" and _dato(respuestas.get("desea_vender_tiorico")) != "Si"
 
 
+def _codigo_de(respuestas: dict, pregunta: str) -> str | None:
+    """El codigo de una pregunta, o None si falta o es solo ceros (el
+    historico de Survey123 trae "0000")."""
+    codigo = _dato(respuestas.get(pregunta))
+    return None if not codigo or solo_ceros(codigo) else codigo
+
+
 def claves_de(respuestas: dict) -> list[Clave]:
     empresa = (_dato(respuestas.get("empresa")) or "").upper()
     if empresa in EMPRESAS:
-        codigo = _dato(respuestas.get("codigo_cliente"))
+        codigo = _codigo_de(respuestas, "codigo_cliente")
         return [Clave(empresa, codigo_normalizado(codigo))] if codigo else []
     if empresa != "AMBAS":
         return []
     claves = []
     for e in EMPRESAS:
-        codigo = _dato(respuestas.get(f"codigo_{e.lower()}"))
+        codigo = _codigo_de(respuestas, f"codigo_{e.lower()}")
         if codigo:
             claves.append(Clave(e, codigo_normalizado(codigo)))
     if claves:
         return claves
     # Historico de Survey123: AMBAS con un solo codigo, sin decir de cual.
-    codigo = _dato(respuestas.get("codigo_cliente"))
+    codigo = _codigo_de(respuestas, "codigo_cliente")
     if not codigo:
         return []
     motivo = "AMBAS con un solo código: no se sabe si es el de ISVAN o el de TRALOG"

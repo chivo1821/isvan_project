@@ -162,10 +162,8 @@ def _codigo(valor: str | None, campo: str) -> str:
     texto = (valor or "").strip()
     if not texto:
         raise HTTPException(422, {"mensaje": "Falta el código", "errores": {campo: "Este campo es obligatorio"}})
-    if not cc.CODIGO_VALIDO.match(texto):
-        raise HTTPException(
-            422, {"mensaje": "Código inválido", "errores": {campo: "Solo letras, números o guiones (hasta 20)"}}
-        )
+    if error := cc.error_de_codigo(texto):
+        raise HTTPException(422, {"mensaje": "Código inválido", "errores": {campo: error}})
     return texto
 
 
