@@ -1,5 +1,7 @@
 {
-  "regions": ["gru1"],
+  "regions": [
+    "gru1"
+  ],
   "services": {
     "frontend": {
       "root": ".",
@@ -24,6 +26,12 @@
         "type": "service",
         "service": "frontend"
       }
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/backend/tareas/tasa-bcv",
+      "schedule": "30 22 * * *"
     }
   ]
 }

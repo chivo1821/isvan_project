@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { CalendarClockIcon, PackageIcon, TruckIcon, UserIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { Button } from "@/components/ui/button";
 import { AvisosRuta, IndicadorAvisos } from "@/components/modules/rutas/avisos-ruta";
 import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
 import { ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime, formatHora } from "@/lib/constants";
@@ -100,11 +99,7 @@ export function RutaAgendaCard({
           vehiculos={vehiculos}
           libres={ruta.vehiculosLibres}
           pesoKg={ruta.pesoKg}
-          trigger={
-            <Button size="sm" variant={vehiculo ? "outline" : "default"} className="w-full">
-              {vehiculo ? "Reprogramar" : "Asignar vehículo"}
-            </Button>
-          }
+          boton={{ texto: vehiculo ? "Reprogramar" : "Asignar vehículo", destacado: !vehiculo, anchoCompleto: true }}
         />
       )}
     </div>

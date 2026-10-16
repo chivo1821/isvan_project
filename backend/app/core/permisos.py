@@ -8,9 +8,14 @@ Hay dos roles de campo, cada uno con su unica puerta de entrada:
   que se le asigno (Usuario.vehiculoAsignadoId) — ni las rutas de otros
   vehiculos, ni la cartera de clientes, ni la cola de despachos, ni la flota.
 - VENDEDOR: ve el estatus de los despachos de sus rutas de venta
-  (VendedorRuta) y registra sus visitas, todo desde app/api/vendedor.py. Al
-  resto de la operacion no entra: sin_acceso_vendedor se lo cierra a nivel de
-  router (ver app/main.py).
+  (VendedorRuta) y registra sus visitas, todo desde app/api/vendedor.py.
+- COBRANZAS: verifica los pagos de los clientes y ve su cartera, todo desde
+  app/api/cobranzas.py.
+
+VENDEDOR y COBRANZAS son roles de un solo modulo: entran SOLO a los routers
+que se les abren en app/main.py (ROUTERS_POR_ROL, lista blanca) y el resto de
+la operacion se les cierra a nivel de router con solo_su_modulo. Asi un
+endpoint nuevo sin requiere_rol no les queda abierto por descuido.
 
 Se aplica en la API, no solo escondiendo cosas en la interfaz: la UI puede
 ocultar un modulo, pero cualquiera con la sesion abierta puede llamar el
@@ -26,6 +31,8 @@ from app.core.auth import get_current_user
 
 ROL_REPARTIDOR = "REPARTIDOR"
 ROL_VENDEDOR = "VENDEDOR"
+ROL_COBRANZAS = "COBRANZAS"
+ROLES_DE_UN_MODULO = frozenset({ROL_VENDEDOR, ROL_COBRANZAS})
 
 
 def es_repartidor(usuario: dict) -> bool:
@@ -36,12 +43,16 @@ def es_vendedor(usuario: dict) -> bool:
     return usuario["rol"] == ROL_VENDEDOR
 
 
-def sin_acceso_vendedor(usuario: dict = Depends(get_current_user)) -> None:
-    """Dependencia de router: un VENDEDOR no entra a la operacion
-    (despachos, rutas, clientes, flota, reportes...). Lo que le corresponde
-    lo recibe ya filtrado a sus rutas desde app/api/vendedor.py."""
-    if es_vendedor(usuario):
-        raise HTTPException(403, "No tienes permiso para realizar esta accion")
+def solo_su_modulo(roles_permitidos: frozenset[str]):
+    """Dependencia de router: los roles de un solo modulo (VENDEDOR,
+    COBRANZAS) pasan solo si el router esta abierto para su rol. Los demas
+    roles no se tocan: los acota cada endpoint con requiere_rol."""
+
+    def _check(usuario: dict = Depends(get_current_user)) -> None:
+        if usuario["rol"] in ROLES_DE_UN_MODULO and usuario["rol"] not in roles_permitidos:
+            raise HTTPException(403, "No tienes permiso para realizar esta accion")
+
+    return _check
 
 
 def vehiculo_asignado(usuario: dict) -> str | None:

@@ -11,7 +11,7 @@ La definicion sale del XLSForm (ver app/services/xlsform.py y
 scripts/importar_formulario.py). El servidor vuelve a validar cada envio con
 las mismas reglas que el navegador (app/services/formulario.py).
 
-Este router esta abierto al VENDEDOR (ver ROUTERS_DEL_VENDEDOR en
+Este router esta abierto al VENDEDOR (ver ROUTERS_POR_ROL en
 app/main.py), asi que cada endpoint de revision lleva su requiere_rol("ADMIN").
 """
 
@@ -34,6 +34,8 @@ from app.core.db import get_connection
 from app.core.fechas import a_caracas, ahora_utc
 from app.schemas import en_utc
 from app.services import almacen_fotos as af
+from app.services import censo_clientes as cc
+from app.services import censo_tablero as tc
 from app.services import formulario as fm
 from app.services import xlsform as xf
 
@@ -50,16 +52,8 @@ TIPOS_FOTO = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 _EXTENSION_TIPO = {v: k for k, v in TIPOS_FOTO.items()}
 POR_PAGINA = 50
 
-# Respuestas que se copian a columnas propias para listar y filtrar sin abrir
-# el JSON. Si una version futura del formulario les cambia el nombre, quedan
-# vacias, pero la respuesta completa sigue en "respuestas".
-COLUMNAS_DE_RESPUESTA = {
-    "encuestador": "encuestador",
-    "nombreComercio": "nombre_comercio",
-    "tipoCliente": "tipo_cliente",
-    "empresa": "empresa",
-    "ruta": "ruta",
-}
+# Respuestas que se copian a columnas propias (ver censo_clientes).
+COLUMNAS_DE_RESPUESTA = cc.COLUMNAS_DE_RESPUESTA
 
 _DESFASE_CARACAS = timedelta(hours=-4)
 
@@ -236,7 +230,7 @@ def enviar(datos: EnvioCenso, usuario: dict = Depends(requiere_rol("VENDEDOR")))
         ahora=inicio_local.isoformat(timespec="seconds"),
         variables=variables,
     )
-    errores = {**errores, **errores_foto}
+    errores = {**errores, **cc.validar_codigos(limpias), **errores_foto}
     if errores:
         raise HTTPException(422, {"mensaje": "El formulario tiene errores", "errores": errores})
 
@@ -264,8 +258,10 @@ def enviar(datos: EnvioCenso, usuario: dict = Depends(requiere_rol("VENDEDOR")))
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (f"cfo-{uuid.uuid4().hex[:16]}", censo_id, pregunta, clave, tipo, peso, ahora),
             )
+        # En la misma transaccion: duplicado y alta o completado del cliente.
+        proceso = cc.procesar(cur, censo_id)
         conn.commit()
-    return {"id": censo_id, "recibidoEn": en_utc(ahora), "fotos": len(fotos)}
+    return {"id": censo_id, "recibidoEn": en_utc(ahora), "fotos": len(fotos), **proceso}
 
 
 # ---------- Del vendedor ----------
@@ -278,7 +274,8 @@ def mis_censos(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
         cur.execute(
             'SELECT c."id", c."recibidoEn", c."nombreComercio", c."tipoCliente", c."empresa", '
             '(SELECT COUNT(*) FROM "CensoFoto" f WHERE f."censoId" = c."id") AS "fotos" '
-            'FROM "Censo" c WHERE c."usuarioId" = %s ORDER BY c."recibidoEn" DESC LIMIT 30',
+            'FROM "Censo" c WHERE c."usuarioId" = %s AND c."descartadoEn" IS NULL '
+            'ORDER BY c."recibidoEn" DESC LIMIT 30',
             (usuario["id"],),
         )
         filas = cur.fetchall()
@@ -290,9 +287,11 @@ def mis_censos(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
 
 def _filtros_sql(
     desde: date | None, hasta: date | None, encuestador: list[str], tipo_cliente: list[str],
-    empresa: list[str], q: str | None,
+    empresa: list[str], q: str | None, ruta: list[str] | None = None,
 ) -> tuple[str, dict]:
-    condiciones = ['c."formulario" = %(formulario)s']
+    # Un censo descartado (un duplicado que el ADMIN saco) no aparece en
+    # ningun lado.
+    condiciones = ['c."formulario" = %(formulario)s', 'c."descartadoEn" IS NULL']
     params: dict = {"formulario": FORMULARIO}
     # Las fechas del filtro son dias de Caracas; recibidoEn esta en UTC.
     if desde:
@@ -310,6 +309,9 @@ def _filtros_sql(
     if empresa:
         condiciones.append('c."empresa" = ANY(%(empresa)s)')
         params["empresa"] = empresa
+    if ruta:
+        condiciones.append('c."ruta" = ANY(%(ruta)s)')
+        params["ruta"] = ruta
     if q and q.strip():
         condiciones.append(
             '(c."nombreComercio" ILIKE %(q)s OR c."respuestas"->>\'rif\' ILIKE %(q)s '
@@ -328,10 +330,12 @@ class _Filtros:
         tipo_cliente: list[str] = Query(default=[]),
         empresa: list[str] = Query(default=[]),
         q: str | None = None,
+        ruta: list[str] = Query(default=[]),
     ):
         if desde and hasta and desde > hasta:
             raise HTTPException(400, "La fecha desde no puede ser posterior a la fecha hasta")
-        self.sql, self.params = _filtros_sql(desde, hasta, encuestador, tipo_cliente, empresa, q)
+        self.empresa, self.ruta = empresa, ruta
+        self.sql, self.params = _filtros_sql(desde, hasta, encuestador, tipo_cliente, empresa, q, ruta)
 
 
 _COLUMNAS_LISTA = (
@@ -366,13 +370,15 @@ def listar(f: _Filtros = Depends(), pagina: int = Query(1, ge=1)):
         )
         puntos = cur.fetchall()
         valores = {}
-        for columna in ("encuestador", "tipoCliente", "empresa"):
+        for columna in ("encuestador", "tipoCliente", "empresa", "ruta"):
             cur.execute(
                 f'SELECT DISTINCT "{columna}" AS "v" FROM "Censo" WHERE "formulario" = %s AND "{columna}" IS NOT NULL '
-                "ORDER BY 1",
+                'AND "descartadoEn" IS NULL ORDER BY 1',
                 (FORMULARIO,),
             )
             valores[columna] = [r["v"] for r in cur.fetchall()]
+        # "Ruta 2" antes que "Ruta 10".
+        valores["ruta"].sort(key=lambda r: (len(r), r))
     return {
         "total": total,
         "pagina": pagina,
@@ -490,6 +496,116 @@ def excel(f: _Filtros = Depends()):
     for fila in hoja.iter_rows(min_row=2, max_col=1):
         fila[0].number_format = "dd/mm/yyyy hh:mm"
     return _como_adjunto(libro, "censos")
+
+
+# ---------- Tablero (ADMIN) ----------
+
+
+@router.get("/tablero", dependencies=[Depends(requiere_rol("ADMIN"))])
+def tablero(f: _Filtros = Depends()):
+    """Indicadores (principal y mapa con fotos), avance contra la maestra y
+    alertas, con los mismos filtros que la lista."""
+    with get_connection() as conn, conn.cursor() as cur:
+        datos = tc.tablero(cur, f.sql, f.params, f.empresa, f.ruta)
+    datos.pop("_completo")
+    return datos
+
+
+@router.get("/tablero.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
+def tablero_excel(f: _Filtros = Depends()):
+    """Las listas de trabajo del tablero, completas: por censar, pendientes
+    en ventas, codigos a revisar, duplicados, mismo codigo lejos, sin codigo
+    y posibles clientes."""
+    with get_connection() as conn, conn.cursor() as cur:
+        listas = tc.tablero(cur, f.sql, f.params, f.empresa, f.ruta)["_completo"]
+    libro = openpyxl.Workbook()
+    hojas = [
+        (
+            "Por censar",
+            ["Empresa", "Código", "Razón social", "Ruta", "Día de visita", "Dirección", "Zona", "Vendedor"],
+            [
+                [x["empresa"], x["codigo"], x["razonSocial"], x["ruta"], x["diaVisita"], x["direccion"], x["zona"],
+                 ", ".join(x["vendedores"])]
+                for x in listas["porCensar"]
+            ],
+        ),
+        (
+            "Pendientes en ventas",
+            ["Empresa", "Código", "Comercio", "Ruta", "Encuestador", "Fecha", "En Clientes"],
+            [
+                [x["empresa"], x["codigo"], x["nombre"], x["ruta"], x["encuestador"], x["fecha"],
+                 "Creado por el censo" if x["accion"] == "CREADO" else "Ya existía"]
+                for x in listas["pendientesVentas"]
+            ],
+        ),
+        (
+            "Códigos a revisar",
+            ["Empresa", "Código", "Comercio", "Motivo", "Encuestador", "Fecha", "Id del censo"],
+            [
+                [x["empresa"], x["codigo"], x["nombre"], x["motivo"], x["encuestador"], x["fecha"], x["id"]]
+                for x in listas["revisar"]
+            ],
+        ),
+        (
+            "Duplicados",
+            ["Comercio", "Claves", "Encuestador", "Fecha", "Repite al censo de", "Del", "Id del censo"],
+            [
+                [x["nombre"], ", ".join(x["claves"]), x["encuestador"], x["fecha"], x["duplicadoDe"].get("nombre"),
+                 x["duplicadoDe"].get("fecha"), x["id"]]
+                for x in listas["duplicados"]
+            ],
+        ),
+        (
+            "Mismo código lejos",
+            ["Empresa", "Código", "Metros entre censos", "Censos"],
+            [
+                [x["empresa"], x["codigo"], x["metros"],
+                 " | ".join(f"{c['nombre']} ({c['encuestador']}, {c['fecha']})" for c in x["censos"])]
+                for x in listas["mismoCodigoLejos"]
+            ],
+        ),
+        (
+            "Sin código",
+            ["Comercio", "Tipo de cliente", "Ruta", "Encuestador", "Fecha", "Origen", "Id del censo"],
+            [
+                [x["nombre"], x["tipoCliente"], x["ruta"], x["encuestador"], x["fecha"], x["origen"], x["id"]]
+                for x in listas["sinCodigo"]
+            ],
+        ),
+        (
+            "Posibles clientes",
+            ["Comercio", "RIF", "Teléfono", "Ruta", "Encuestador", "Fecha", "Latitud", "Longitud"],
+            [
+                [x["nombre"], x["rif"], x["telefono"], x["ruta"], x["encuestador"], x["fecha"], x["lat"], x["lng"]]
+                for x in listas["posiblesClientes"]
+            ],
+        ),
+    ]
+    for i, (titulo, encabezados, filas) in enumerate(hojas):
+        hoja = libro.active if i == 0 else libro.create_sheet()
+        hoja.title = titulo
+        _escribir_hoja(hoja, encabezados, filas)
+    return _como_adjunto(libro, "censo_avance_y_alertas")
+
+
+class Descarte(BaseModel):
+    # Sin ids: todos los duplicados que quedan.
+    ids: list[str] | None = None
+
+
+@router.post("/duplicados/descartar", dependencies=[Depends(requiere_rol("ADMIN"))])
+def descartar_duplicados(datos: Descarte):
+    """Saca los duplicados de todos lados. Las filas quedan (marcadas) para
+    que reimportar el historico no los traiga de vuelta."""
+    condicion, params = 'c."duplicadoDeId" IS NOT NULL AND c."descartadoEn" IS NULL', {}
+    if datos.ids is not None:
+        condicion += ' AND c."id" = ANY(%(ids)s)'
+        params["ids"] = datos.ids
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(f'UPDATE "Censo" c SET "descartadoEn" = now() WHERE {condicion}', params)
+        descartados = cur.rowcount
+        conn.commit()
+    return {"descartados": descartados}
 
 
 # Va al final: /{censo_id} atraparia cualquier ruta de arriba (fotos, mios,

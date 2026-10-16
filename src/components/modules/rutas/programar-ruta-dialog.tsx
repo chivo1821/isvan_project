@@ -47,14 +47,19 @@ export function ProgramarRutaDialog({
   vehiculos,
   libres,
   pesoKg,
-  trigger,
+  boton,
 }: {
   ruta: { id: string; numero: string; salidaProgramada: string; vehiculoId: string | null };
   vehiculos: VehiculoOpcion[];
   /** Los vehículos libres en el horario actual de la ruta, si se conocen. */
   libres?: string[] | null;
   pesoKg?: number;
-  trigger?: React.ReactNode;
+  /** El botón que abre el diálogo. Se pasa como datos y no como un
+   * <Button> armado: desde un componente de servidor (la agenda), un
+   * elemento llega al cliente como referencia diferida y el DialogTrigger
+   * (asChild) no puede engancharse a él al renderizar en el servidor
+   * ("Primitive.button failed to slot onto its children" -> 500). */
+  boton?: { texto: string; destacado?: boolean; anchoCompleto?: boolean };
 }) {
   const router = useRouter();
   const inicial = partesCaracas(ruta.salidaProgramada);
@@ -114,7 +119,11 @@ export function ProgramarRutaDialog({
       }}
     >
       <DialogTrigger asChild>
-        {trigger ?? (
+        {boton ? (
+          <Button size="sm" variant={boton.destacado ? "default" : "outline"} className={boton.anchoCompleto ? "w-full" : undefined}>
+            {boton.texto}
+          </Button>
+        ) : (
           <Button variant="outline" size="sm">
             <CalendarClockIcon />
             Programar
@@ -170,8 +179,14 @@ export function ProgramarRutaDialog({
                   return (
                     <SelectItem key={v.id} value={v.id}>
                       <span>
-                        {v.placa} — {TIPO_VEHICULO_META[v.tipo].label} ·{" "}
-                        {v.capacidadKg.toLocaleString("es-VE")} kg
+                        {v.placa}
+                        {/* Quién lo maneja: al programar se elige también al repartidor. */}
+                        {v.conductor ? (
+                          <span className="font-medium"> · {v.conductor}</span>
+                        ) : (
+                          <span className="text-muted-foreground"> · sin chofer</span>
+                        )}{" "}
+                        — {TIPO_VEHICULO_META[v.tipo].label} · {v.capacidadKg.toLocaleString("es-VE")} kg
                         {texto && (
                           <span className={problema ? "text-warning" : "text-muted-foreground"}> · {texto}</span>
                         )}

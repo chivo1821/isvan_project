@@ -22,6 +22,7 @@ enum RolUsuario {
   APROBADOR
   REPARTIDOR
   VENDEDOR // ve los despachos de sus rutas de venta y registra sus visitas
+  COBRANZAS // verifica los pagos que reportan los clientes y ve su cartera
 }
 
 enum Empresa {
@@ -70,6 +71,35 @@ enum EstadoCargaVenta {
   REVERTIDA // deshecha; queda solo como registro
 }
 
+enum EstadoCuentaPortal {
+  PENDIENTE_CORREO // registrada, falta confirmar el correo con el codigo
+  POR_VALIDAR // correo confirmado, cobranzas todavia no la vinculo a un cliente
+  ACTIVA
+  SUSPENDIDA
+}
+
+enum MetodoPago {
+  PAGO_MOVIL
+  TRANSFERENCIA
+  // Los que siguen solo los registra cobranzas (pagos por fuera del portal).
+  EFECTIVO
+  DIVISAS
+  RETENCION
+  AJUSTE
+}
+
+enum EstadoPago {
+  REPORTADO // lo envio el cliente; no descuenta hasta que se verifique
+  VERIFICADO
+  RECHAZADO
+}
+
+enum OrigenDocumento {
+  EXTRACTO_VENTAS
+  CXC // futuro: reporte de cuentas por cobrar del sistema administrativo
+  MANUAL
+}
+
 enum TipoMovimientoVenta {
   VENTA // FA (factura) y NE (nota de entrega)
   DEVOLUCION // DV y DN, con montos negativos
@@ -80,12 +110,30 @@ enum TipoMovimientoVenta {
 model Usuario {
   id           String     @id @default(cuid())
   nombre       String
-  email        String     @unique
+  // Opcional solo para los motorizados autogestionados, que entran con
+  // placa + PIN (ver backend/app/services/motorizados.py). Los demas
+  // usuarios se crean siempre con correo.
+  email        String?    @unique
   passwordHash String
   rol          RolUsuario
   avatarUrl    String?
   activo       Boolean    @default(true)
   createdAt    DateTime   @default(now())
+
+  // Motorizados que se registran solos (alta rotacion, moto propia): entran
+  // con la placa de su moto y un PIN de 6 digitos. El telefono es para
+  // contactarlos y pagarles el delivery (11 digitos, ej. 04141234567).
+  autogestionado   Boolean   @default(false)
+  telefono         String?
+  pinHash          String?
+  // Freno contra adivinar el PIN: tras varios intentos fallidos la cuenta
+  // queda bloqueada un rato (ver motorizados.py).
+  intentosFallidos Int       @default(0)
+  bloqueadoHasta   DateTime?
+
+  // Puede aprobar el despacho de un cliente con deuda vencida (ver
+  // ExcepcionDespacho). El ADMIN siempre puede.
+  autorizaExcepciones Boolean @default(false)
 
   // Solo tiene sentido para el rol REPARTIDOR: el vehiculo que maneja. Es
   // lo que acota lo que ese usuario puede ver — su vehiculo lleva una sola
@@ -107,10 +155,18 @@ model Usuario {
   redesViales           RedVialCarga[]        @relation("RedVialCargadaPor")
   metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
   censos                Censo[]               @relation("CensosLlenados")
+  maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
+  censosCorregidos      Censo[]               @relation("CensosCorregidos")
   configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta            VendedorRuta[]
   visitas               Visita[]
+  // Cobranzas
+  clientesVinculados    CuentaPortalCliente[] @relation("VinculadoPor")
+  tasasRegistradas      TasaCambio[]          @relation("TasaRegistradaPor")
+  pagosRegistrados      Pago[]                @relation("PagoRegistradoPor")
+  pagosRevisados        Pago[]                @relation("PagoRevisadoPor")
+  excepcionesDespacho   ExcepcionDespacho[]
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
@@ -192,6 +248,7 @@ model Cliente {
   despachos         Despacho[]                  @relation("DespachoDestino")
   distanciasAlmacen DistanciaCliente[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+  censos            CensoCliente[]
 
   @@unique([empresa, codigo])
 }
@@ -231,6 +288,8 @@ model Despacho {
   items         DespachoItem[]
   aprobaciones  DespachoAprobacion[]
   puntosEntrega RutaPunto[] // puntos de la ruta marcados como la parada de este despacho
+  // Si se aprobo aunque el cliente tenia deuda vencida.
+  excepcion     ExcepcionDespacho?
 }
 
 model DespachoItem {
@@ -664,11 +723,11 @@ model RutaCalculada {
 // y las respuestas tal cual (solo las relevantes), mas unas columnas sacadas
 // de ellas para listar y filtrar sin abrir el JSON.
 model Censo {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   formulario     String
   version        String
   usuarioId      String
-  usuario        Usuario  @relation("CensosLlenados", fields: [usuarioId], references: [id])
+  usuario        Usuario     @relation("CensosLlenados", fields: [usuarioId], references: [id])
   respuestas     Json
   lat            Float?
   lng            Float?
@@ -680,12 +739,115 @@ model Censo {
   // Del telefono: cuando se abrio el formulario y cuando se envio.
   iniciadoEn     DateTime
   terminadoEn    DateTime
-  recibidoEn     DateTime @default(now())
+  recibidoEn     DateTime    @default(now())
+  // PAGINA: lleno aca. SURVEY123: importado del historico; externoId es su
+  // id alla, para que reimportar el mismo archivo no duplique.
+  origen         OrigenCenso @default(PAGINA)
+  externoId      String?     @unique
+  // Otro censo anterior del mismo cliente en el mismo lugar (ver
+  // backend/app/services/censo_clientes.py): no cuenta en los indicadores y
+  // queda listado para borrarlo.
+  duplicadoDeId  String?
+  duplicadoDe    Censo?      @relation("CensoDuplicado", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados     Censo[]     @relation("CensoDuplicado")
+  // Descartado por el ADMIN (un duplicado): sale de todo, pero la fila
+  // queda para que reimportar el historico no lo traiga de vuelta.
+  descartadoEn   DateTime?
+  // Empresa o codigo corregidos desde Clientes (censos por corregir).
+  corregidoEn    DateTime?
+  corregidoPorId String?
+  corregidoPor   Usuario?    @relation("CensosCorregidos", fields: [corregidoPorId], references: [id], onDelete: SetNull)
 
-  fotos CensoFoto[]
+  fotos    CensoFoto[]
+  clientes CensoCliente[]
 
   @@index([formulario, recibidoEn])
   @@index([usuarioId, recibidoEn])
+  @@index([duplicadoDeId])
+}
+
+enum OrigenCenso {
+  PAGINA
+  SURVEY123
+}
+
+// Que hizo el censo con cada cliente que nombra (uno por empresa; AMBAS son
+// dos filas). Un posible cliente (nuevo que no desea comprar) no tiene filas.
+enum AccionCensoCliente {
+  CREADO // no existia en Clientes y se creo
+  COMPLETADO // existia y se le llenaron campos vacios (coordenadas, ruta)
+  EXISTENTE // existia completo: no se toco
+  REVISAR // no se toco: el codigo parece equivocado (ver motivo)
+}
+
+model CensoCliente {
+  id          String             @id @default(cuid())
+  censoId     String
+  censo       Censo              @relation(fields: [censoId], references: [id], onDelete: Cascade)
+  empresa     Empresa
+  // Sin ceros a la izquierda, como en ventas.
+  codigo      String
+  // Contra la maestra vigente y los clientes con ventas, al procesarlo.
+  enMaestra   Boolean            @default(false)
+  enVentas    Boolean            @default(false)
+  clienteId   String?
+  cliente     Cliente?           @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  accion      AccionCensoCliente
+  motivo      String?
+  procesadoEn DateTime           @default(now())
+
+  @@unique([censoId, empresa])
+  @@index([empresa, codigo])
+}
+
+// ---------- Maestra de clientes ----------
+//
+// El padron que el cliente mantiene aparte del sistema de ventas, por
+// empresa. Cada carga es una foto completa: vale la ultima de cada empresa
+// (ver backend/app/services/maestra_import.py).
+model MaestraCarga {
+  id          String   @id @default(cuid())
+  empresa     Empresa
+  archivo     String
+  filas       Int
+  resumen     Json
+  subidaEn    DateTime @default(now())
+  subidaPorId String?
+  subidaPor   Usuario? @relation("MaestrasSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
+
+  clientes MaestraCliente[]
+
+  @@index([empresa, subidaEn])
+}
+
+model MaestraCliente {
+  id      String       @id @default(cuid())
+  cargaId String
+  carga   MaestraCarga @relation(fields: [cargaId], references: [id], onDelete: Cascade)
+  empresa Empresa
+  // Sin ceros a la izquierda, como en ventas.
+  codigo  String
+
+  razonSocial  String
+  // "5", "12"... ("77" son los dados de baja: fuera de "por censar").
+  ruta         String?
+  diaVisita    String?
+  frecuencia   String?
+  secuencia    String?
+  direccion    String?
+  condicion    String?
+  tipoCliente  String?
+  listaPrecio  String?
+  zona         String?
+  observacion  String?
+  // El activo que trae el archivo: se guarda pero todavia no se usa.
+  activoCodigo String?
+  activoTipo   String?
+  activoMarca  String?
+
+  @@unique([cargaId, codigo])
+  @@index([empresa, codigo])
+  @@index([empresa, ruta])
 }
 
 // Las fotos van en el almacenamiento de archivos (ver
@@ -712,4 +874,198 @@ model Configuracion {
   actualizadoEn    DateTime @default(now())
   actualizadoPorId String?
   actualizadoPor   Usuario? @relation("ConfiguracionActualizadaPor", fields: [actualizadoPorId], references: [id], onDelete: SetNull)
+}
+
+// ---------- Cobranzas ----------
+//
+// Cartera calculada aca: FA/NE del extracto de ventas son cargos; DV/DN y
+// los pagos verificados, abonos. Las reglas de saldo, vencimiento y bloqueo
+// viven en un solo lugar: backend/app/services/cartera.py.
+
+// Cuenta de un cliente en el portal de autogestion. Separada de Usuario a
+// proposito: tiene su propia sesion (SesionPortal, cookie portal_sesion) y
+// nunca puede entrar a la API interna.
+model CuentaPortal {
+  id                 String             @id @default(cuid())
+  email              String             @unique
+  passwordHash       String
+  nombre             String
+  rif                String
+  telefono           String?
+  estado             EstadoCuentaPortal @default(PENDIENTE_CORREO)
+  correoVerificadoEn DateTime?
+  // Lo que el cliente dijo ser al registrarse; cobranzas lo valida.
+  empresaDeclarada   Empresa?
+  codigoDeclarado    String?
+  intentosFallidos   Int                @default(0)
+  bloqueadoHasta     DateTime?
+  createdAt          DateTime           @default(now())
+
+  clientes CuentaPortalCliente[]
+  sesiones SesionPortal[]
+  codigos  CodigoCorreo[]
+  pagos    Pago[]
+
+  @@index([estado])
+}
+
+// Los clientes (empresa + codigo del sistema de ventas) que ve una cuenta:
+// sucursales y las dos empresas.
+model CuentaPortalCliente {
+  id             String       @id @default(cuid())
+  cuentaId       String
+  cuenta         CuentaPortal @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  empresa        Empresa
+  codigoCliente  String
+  origen         String // AUTO_CORREO | COBRANZAS
+  vinculadoPorId String?
+  vinculadoPor   Usuario?     @relation("VinculadoPor", fields: [vinculadoPorId], references: [id], onDelete: SetNull)
+  vinculadoEn    DateTime     @default(now())
+
+  @@unique([cuentaId, empresa, codigoCliente])
+  @@index([empresa, codigoCliente])
+}
+
+model SesionPortal {
+  id        String       @id @default(cuid())
+  cuentaId  String
+  cuenta    CuentaPortal @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  tokenHash String       @unique
+  creadoEn  DateTime     @default(now())
+  expiraEn  DateTime
+}
+
+// Codigo de 6 digitos enviado por correo; solo se guarda su hash.
+model CodigoCorreo {
+  id         String       @id @default(cuid())
+  cuentaId   String
+  cuenta     CuentaPortal @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  proposito  String // CONFIRMAR | RECUPERAR
+  codigoHash String
+  enviadoEn  DateTime     @default(now())
+  expiraEn   DateTime
+  intentos   Int          @default(0)
+  usadoEn    DateTime?
+
+  @@index([cuentaId, proposito])
+}
+
+// Tasa oficial BCV (Bs por USD). La de una fecha es la de la fila mas
+// reciente con fecha <= esa fecha.
+model TasaCambio {
+  fecha           DateTime @id @db.Date
+  tasa            Decimal  @db.Decimal(20, 8)
+  fuente          String // DOLARAPI | MANUAL
+  registradoEn    DateTime @default(now())
+  registradoPorId String?
+  registradoPor   Usuario? @relation("TasaRegistradaPor", fields: [registradoPorId], references: [id], onDelete: SetNull)
+}
+
+// Un documento por cobrar (FA/NE) o a favor del cliente (DV/DN, negativo).
+model DocumentoCobro {
+  id            String          @id @default(cuid())
+  empresa       Empresa
+  tipoDoc       String // FA | NE | DV | DN
+  numero        String
+  codigoCliente String
+  fecha         DateTime        @db.Date
+  // Solo si el origen lo trae (CXC); si no, vence a fecha + dias de tolerancia.
+  vencimiento   DateTime?       @db.Date
+  montoUsd      Decimal         @db.Decimal(20, 2)
+  montoBs       Decimal         @db.Decimal(20, 2)
+  origen        OrigenDocumento
+  // false si ya no esta en su origen (se revirtio la carga); se conserva
+  // por los pagos que lo referencian.
+  vigente       Boolean         @default(true)
+  actualizadoEn DateTime        @default(now())
+
+  aplicaciones PagoAplicacion[]
+
+  @@unique([empresa, tipoDoc, numero])
+  @@index([empresa, codigoCliente])
+  @@index([empresa, fecha])
+}
+
+model Pago {
+  id                 String        @id @default(cuid())
+  numero             String        @unique // ej. "P-000123"
+  empresa            Empresa
+  codigoCliente      String
+  // Quien lo cargo: el cliente desde el portal o cobranzas a mano.
+  cuentaPortalId     String?
+  cuentaPortal       CuentaPortal? @relation(fields: [cuentaPortalId], references: [id], onDelete: SetNull)
+  registradoPorId    String?
+  registradoPor      Usuario?      @relation("PagoRegistradoPor", fields: [registradoPorId], references: [id], onDelete: SetNull)
+  metodo             MetodoPago
+  bancoCodigo        String?
+  telefono           String?
+  cedulaRif          String?
+  cuenta             String?
+  referencia         String?
+  fechaPago          DateTime      @db.Date
+  montoBs            Decimal?      @db.Decimal(20, 2)
+  tasa               Decimal?      @db.Decimal(20, 8)
+  montoUsd           Decimal       @db.Decimal(20, 2)
+  comprobanteClave   String?
+  comprobanteTipo    String?
+  nota               String?
+  estado             EstadoPago    @default(REPORTADO)
+  reportadoEn        DateTime      @default(now())
+  revisadoPorId      String?
+  revisadoPor        Usuario?      @relation("PagoRevisadoPor", fields: [revisadoPorId], references: [id], onDelete: SetNull)
+  revisadoEn         DateTime?
+  motivoRechazo      String?
+  // MANUAL hoy; BANCO cuando se concilie contra la API de los bancos.
+  metodoVerificacion String?
+
+  aplicaciones PagoAplicacion[]
+
+  // Ademas, indice unico parcial (bancoCodigo, referencia, fechaPago) para
+  // los pagos no rechazados: lo crea la migracion (Prisma no los modela).
+  @@index([empresa, codigoCliente])
+  @@index([estado, reportadoEn])
+  @@index([cuentaPortalId])
+}
+
+model PagoAplicacion {
+  id          String         @id @default(cuid())
+  pagoId      String
+  pago        Pago           @relation(fields: [pagoId], references: [id], onDelete: Cascade)
+  documentoId String
+  documento   DocumentoCobro @relation(fields: [documentoId], references: [id], onDelete: Restrict)
+  montoUsd    Decimal        @db.Decimal(20, 2)
+  // true si nadie eligio el documento: el pago se repartio solo a lo que
+  // vence primero al verificarlo (ver pagos.reparto_automatico).
+  automatica  Boolean        @default(false)
+
+  @@unique([pagoId, documentoId])
+  @@index([documentoId])
+}
+
+// Despacho aprobado aunque el cliente tenia deuda vencida.
+model ExcepcionDespacho {
+  id              String   @id @default(cuid())
+  despachoId      String   @unique
+  despacho        Despacho @relation(fields: [despachoId], references: [id], onDelete: Cascade)
+  autorizadoPorId String
+  autorizadoPor   Usuario  @relation(fields: [autorizadoPorId], references: [id])
+  motivo          String
+  saldoVencidoUsd Decimal  @db.Decimal(20, 2)
+  fecha           DateTime @default(now())
+}
+
+// Donde pagan los clientes (se muestra en el portal).
+model CuentaBancariaEmpresa {
+  id          String   @id @default(cuid())
+  empresa     Empresa
+  bancoCodigo String
+  tipo        String // PAGO_MOVIL | TRANSFERENCIA
+  // Telefono (pago movil) o cuenta de 20 digitos (transferencia).
+  numero      String
+  rif         String
+  titular     String
+  activa      Boolean  @default(true)
+  creadaEn    DateTime @default(now())
+
+  @@index([empresa])
 }

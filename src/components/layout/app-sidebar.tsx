@@ -9,6 +9,7 @@ import {
   Building2Icon,
   ChevronRightIcon,
   ClipboardCheckIcon,
+  HandCoinsIcon,
   IceCreamConeIcon,
   LayoutDashboardIcon,
   MapPinCheckIcon,
@@ -65,6 +66,27 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Visitas", href: "/vendedor/visitas", icon: MapPinCheckIcon, roles: ["VENDEDOR"] },
       { label: "Indicadores", href: "/vendedor/indicadores", icon: BarChart3Icon, roles: ["VENDEDOR"] },
       { label: "Censo", href: "/vendedor/censo", icon: ClipboardCheckIcon, roles: ["VENDEDOR"] },
+    ],
+  },
+  {
+    // Único módulo de COBRANZAS; el ADMIN también lo ve (ver
+    // backend/app/api/cobranzas.py).
+    label: "Cobranzas",
+    items: [
+      {
+        label: "Cobranzas",
+        href: "/cobranzas",
+        icon: HandCoinsIcon,
+        roles: ["ADMIN", "COBRANZAS"],
+        exacto: true,
+        children: [
+          { label: "Tablero", href: "/cobranzas" },
+          { label: "Pagos por verificar", href: "/cobranzas/pagos" },
+          { label: "Clientes", href: "/cobranzas/clientes" },
+          { label: "Cuentas del portal", href: "/cobranzas/cuentas" },
+          { label: "Ajustes", href: "/cobranzas/ajustes" },
+        ],
+      },
     ],
   },
   {

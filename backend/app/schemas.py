@@ -15,7 +15,10 @@ import re
 from datetime import date, datetime, timezone
 from typing import Annotated, Literal, Optional
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel
+from pydantic import AfterValidator, AwareDatetime, BaseModel, Field
+
+from app.services import bancos
+from app.services import motorizados as mt
 
 
 def en_utc(valor: datetime) -> datetime:
@@ -71,18 +74,23 @@ ClaveNueva = Annotated[str, AfterValidator(_clave_dentro_de_bcrypt)]
 class Usuario(BaseModel):
     id: str
     nombre: str
-    email: str
+    # None solo en los motorizados autogestionados (entran con placa + PIN).
+    email: Optional[str] = None
     rol: str
     avatarUrl: Optional[str] = None
     activo: bool
+    autogestionado: bool = False
+    telefono: Optional[str] = None
     # Solo aplica al rol REPARTIDOR: el vehiculo que maneja, y por lo tanto
     # la unica ruta que puede ver (ver app/core/permisos.py).
     vehiculoAsignadoId: Optional[str] = None
+    # Puede aprobar despachos de clientes con deuda vencida (ver cartera.py).
+    autorizaExcepciones: bool = False
 
 
 # Los valores de los enums de la base (prisma/schema.prisma). Validarlos aca
 # devuelve un 422 claro; si no, un valor raro llegaba hasta Postgres y era un 500.
-RolUsuario = Literal["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR"]
+RolUsuario = Literal["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR", "COBRANZAS"]
 TipoVehiculo = Literal["CAMION_REFRIGERADO", "CAMIONETA", "MOTO"]
 EstadoVehiculo = Literal["FUNCIONAL", "EN_MANTENIMIENTO", "FUERA_DE_SERVICIO"]
 
@@ -222,6 +230,58 @@ class RendimientoVendedores(BaseModel):
     porVendedor: list[RendimientoVendedor]
 
 
+# ---------- Motorizados autogestionados (ver app/services/motorizados.py) ----------
+
+
+def _nombre_motorizado(valor: str) -> str:
+    valor = " ".join(valor.split())
+    if not 3 <= len(valor) <= 80:
+        raise ValueError("Escribe tu nombre y apellido (entre 3 y 80 caracteres)")
+    return valor
+
+
+class RegistroMotorizadoRequest(BaseModel):
+    codigoRegistro: Annotated[str, Field(max_length=64)]
+    nombre: Annotated[str, AfterValidator(_nombre_motorizado)]
+    placa: Annotated[str, Field(max_length=20), AfterValidator(mt.validar_placa)]
+    telefono: Annotated[str, Field(max_length=20), AfterValidator(mt.validar_telefono)]
+    pin: Annotated[str, AfterValidator(mt.validar_pin)]
+
+
+class LoginMotorizadoRequest(BaseModel):
+    placa: Annotated[str, Field(max_length=20)]
+    pin: Annotated[str, Field(max_length=12)]
+
+
+class Motorizado(BaseModel):
+    id: str
+    nombre: str
+    telefono: Optional[str] = None
+    activo: bool
+    vehiculoId: Optional[str] = None
+    placa: Optional[str] = None
+    estadoVehiculo: Optional[str] = None
+    capacidadKg: Optional[float] = None
+    registradoEn: Instante
+    bloqueadoHasta: Optional[Instante] = None
+    rutas: int
+    ultimaRuta: Optional[Instante] = None
+
+
+class PinRestablecido(BaseModel):
+    pin: str
+
+
+class CodigoRegistro(BaseModel):
+    codigo: Optional[str] = None
+    actualizadoEn: Optional[Instante] = None
+    actualizadoPor: Optional[str] = None
+
+
+class CodigoRegistroUpdate(BaseModel):
+    codigo: Annotated[str, Field(max_length=64)]
+
+
 class LoginRequest(BaseModel):
     email: Correo
     password: str
@@ -234,6 +294,10 @@ class CambiarPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     passwordNueva: ClaveNueva
+
+
+class PermisoExcepcionesRequest(BaseModel):
+    autoriza: bool
 
 
 # ---------- Almacen / flota ----------
@@ -383,10 +447,17 @@ class DespachoAprobacion(BaseModel):
     fecha: Instante
 
 
+class ExcepcionDespachoIn(BaseModel):
+    motivo: Annotated[str, Field(min_length=5, max_length=300)]
+
+
 class DespachoAprobacionCreate(BaseModel):
     # Quien aprueba sale de la sesion, no del cuerpo.
     accion: Literal["APROBADA", "RECHAZADA"]
-    comentario: Optional[str] = None
+    comentario: Optional[Annotated[str, Field(max_length=500)]] = None
+    # Aprobar aunque el cliente tenga deuda vencida (solo usuarios
+    # autorizados; ver app/services/cartera.py).
+    excepcion: Optional[ExcepcionDespachoIn] = None
 
 
 class ActualizarCantidadDespachoItemRequest(BaseModel):
@@ -399,9 +470,17 @@ class AprobacionMasivaRequest(BaseModel):
     comentario: Optional[str] = None
 
 
+class DespachoOmitido(BaseModel):
+    numero: str
+    vencidoUsd: float
+
+
 class AprobacionMasivaResponse(BaseModel):
     aprobados: int
     numeros: list[str]
+    # Los de clientes con deuda vencida no se aprueban en lote: necesitan una
+    # excepcion, despacho por despacho.
+    omitidos: list[DespachoOmitido] = []
 
 
 # ---------- Importacion de Excel ----------
@@ -573,6 +652,10 @@ class PlanRutasRequest(BaseModel):
     # viaje (restriccion dura). True = preferir agruparlos, pero permitir
     # mezclar antes que mandar un vehiculo a medio llenar.
     mezclarRutasComerciales: bool = True
+    # True = antes que los camiones, llenar las motos libres (motorizados)
+    # con los despachos livianos y cercanos que les caben. False = consolidar
+    # en la menor cantidad de vehiculos (las motos solo si sobra algo chico).
+    priorizarMotos: bool = True
     # Distancia maxima (km) entre una parada y las demas del mismo viaje.
     # Vacio = el valor por defecto del servicio
     # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).
@@ -639,3 +722,140 @@ class MetaVentaItem(BaseModel):
 class GuardarMetasRequest(BaseModel):
     empresa: Empresa
     metas: list[MetaVentaItem]
+
+
+# ---------- Cobranzas ----------
+#
+# Los datos de un pago se validan segun su metodo en
+# app/services/pagos.normalizar (que campos son obligatorios depende del
+# metodo); aca solo los tipos y los topes de largo.
+
+MetodoPago = Literal["PAGO_MOVIL", "TRANSFERENCIA", "EFECTIVO", "DIVISAS", "RETENCION", "AJUSTE"]
+TextoCorto = Annotated[str, Field(max_length=40)]
+
+
+class PagoAplicacionIn(BaseModel):
+    documentoId: Annotated[str, Field(max_length=64)]
+    montoUsd: Annotated[float, Field(gt=0, le=1e10)]
+
+
+class _PagoBase(BaseModel):
+    empresa: Empresa
+    codigoCliente: Annotated[str, Field(min_length=1, max_length=30)]
+    fechaPago: date
+    montoBs: Optional[Annotated[float, Field(gt=0, le=1e12)]] = None
+    bancoCodigo: Optional[TextoCorto] = None
+    telefono: Optional[TextoCorto] = None
+    cedulaRif: Optional[TextoCorto] = None
+    cuenta: Optional[TextoCorto] = None
+    referencia: Optional[TextoCorto] = None
+    nota: Optional[Annotated[str, Field(max_length=500)]] = None
+    aplicaciones: Annotated[list[PagoAplicacionIn], Field(max_length=200)] = []
+
+
+class PagoManualCreate(_PagoBase):
+    """Un pago que registra cobranzas (queda verificado)."""
+    metodo: MetodoPago
+    montoUsd: Optional[Annotated[float, Field(gt=0, le=1e10)]] = None
+
+
+class PagoPortalCreate(_PagoBase):
+    """Un pago que reporta el cliente desde el portal."""
+    metodo: Literal["PAGO_MOVIL", "TRANSFERENCIA"]
+    comprobanteClave: Optional[Annotated[str, Field(max_length=200)]] = None
+
+
+class VerificarPagoRequest(BaseModel):
+    # None: se quedan las aplicaciones que propuso el cliente.
+    aplicaciones: Optional[Annotated[list[PagoAplicacionIn], Field(max_length=200)]] = None
+
+
+class RechazarPagoRequest(BaseModel):
+    motivo: Annotated[str, Field(min_length=3, max_length=300)]
+
+
+class AjustesCobranzaUpdate(BaseModel):
+    diasTolerancia: Optional[Annotated[int, Field(ge=0, le=180)]] = None
+    inicioCartera: Optional[date] = None
+
+
+class TasaManualRequest(BaseModel):
+    fecha: date
+    tasa: Annotated[float, Field(gt=0, le=1e8)]
+
+
+def _clave_portal(valor: str) -> str:
+    if len(valor) < 8:
+        raise ValueError("La contraseña debe tener al menos 8 caracteres")
+    if valor.isdigit() or valor.isalpha():
+        raise ValueError("La contraseña debe combinar letras y números")
+    return _clave_dentro_de_bcrypt(valor)
+
+
+def _nombre_portal(valor: str) -> str:
+    limpio = " ".join(valor.split())
+    if len(limpio) < 2:
+        raise ValueError("Escribe tu nombre o el de tu negocio")
+    return limpio
+
+
+def _cedula_rif(valor: str) -> str:
+    return bancos.normalizar_cedula_rif(valor)
+
+
+def _codigo_cliente(valor: str) -> str:
+    """Como lo guarda el sistema de ventas: sin ceros a la izquierda."""
+    limpio = valor.strip()
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,20}", limpio):
+        raise ValueError("El código de cliente no es válido")
+    return limpio.lstrip("0") or "0"
+
+
+ClavePortal = Annotated[str, Field(max_length=200), AfterValidator(_clave_portal)]
+CodigoCorreo = Annotated[str, Field(max_length=12)]
+
+
+class RegistroPortalRequest(BaseModel):
+    email: Annotated[CorreoNuevo, Field(max_length=200)]
+    password: ClavePortal
+    nombre: Annotated[str, Field(max_length=120), AfterValidator(_nombre_portal)]
+    rif: Annotated[str, Field(max_length=20), AfterValidator(_cedula_rif)]
+    telefono: Annotated[str, Field(max_length=20), AfterValidator(mt.validar_telefono)]
+    # Lo que el cliente dice ser; cobranzas lo valida si no se vincula solo.
+    empresa: Optional[Empresa] = None
+    codigoCliente: Optional[Annotated[str, Field(max_length=20), AfterValidator(_codigo_cliente)]] = None
+
+
+class ConfirmarCorreoRequest(BaseModel):
+    email: Annotated[Correo, Field(max_length=200)]
+    codigo: CodigoCorreo
+
+
+class CorreoRequest(BaseModel):
+    email: Annotated[Correo, Field(max_length=200)]
+
+
+class LoginPortalRequest(BaseModel):
+    email: Annotated[Correo, Field(max_length=200)]
+    password: Annotated[str, Field(max_length=200)]
+
+
+class CambiarClavePortalRequest(BaseModel):
+    email: Annotated[Correo, Field(max_length=200)]
+    codigo: CodigoCorreo
+    password: ClavePortal
+
+
+class VincularClienteRequest(BaseModel):
+    empresa: Empresa
+    codigoCliente: Annotated[str, Field(max_length=20), AfterValidator(_codigo_cliente)]
+
+
+class CuentaBancariaEmpresaIn(BaseModel):
+    empresa: Empresa
+    bancoCodigo: TextoCorto
+    tipo: Literal["PAGO_MOVIL", "TRANSFERENCIA"]
+    numero: TextoCorto
+    rif: TextoCorto
+    titular: Annotated[str, Field(min_length=2, max_length=120)]
+    activa: bool = True

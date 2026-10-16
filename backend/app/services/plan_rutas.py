@@ -345,8 +345,16 @@ def sugerir_plan_rutas(
     mezclar_rutas_comerciales: bool = True,
     radio_max_km: float | None = None,
     salida_programada: datetime | None = None,
+    priorizar_motos: bool = True,
 ) -> dict:
     """Devuelve los viajes propuestos y los despachos que quedaron fuera.
+
+    priorizar_motos: antes que los camiones, cada moto libre se lleva un
+    viaje con los despachos livianos y cercanos que le caben (capacidad del
+    bolso, limite de km). Sin esto el criterio es consolidar en la menor
+    cantidad de vehiculos, y las motos casi nunca salen: dos camiones se
+    llevan todo (pedido del cliente, 2026-10-07: los motorizados tienen que
+    tomarse en cuenta).
 
     radio_max_km ajusta que tan lejos puede estar una parada de las demas del
     mismo viaje (por defecto RADIO_MAX_ENTRE_PARADAS_KM): bajarlo da viajes
@@ -407,10 +415,23 @@ def sugerir_plan_rutas(
         # Primero con un vehiculo libre a esa hora. Si ya no queda ninguno que
         # sirva, el viaje se arma igual con el tamano de la flota y queda sin
         # vehiculo, para asignarlo cuando se libere uno.
-        referencia = next(
-            (v for v in libres if any(_puede_llevar(v, p, limite_moto) for p in pendientes)),
-            None,
-        )
+        # Con la prioridad de motos, primero una moto libre que pueda llevar
+        # algo de lo pendiente; despues, el vehiculo libre mas grande.
+        referencia = None
+        if priorizar_motos:
+            referencia = next(
+                (
+                    v for v in libres
+                    if v["tipo"] == "MOTO" and any(_puede_llevar(v, p, limite_moto) for p in pendientes)
+                ),
+                None,
+            )
+        en_moto_por_prioridad = referencia is not None
+        if referencia is None:
+            referencia = next(
+                (v for v in libres if any(_puede_llevar(v, p, limite_moto) for p in pendientes)),
+                None,
+            )
         con_vehiculo = referencia is not None
         if not con_vehiculo:
             referencia = next(
@@ -454,6 +475,8 @@ def sugerir_plan_rutas(
         motivos = _motivos(grupo, asignado, peso_kg, distancia_km, costo)
         if not con_vehiculo:
             motivos.insert(0, "Sin vehículo libre a esa hora: se planifica y se le asigna uno después")
+        elif en_moto_por_prioridad and asignado["tipo"] == "MOTO":
+            motivos.insert(0, "Entregas livianas y cercanas: van en moto (prioridad de motorizados)")
 
         sugerencias.append({
             "vehiculo": asignado if con_vehiculo else None,

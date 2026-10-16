@@ -61,6 +61,11 @@ Copia `.env.example` a `.env` en la raíz del proyecto y completa:
 | `NETWORK_ANALYST_URL` | Servicio SuperMap iServer, ya solo como respaldo (opcional) |
 | `NETWORK_ANALYST_WEIGHT_FIELD` | Campo de peso/costo del dataset de red (`time` por defecto) |
 | `COOKIE_SECURE` | `false` en dev (HTTP), `true` en producción (HTTPS) — la cookie de sesión lo exige |
+| `CORREO_MODO` | Cómo salen los correos del portal (códigos, avisos de pago): `smtp`, `resend` o `consola` (no envía; los deja en `backend/media/correos-dev.log`). Ver `backend/app/services/correo.py` |
+| `SMTP_SERVIDOR`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE` | Modo `smtp`: la cuenta de correo con la que se envía (puerto 587 con STARTTLS o 465 con SSL) |
+| `RESEND_API_KEY` | Modo `resend`: clave de la API de Resend (requiere un dominio verificado en Resend) |
+| `CORREO_REMITENTE` | Remitente, p. ej. `Cobranzas <cobranzas@empresa.com>`. En SMTP es opcional y debe ser la misma cuenta o un alias permitido |
+| `CRON_SECRET` | Clave que manda el cron diario de Vercel para actualizar la tasa BCV |
 
 ### 3. Base de datos
 
@@ -139,6 +144,10 @@ de build/deploy más allá de `git push`.
    - `NETWORK_ANALYST_URL` / `NETWORK_ANALYST_WEIGHT_FIELD`: el servicio
      SuperMap iServer real (si aplica).
    - `COOKIE_SECURE=true` (obligatorio en producción — HTTPS).
+   - Correo del portal: `CORREO_MODO` y las variables de SMTP o de Resend
+     (ver la tabla de arriba). Para probarlas antes de desplegar:
+     `backend/.venv/Scripts/python.exe backend/scripts/probar_correo.py destino@correo.com`.
+   - `CRON_SECRET`: la tarea diaria de la tasa BCV.
 
 2. **Migraciones contra Neon** — Vercel **no** corre `prisma migrate
    deploy` automáticamente durante el build (solo `prisma generate`, que no

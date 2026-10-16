@@ -8,15 +8,52 @@ import { HtmlLimpio, textoPlano } from "./html-limpio";
 
 type Foto = DetalleCenso["fotos"][number];
 
-function ValorRespuesta({ pregunta: p, valor, definicion, fotos }: { pregunta: Pregunta; valor: Valor; definicion: DefinicionFormulario; fotos: Foto[] }) {
+function ValorRespuesta({
+  pregunta: p,
+  valor,
+  definicion,
+  fotos,
+  compacto,
+}: {
+  pregunta: Pregunta;
+  valor: Valor;
+  definicion: DefinicionFormulario;
+  fotos: Foto[];
+  compacto: boolean;
+}) {
   if (p.type === "image") {
     const foto = fotos.find((f) => f.pregunta === p.name);
-    if (!foto) return <span className="text-muted-foreground">Sin foto</span>;
+    if (!foto) {
+      // Un censo importado de Survey123: la foto quedó allá, como enlace.
+      if (typeof valor === "string" && valor.startsWith("https://"))
+        return compacto ? (
+          <a href={valor} target="_blank" rel="noreferrer" className="inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element -- foto en el servidor de Survey123 */}
+            <img src={valor} alt={textoPlano(p.label) || p.name} loading="lazy" className="h-24 w-auto rounded border object-cover" />
+          </a>
+        ) : (
+          <a
+            href={valor}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
+          >
+            Ver en Survey123
+            <ExternalLinkIcon className="size-3.5" />
+          </a>
+        );
+      return <span className="text-muted-foreground">Sin foto</span>;
+    }
     const url = `${API_URL}/censo/fotos/${foto.id}`;
     return (
       <a href={url} target="_blank" rel="noreferrer" className="inline-block">
         {/* eslint-disable-next-line @next/next/no-img-element -- la sirve la API con la sesión, no pasa por next/image */}
-        <img src={url} alt={textoPlano(p.label) || p.name} className="h-40 w-auto rounded-md border object-cover" />
+        <img
+          src={url}
+          alt={textoPlano(p.label) || p.name}
+          loading="lazy"
+          className={compacto ? "h-24 w-auto rounded border object-cover" : "h-40 w-auto rounded-md border object-cover"}
+        />
       </a>
     );
   }
@@ -43,8 +80,18 @@ function ValorRespuesta({ pregunta: p, valor, definicion, fotos }: { pregunta: P
 }
 
 /** Las respuestas en el orden y con los grupos del formulario. Solo se ven
- * las que se respondieron: las preguntas que no aplicaban no tienen valor. */
-export function DetalleDeCenso({ censo, definicion }: { censo: DetalleCenso; definicion: DefinicionFormulario }) {
+ * las que se respondieron: las preguntas que no aplicaban no tienen valor.
+ * `compacto`: para el popup del mapa del tablero (sin tarjetas, letra chica
+ * y fotos en miniatura). */
+export function DetalleDeCenso({
+  censo,
+  definicion,
+  compacto = false,
+}: {
+  censo: DetalleCenso;
+  definicion: DefinicionFormulario;
+  compacto?: boolean;
+}) {
   const respondidas = new Set(Object.keys(censo.respuestas));
   const conocidas = new Set<string>();
 
@@ -53,14 +100,28 @@ export function DetalleDeCenso({ censo, definicion }: { censo: DetalleCenso; def
       if (esGrupo(n)) return [];
       conocidas.add(n.name);
       if (!respondidas.has(n.name) && !(n.type === "image" && censo.fotos.some((f) => f.pregunta === n.name))) return [];
+      const valor = (
+        <ValorRespuesta
+          pregunta={n}
+          valor={censo.respuestas[n.name]}
+          definicion={definicion}
+          fotos={censo.fotos}
+          compacto={compacto}
+        />
+      );
+      if (compacto)
+        return [
+          <div key={n.name} className="py-1">
+            <dt className="text-xs text-muted-foreground">{textoPlano(n.label) || n.name}</dt>
+            <dd className="text-xs">{valor}</dd>
+          </div>,
+        ];
       return [
         <div key={n.name} className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-4">
           <dt className="text-sm text-muted-foreground">
             <HtmlLimpio html={n.label ?? n.name} />
           </dt>
-          <dd className="text-sm">
-            <ValorRespuesta pregunta={n} valor={censo.respuestas[n.name]} definicion={definicion} fotos={censo.fotos} />
-          </dd>
+          <dd className="text-sm">{valor}</dd>
         </div>,
       ];
     });
@@ -70,6 +131,14 @@ export function DetalleDeCenso({ censo, definicion }: { censo: DetalleCenso; def
     const propias = filas(nodos);
     const internos = nodos.filter(esGrupo).flatMap((g) => bloque(g.label, g.children, g.name ?? clave));
     if (!propias.length) return internos;
+    if (compacto)
+      return [
+        <section key={clave}>
+          {titulo && <p className="pt-2 text-xs font-semibold">{textoPlano(titulo)}</p>}
+          <dl className="divide-y">{propias}</dl>
+        </section>,
+        ...internos,
+      ];
     return [
       <Card key={clave}>
         {titulo && (
@@ -89,6 +158,26 @@ export function DetalleDeCenso({ censo, definicion }: { censo: DetalleCenso; def
 
   const bloques = bloque(undefined, definicion.children, "general");
   const otras = Object.keys(censo.respuestas).filter((n) => !conocidas.has(n));
+
+  if (compacto)
+    return (
+      <div>
+        {bloques}
+        {otras.length > 0 && (
+          <section>
+            <p className="pt-2 text-xs font-semibold">Otras respuestas</p>
+            <dl className="divide-y">
+              {otras.map((n) => (
+                <div key={n} className="py-1">
+                  <dt className="font-mono text-xs text-muted-foreground">{n}</dt>
+                  <dd className="text-xs">{JSON.stringify(censo.respuestas[n])}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+      </div>
+    );
 
   return (
     <div className="space-y-4">

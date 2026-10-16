@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AsignarRutasDialog } from "@/components/modules/usuarios/asignar-rutas-dialog";
 import { AsignarVehiculoDialog } from "@/components/modules/usuarios/asignar-vehiculo-dialog";
+import { PermisoExcepciones } from "@/components/modules/usuarios/permiso-excepciones";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
 import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -16,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ROL_USUARIO_META, TIPO_VEHICULO_META } from "@/lib/constants";
+import { ROL_USUARIO_META, TIPO_VEHICULO_META, formatTelefono } from "@/lib/constants";
 import type { Usuario, Vehiculo } from "@/lib/mock-data";
 
 function iniciales(nombre: string) {
@@ -78,9 +79,26 @@ export function UsuariosTable({
                       <span className="font-medium text-foreground">{u.nombre}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {u.autogestionado ? (
+                      <span>
+                        {formatTelefono(u.telefono)}
+                        <span className="ml-1.5 text-xs">(motorizado, entra con placa y PIN)</span>
+                      </span>
+                    ) : (
+                      u.email
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge {...ROL_USUARIO_META[u.rol]} />
+                    {/* Aprobar despachos de clientes con deuda vencida
+                        (ver backend/app/services/cartera.py). */}
+                    {(u.rol === "APROBADOR" || u.rol === "COBRANZAS") &&
+                      (esAdmin ? (
+                        <PermisoExcepciones usuario={u} onCambio={reemplazar} />
+                      ) : (
+                        u.autorizaExcepciones && <span className="mt-1 block text-xs text-muted-foreground">Autoriza excepciones</span>
+                      ))}
                   </TableCell>
                   <TableCell>
                     {u.rol !== "REPARTIDOR" ? (
@@ -106,11 +124,13 @@ export function UsuariosTable({
                   {esAdmin && (
                     <TableCell>
                       <div className="flex justify-end gap-2">
-                        {u.rol === "REPARTIDOR" && (
+                        {/* Un motorizado anda en su moto y entra con PIN: se administra
+                            en Vehículos › Choferes › Motorizados. */}
+                        {u.rol === "REPARTIDOR" && !u.autogestionado && (
                           <AsignarVehiculoDialog usuario={u} vehiculos={vehiculos} onAsignado={reemplazar} />
                         )}
                         {u.rol === "VENDEDOR" && <AsignarRutasDialog usuario={u} />}
-                        <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />
+                        {!u.autogestionado && <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />}
                       </div>
                     </TableCell>
                   )}

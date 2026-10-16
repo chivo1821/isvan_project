@@ -14,7 +14,7 @@ import { INICIO_POR_ROL } from "@/lib/constants";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserNav } from "@/components/layout/user-nav";
-import type { RolUsuario } from "@prisma/client";
+import type { Usuario } from "@/lib/mock-data";
 
 const SEGMENT_LABELS: Record<string, string> = {
   despachos: "Despachos",
@@ -32,6 +32,13 @@ const SEGMENT_LABELS: Record<string, string> = {
   choferes: "Choferes",
   vendedor: "Mis despachos",
   visitas: "Visitas",
+  cobranzas: "Cobranzas",
+  pagos: "Pagos",
+  cuentas: "Cuentas del portal",
+  ajustes: "Ajustes",
+  documentos: "Documentos",
+  ISVAN: "ISVAN",
+  TRALOG: "TRALOG",
 };
 
 function labelForSegment(segment: string) {
@@ -41,7 +48,7 @@ function labelForSegment(segment: string) {
 export function Topbar({
   user,
 }: {
-  user: { id: string; nombre: string; email: string; rol: RolUsuario; avatarUrl?: string | null };
+  user: Pick<Usuario, "id" | "nombre" | "email" | "rol" | "avatarUrl" | "autogestionado" | "telefono">;
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
@@ -49,7 +56,7 @@ export function Topbar({
   // devolvería a su propio módulo (ver (dashboard)/layout.tsx).
   // Repartidor y vendedor tienen un solo módulo, que ya es la raíz de la
   // miga: su primer segmento no se repite.
-  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR";
+  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR" || user.rol === "COBRANZAS";
   const raiz =
     user.rol === "ADMIN"
       ? { href: "/", label: "Inicio" }

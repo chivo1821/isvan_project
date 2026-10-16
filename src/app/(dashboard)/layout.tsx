@@ -13,6 +13,9 @@ const INICIO_REPARTIDOR = "/despachador";
 /** Único módulo de un VENDEDOR: los despachos de sus rutas y sus visitas. */
 const INICIO_VENDEDOR = "/vendedor";
 
+/** Único módulo de COBRANZAS: la cartera y los pagos de los clientes. */
+const INICIO_COBRANZAS = "/cobranzas";
+
 /** Pantallas solo para ADMIN, además del dashboard ("/"). */
 const RUTAS_SOLO_ADMIN = ["/indicadores", "/delivery", "/censo"];
 
@@ -36,12 +39,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (!rutaActual.startsWith(INICIO_REPARTIDOR)) redirect(INICIO_REPARTIDOR);
   } else if (usuarioActual.rol === "VENDEDOR") {
     // Igual que el repartidor: su módulo y nada más. La API además le cierra
-    // el resto de la operación (ver sin_acceso_vendedor en
+    // el resto de la operación (ver solo_su_modulo en
     // backend/app/core/permisos.py).
     if (!rutaActual.startsWith(INICIO_VENDEDOR)) redirect(INICIO_VENDEDOR);
+  } else if (usuarioActual.rol === "COBRANZAS") {
+    // También de un solo módulo (ver ROUTERS_POR_ROL en backend/app/main.py).
+    if (!rutaActual.startsWith(INICIO_COBRANZAS)) redirect(INICIO_COBRANZAS);
   } else if (
     usuarioActual.rol !== "ADMIN" &&
-    (esSoloAdmin(rutaActual) || rutaActual.startsWith(INICIO_VENDEDOR))
+    (esSoloAdmin(rutaActual) || rutaActual.startsWith(INICIO_VENDEDOR) || rutaActual.startsWith(INICIO_COBRANZAS))
   ) {
     // El dashboard muestra la operación completa (incluido el rendimiento
     // por conductor) y los indicadores de venta, las cifras del negocio:

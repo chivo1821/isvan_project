@@ -18,15 +18,22 @@ export type { AccionRevision, Empresa, EstadoDespacho, EstadoRuta, EstadoVehicul
 export type Usuario = {
   id: string;
   nombre: string;
-  email: string;
+  /** null solo en los motorizados autogestionados, que entran con placa + PIN. */
+  email: string | null;
   rol: RolUsuario;
   avatarUrl?: string | null;
   activo: boolean;
+  /** Motorizado que se registró solo (ver backend/app/services/motorizados.py). */
+  autogestionado?: boolean;
+  telefono?: string | null;
   /**
    * Solo aplica al rol REPARTIDOR: el vehículo que maneja. Determina la
    * única ruta que ese usuario puede ver (ver backend/app/core/permisos.py).
    */
   vehiculoAsignadoId?: string | null;
+  /** Puede aprobar despachos de clientes con deuda vencida (APROBADOR o
+   * COBRANZAS; el ADMIN siempre puede). */
+  autorizaExcepciones?: boolean;
 };
 
 export type Almacen = {

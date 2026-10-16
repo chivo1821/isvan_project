@@ -2,13 +2,15 @@ import io
 import uuid
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from pydantic import BaseModel
 
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.permisos import es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, valor_a_texto
 from app.core.ubicacion import filas_con_latitud_truncada, fuera_de_venezuela, sin_ubicacion
+from app.services import censo_correccion
 from app.schemas import (
     Cliente,
     ClienteCreate,
@@ -70,6 +72,43 @@ def listar_clientes(usuario: dict = Depends(get_current_user)):
         else:
             cur.execute('SELECT * FROM "Cliente" ORDER BY "nombre"')
         return cur.fetchall()
+
+
+# ---------- Censos por corregir ----------
+# Van antes de /{cliente_id}: si no, esa ruta se queda con /censo-pendientes.
+
+
+class CorreccionCenso(BaseModel):
+    empresa: str
+    codigo: str | None = None
+    codigoIsvan: str | None = None
+    codigoTralog: str | None = None
+    # El codigo existe con otro nombre y quien corrige confirma que es ese.
+    confiarEnCodigo: bool = False
+
+
+@router.get("/censo-pendientes", dependencies=[Depends(requiere_rol("DESPACHOS"))])
+def censos_pendientes(
+    categoria: str | None = None, q: str | None = None, pagina: int = Query(1, ge=1), solo_conteo: bool = False
+):
+    """Censos que no pudieron crear o completar su cliente por la empresa o
+    el codigo, por categoria, con sugerencias de la maestra. solo_conteo:
+    solo cuantos hay de cada categoria (para la pestaña)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        return censo_correccion.pendientes(cur, categoria, q, pagina, solo_conteo)
+
+
+@router.patch("/censo-pendientes/{censo_id}")
+def corregir_censo(censo_id: str, datos: CorreccionCenso, usuario: dict = Depends(requiere_rol("DESPACHOS"))):
+    """Corrige empresa y codigo de un censo y lo vuelve a procesar: crea o
+    completa el cliente, o dice por que sigue pendiente."""
+    with get_connection() as conn, conn.cursor() as cur:
+        resultado = censo_correccion.corregir(
+            cur, censo_id, datos.empresa, datos.codigo, datos.codigoIsvan, datos.codigoTralog,
+            datos.confiarEnCodigo, usuario["id"],
+        )
+        conn.commit()
+    return resultado
 
 
 @router.get("/{cliente_id}", response_model=Cliente)

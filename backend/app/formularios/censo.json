@@ -300,7 +300,7 @@
           "type": "text",
           "name": "codigo_cliente",
           "label": "Código del Cliente",
-          "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\"",
+          "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} != \"AMBAS\"",
           "required": true,
           "readonly": false,
           "xlsform": {
@@ -308,8 +308,44 @@
             "name": "codigo_cliente",
             "label": "Código del Cliente",
             "required": "yes",
-            "relevant": "${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\""
-          }
+            "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} != \"AMBAS\"",
+            "bind::esri:fieldLength": "20"
+          },
+          "field_length": 20
+        },
+        {
+          "type": "text",
+          "name": "codigo_isvan",
+          "label": "Código del Cliente en ISVAN",
+          "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} = \"AMBAS\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "codigo_isvan",
+            "label": "Código del Cliente en ISVAN",
+            "required": "yes",
+            "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} = \"AMBAS\"",
+            "bind::esri:fieldLength": "20"
+          },
+          "field_length": 20
+        },
+        {
+          "type": "text",
+          "name": "codigo_tralog",
+          "label": "Código del Cliente en TRALOG",
+          "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} = \"AMBAS\"",
+          "required": true,
+          "readonly": false,
+          "xlsform": {
+            "type": "text",
+            "name": "codigo_tralog",
+            "label": "Código del Cliente en TRALOG",
+            "required": "yes",
+            "relevant": "(${tipo_cliente} == \"Ya existente\" or ${desea_vender_tiorico} == \"Si\") and ${empresa} = \"AMBAS\"",
+            "bind::esri:fieldLength": "20"
+          },
+          "field_length": 20
         },
         {
           "type": "select_one",
@@ -2333,5 +2369,5 @@
       }
     ]
   },
-  "version": "c917a4917f8f"
+  "version": "20520cd386ad"
 }

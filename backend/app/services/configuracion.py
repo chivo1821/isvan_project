@@ -7,13 +7,18 @@ aunque nadie haya tocado nada.
 
 from __future__ import annotations
 
+import re
+from datetime import date
+
 from psycopg.types.json import Jsonb
 
 from app.core.fechas import ahora_utc
 
-# Cada ajuste con su valor por defecto y su rango valido.
+# Cada ajuste con su valor por defecto y su rango valido. El grupo dice en
+# que pantalla se edita (planificacion de rutas o cobranzas).
 AJUSTES: dict[str, dict] = {
     "motoDistanciaMaxKm": {
+        "grupo": "planificacion",
         "defecto": 25.0,
         "minimo": 1.0,
         "maximo": 200.0,
@@ -24,7 +29,101 @@ AJUSTES: dict[str, dict] = {
         ),
         "unidad": "km",
     },
+    "motoCapacidadKg": {
+        "grupo": "planificacion",
+        "defecto": 40.0,
+        "minimo": 5.0,
+        "maximo": 200.0,
+        "etiqueta": "Capacidad de las motos de motorizados",
+        "descripcion": (
+            "Peso que carga el bolso de reparto que entrega la empresa. Es la capacidad con la que se registra "
+            "la moto de cada motorizado nuevo; al cambiarla se actualizan las motos de todos los motorizados."
+        ),
+        "unidad": "kg",
+    },
+    "cobranzaDiasTolerancia": {
+        "grupo": "cobranzas",
+        "defecto": 15.0,
+        "minimo": 0.0,
+        "maximo": 180.0,
+        "etiqueta": "Días de tolerancia",
+        "descripcion": (
+            "Días desde la fecha de una factura o nota de entrega hasta que se considera vencida. Un cliente "
+            "con algún documento vencido queda bloqueado para despacho."
+        ),
+        "unidad": "días",
+    },
 }
+
+# Ajustes de texto (no numericos). Sin fila en la tabla valen None.
+TEXTOS: dict[str, dict] = {
+    "motorizadoCodigoRegistro": {
+        "etiqueta": "Codigo de registro de motorizados",
+        "descripcion": (
+            "Lo piden al registrarse como motorizado. Solo sirve para crear la cuenta, no para entrar: "
+            "cambiarlo no afecta a los ya registrados. Sin codigo, el registro queda cerrado."
+        ),
+    },
+}
+
+# Ajustes de fecha (ISO, AAAA-MM-DD). Sin fila en la tabla valen None.
+FECHAS: dict[str, dict] = {
+    "cobranzaInicioCartera": {
+        "etiqueta": "Inicio de la cartera",
+        "descripcion": (
+            "Las facturas y notas de entrega anteriores a esta fecha se dan por saldadas. Mientras no se "
+            "defina, ningún cliente se bloquea para despacho."
+        ),
+    },
+}
+
+_FORMATO_CODIGO = re.compile(r"[A-Za-z0-9-]{6,32}")
+
+
+def leer_texto(cur, clave: str) -> str | None:
+    TEXTOS[clave]
+    cur.execute('SELECT "valor" FROM "Configuracion" WHERE "clave" = %s', (clave,))
+    fila = cur.fetchone()
+    return fila["valor"] if fila and isinstance(fila["valor"], str) else None
+
+
+def guardar_texto(cur, clave: str, valor: str, usuario_id: str) -> None:
+    if clave not in TEXTOS:
+        raise KeyError(clave)
+    valor = valor.strip()
+    if not _FORMATO_CODIGO.fullmatch(valor):
+        raise ValueError("El codigo debe tener entre 6 y 32 letras, numeros o guiones")
+    cur.execute(
+        'INSERT INTO "Configuracion" ("clave", "valor", "actualizadoEn", "actualizadoPorId") VALUES (%s, %s, %s, %s) '
+        'ON CONFLICT ("clave") DO UPDATE SET "valor" = EXCLUDED."valor", "actualizadoEn" = EXCLUDED."actualizadoEn", '
+        '"actualizadoPorId" = EXCLUDED."actualizadoPorId"',
+        (clave, Jsonb(valor), ahora_utc(), usuario_id),
+    )
+
+
+def leer_fecha(cur, clave: str) -> date | None:
+    FECHAS[clave]
+    cur.execute('SELECT "valor" FROM "Configuracion" WHERE "clave" = %s', (clave,))
+    fila = cur.fetchone()
+    if not fila or not isinstance(fila["valor"], str):
+        return None
+    try:
+        return date.fromisoformat(fila["valor"])
+    except ValueError:
+        return None
+
+
+def guardar_fecha(cur, clave: str, valor: date, usuario_id: str) -> None:
+    if clave not in FECHAS:
+        raise KeyError(clave)
+    if not (date(2000, 1, 1) <= valor <= date(2100, 12, 31)):
+        raise ValueError("La fecha no es valida")
+    cur.execute(
+        'INSERT INTO "Configuracion" ("clave", "valor", "actualizadoEn", "actualizadoPorId") VALUES (%s, %s, %s, %s) '
+        'ON CONFLICT ("clave") DO UPDATE SET "valor" = EXCLUDED."valor", "actualizadoEn" = EXCLUDED."actualizadoEn", '
+        '"actualizadoPorId" = EXCLUDED."actualizadoPorId"',
+        (clave, Jsonb(valor.isoformat()), ahora_utc(), usuario_id),
+    )
 
 
 def leer(cur, clave: str) -> float:
@@ -39,7 +138,7 @@ def leer(cur, clave: str) -> float:
         return ajuste["defecto"]
 
 
-def todos(cur) -> list[dict]:
+def todos(cur, grupo: str = "planificacion") -> list[dict]:
     cur.execute(
         'SELECT c."clave", c."valor", c."actualizadoEn", u."nombre" AS "actualizadoPor" FROM "Configuracion" c '
         'LEFT JOIN "Usuario" u ON u."id" = c."actualizadoPorId"'
@@ -47,6 +146,8 @@ def todos(cur) -> list[dict]:
     guardados = {f["clave"]: f for f in cur.fetchall()}
     salida = []
     for clave, ajuste in AJUSTES.items():
+        if ajuste["grupo"] != grupo:
+            continue
         fila = guardados.get(clave)
         salida.append({
             "clave": clave,

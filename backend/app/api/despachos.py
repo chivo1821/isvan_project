@@ -11,13 +11,14 @@ import re
 import uuid
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 
 from app.core.auth import get_current_user, requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
+from app.services import cartera
 from app.services.ventas_import import ALIAS_COLUMNAS as ALIAS_VENTAS
 from app.services.ventas_import import describir_columnas, reconocer_columnas
 from app.core.numero import siguiente_numero, siguientes_numeros
@@ -134,6 +135,27 @@ def listar_despachos_pendientes_aprobacion():
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT * FROM "Despacho" WHERE "estado" = \'PENDIENTE_APROBACION\' ORDER BY "fechaCreacion"')
         return _con_items_lote(cur, cur.fetchall())
+
+
+@router.get("/aprobacion/cartera")
+def cartera_de_la_cola(
+    ids: list[str] = Query(default=[], max_length=500),
+    usuario: dict = Depends(requiere_rol("APROBADOR", "DESPACHOS")),
+):
+    """Estado de cobranza del cliente de cada despacho pendiente (o de los
+    `ids` pedidos): si esta bloqueado por deuda vencida y si quien mira
+    puede aprobarlo como excepcion."""
+    with get_connection() as conn, conn.cursor() as cur:
+        if not ids:
+            cur.execute('SELECT "id" FROM "Despacho" WHERE "estado" = \'PENDIENTE_APROBACION\'')
+            ids = [f["id"] for f in cur.fetchall()]
+        p = cartera.parametros(cur)
+        return {
+            "bloqueoActivo": p.bloqueo_activo,
+            "diasTolerancia": p.tolerancia,
+            "puedeAutorizarExcepciones": cartera.puede_autorizar_excepciones(usuario),
+            "despachos": cartera.estado_de_despachos(cur, ids, p=p),
+        }
 
 
 @router.get(
@@ -633,18 +655,37 @@ def aprobar_despachos_masivo(
     individual: una fila en DespachoAprobacion por despacho, a nombre del
     ADMIN que ejecuto la accion."""
     with get_connection() as conn, conn.cursor() as cur:
-        # El UPDATE filtra por estado y devuelve lo que realmente cambio, en
-        # una sola sentencia: si alguien aprueba o rechaza algo entre medias,
-        # no se audita un despacho que este endpoint no movio.
-        sql = 'UPDATE "Despacho" SET "estado" = \'APROBADO\' WHERE "estado" = \'PENDIENTE_APROBACION\''
+        # Los despachos de clientes con deuda vencida se saltan: aprobarlos
+        # exige una excepcion con motivo, uno por uno.
+        sql = 'SELECT "id", "numero" FROM "Despacho" WHERE "estado" = \'PENDIENTE_APROBACION\''
         parametros: tuple = ()
         if data.despachoIds:
             sql += ' AND "id" = ANY(%s)'
             parametros = (data.despachoIds,)
-        cur.execute(f'{sql} RETURNING "id", "numero"', parametros)
+        cur.execute(sql, parametros)
+        candidatos = cur.fetchall()
+        cartera_de = cartera.estado_de_despachos(cur, [d["id"] for d in candidatos])
+        omitidos = [
+            {"numero": d["numero"], "vencidoUsd": cartera_de[d["id"]]["vencidoUsd"]}
+            for d in candidatos if cartera_de.get(d["id"], {}).get("bloqueado")
+        ]
+        ids = [d["id"] for d in candidatos if not cartera_de.get(d["id"], {}).get("bloqueado")]
+
+        # El UPDATE filtra por estado y devuelve lo que realmente cambio, en
+        # una sola sentencia: si alguien aprueba o rechaza algo entre medias,
+        # no se audita un despacho que este endpoint no movio.
+        cur.execute(
+            'UPDATE "Despacho" SET "estado" = \'APROBADO\' WHERE "estado" = \'PENDIENTE_APROBACION\' '
+            'AND "id" = ANY(%s) RETURNING "id", "numero"',
+            (ids,),
+        )
         aprobados = cur.fetchall()
 
         if not aprobados:
+            if omitidos:
+                raise HTTPException(
+                    409, "Todos los despachos pendientes son de clientes con deuda vencida: apruébalos uno por uno"
+                )
             raise HTTPException(400, "No hay despachos pendientes de aprobacion")
 
         cur.executemany(
@@ -657,7 +698,7 @@ def aprobar_despachos_masivo(
         )
         conn.commit()
 
-    return {"aprobados": len(aprobados), "numeros": [d["numero"] for d in aprobados]}
+    return {"aprobados": len(aprobados), "numeros": [d["numero"] for d in aprobados], "omitidos": omitidos}
 
 
 @router.post(
@@ -677,10 +718,34 @@ def aprobar_o_rechazar_despacho(
         if despacho["estado"] != "PENDIENTE_APROBACION":
             raise HTTPException(400, "Este despacho no esta pendiente de aprobacion")
 
+        comentario = data.comentario
+        if data.accion == "APROBADA":
+            # Cliente con deuda vencida: solo con una excepcion, con motivo y
+            # de alguien autorizado (ver app/services/cartera.py).
+            estado = cartera.estado_de_despachos(cur, [despacho_id]).get(despacho_id)
+            if estado and estado["bloqueado"]:
+                if data.excepcion is None:
+                    raise HTTPException(
+                        409,
+                        f"El cliente tiene {estado['documentosVencidos']} documento(s) vencido(s) por "
+                        f"{estado['vencidoUsd']:,.2f} USD. Solo se puede aprobar como excepción.",
+                    )
+                if not cartera.puede_autorizar_excepciones(usuario):
+                    raise HTTPException(403, "No tienes permiso para aprobar despachos de clientes con deuda vencida")
+                motivo = " ".join(data.excepcion.motivo.split())
+                cur.execute(
+                    'INSERT INTO "ExcepcionDespacho" ("id", "despachoId", "autorizadoPorId", "motivo", "saldoVencidoUsd") '
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (f"exc-{uuid.uuid4().hex[:12]}", despacho_id, usuario["id"], motivo, estado["vencidoUsd"]),
+                )
+                comentario = f"Excepción por deuda vencida ({estado['vencidoUsd']:,.2f} USD): {motivo}" + (
+                    f" — {data.comentario}" if data.comentario else ""
+                )
+
         cur.execute(
             'INSERT INTO "DespachoAprobacion" ("id", "despachoId", "usuarioId", "accion", "comentario") '
             "VALUES (%s, %s, %s, %s, %s)",
-            (f"dap-{uuid.uuid4().hex[:10]}", despacho_id, usuario["id"], data.accion, data.comentario),
+            (f"dap-{uuid.uuid4().hex[:10]}", despacho_id, usuario["id"], data.accion, comentario),
         )
 
         nuevo_estado = "APROBADO" if data.accion == "APROBADA" else "RECHAZADO"

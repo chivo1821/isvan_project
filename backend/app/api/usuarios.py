@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import get_current_user, hash_password, requiere_rol, verify_password
 from app.core.db import get_connection
-from app.core.permisos import es_repartidor, es_vendedor
+from app.core.permisos import ROLES_DE_UN_MODULO, es_repartidor
 from app.schemas import (
     AsignarRutasVentaRequest,
     AsignarVehiculoRequest,
     CambiarPasswordRequest,
+    PermisoExcepcionesRequest,
     ResetPasswordRequest,
     RutaVenta,
     Usuario,
@@ -20,10 +21,10 @@ router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
 @router.get("", response_model=list[Usuario])
 def listar_usuarios(usuario: dict = Depends(get_current_user)):
-    """Un REPARTIDOR o un VENDEDOR no ve el directorio del equipo: solo su
-    propia ficha (que es lo unico que su pantalla necesita)."""
+    """Un REPARTIDOR, un VENDEDOR o COBRANZAS no ve el directorio del
+    equipo: solo su propia ficha (que es lo unico que su pantalla necesita)."""
     with get_connection() as conn, conn.cursor() as cur:
-        if es_repartidor(usuario) or es_vendedor(usuario):
+        if es_repartidor(usuario) or usuario["rol"] in ROLES_DE_UN_MODULO:
             cur.execute('SELECT * FROM "Usuario" WHERE "id" = %s', (usuario["id"],))
         else:
             cur.execute('SELECT * FROM "Usuario" ORDER BY "nombre"')
@@ -113,12 +114,22 @@ def asignar_vehiculo(usuario_id: str, data: AsignarVehiculoRequest):
     queda sin vehiculo. Con dos, los dos verian la misma ruta y no se sabria
     quien la maneja."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT "rol" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
+        cur.execute('SELECT "rol", "autogestionado" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Usuario no encontrado")
         if row["rol"] != "REPARTIDOR":
             raise HTTPException(400, "Solo un usuario con rol REPARTIDOR puede tener un vehiculo asignado")
+        # Un motorizado autogestionado anda en su propia moto: ni se le cambia
+        # ni se la asigna a otro (ver app/services/motorizados.py).
+        if row["autogestionado"]:
+            raise HTTPException(400, "Un motorizado anda en su propia moto: no se le puede cambiar el vehiculo")
+        if data.vehiculoAsignadoId:
+            cur.execute(
+                'SELECT 1 FROM "Usuario" WHERE "vehiculoAsignadoId" = %s AND "autogestionado"', (data.vehiculoAsignadoId,)
+            )
+            if cur.fetchone():
+                raise HTTPException(400, "Esa moto es de un motorizado: no se puede asignar a otro chofer")
 
         if data.vehiculoAsignadoId:
             cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoAsignadoId,))
@@ -133,6 +144,26 @@ def asignar_vehiculo(usuario_id: str, data: AsignarVehiculoRequest):
         cur.execute(
             'UPDATE "Usuario" SET "vehiculoAsignadoId" = %s WHERE "id" = %s RETURNING *',
             (data.vehiculoAsignadoId, usuario_id),
+        )
+        actualizado = cur.fetchone()
+        conn.commit()
+        return actualizado
+
+
+@router.patch("/{usuario_id}/excepciones", response_model=Usuario, dependencies=[Depends(requiere_rol("ADMIN"))])
+def permitir_excepciones(usuario_id: str, data: PermisoExcepcionesRequest):
+    """Da o quita el permiso de aprobar despachos de clientes con deuda
+    vencida (ver app/services/cartera.py). Solo tiene sentido para quien
+    aprueba despachos o lleva cobranzas; el ADMIN ya lo tiene siempre."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "rol" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Usuario no encontrado")
+        if data.autoriza and row["rol"] not in ("APROBADOR", "COBRANZAS"):
+            raise HTTPException(400, "Solo un APROBADOR o un usuario de COBRANZAS puede autorizar excepciones")
+        cur.execute(
+            'UPDATE "Usuario" SET "autorizaExcepciones" = %s WHERE "id" = %s RETURNING *', (data.autoriza, usuario_id)
         )
         actualizado = cur.fetchone()
         conn.commit()

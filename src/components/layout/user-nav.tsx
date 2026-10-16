@@ -14,13 +14,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CambiarPasswordDialog } from "@/components/modules/auth/cambiar-password-dialog";
-import { ROL_USUARIO_META } from "@/lib/constants";
-import type { RolUsuario } from "@prisma/client";
+import { ROL_USUARIO_META, contactoDe } from "@/lib/constants";
+import type { Usuario } from "@/lib/mock-data";
 
 export function UserNav({
   user,
 }: {
-  user: { id: string; nombre: string; email: string; rol: RolUsuario; avatarUrl?: string | null };
+  user: Pick<Usuario, "id" | "nombre" | "email" | "rol" | "avatarUrl" | "autogestionado" | "telefono">;
 }) {
   const router = useRouter();
   const [cambiandoPassword, setCambiandoPassword] = useState(false);
@@ -65,14 +65,17 @@ export function UserNav({
           <DropdownMenuLabel>
             <div className="flex flex-col">
               <span className="font-medium">{user.nombre}</span>
-              <span className="text-xs font-normal text-muted-foreground">{user.email}</span>
+              <span className="text-xs font-normal text-muted-foreground">{contactoDe(user)}</span>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setCambiandoPassword(true)}>
-            <UserIcon />
-            Cambiar contraseña
-          </DropdownMenuItem>
+          {/* Un motorizado entra con placa + PIN: no tiene contraseña que cambiar. */}
+          {!user.autogestionado && (
+            <DropdownMenuItem onSelect={() => setCambiandoPassword(true)}>
+              <UserIcon />
+              Cambiar contraseña
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={cerrarSesion}>
             <LogOutIcon />
