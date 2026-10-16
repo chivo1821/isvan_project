@@ -69,7 +69,7 @@ export function DetalleParadas({ paradas }: { paradas: ParadaDelivery[] }) {
               </TableHeader>
               <TableBody>
                 {filtradas.slice(0, visibles).map((p) => (
-                  <TableRow key={`${p.rutaId}-${p.clienteId}`}>
+                  <TableRow key={`${p.rutaId}-${p.clienteId}-${p.vehiculoId}`}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(p.fecha)}</TableCell>
                     <TableCell>{p.conductor ?? <span className="text-muted-foreground">{p.placa}</span>}</TableCell>
                     <TableCell className="text-muted-foreground">{p.rutaNumero}</TableCell>

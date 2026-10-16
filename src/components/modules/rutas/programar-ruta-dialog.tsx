@@ -49,7 +49,13 @@ export function ProgramarRutaDialog({
   pesoKg,
   boton,
 }: {
-  ruta: { id: string; numero: string; salidaProgramada: string; vehiculoId: string | null };
+  ruta: {
+    id: string;
+    numero: string;
+    salidaProgramada: string;
+    vehiculoId: string | null;
+    vehiculoApoyoId?: string | null;
+  };
   vehiculos: VehiculoOpcion[];
   /** Los vehículos libres en el horario actual de la ruta, si se conocen. */
   libres?: string[] | null;
@@ -67,12 +73,18 @@ export function ProgramarRutaDialog({
   const [fecha, setFecha] = useState(inicial.fecha);
   const [hora, setHora] = useState(inicial.hora);
   const [vehiculoId, setVehiculoId] = useState(ruta.vehiculoId ?? SIN_VEHICULO);
+  // Morocho: la segunda moto, solo si la principal es una moto.
+  const [apoyoId, setApoyoId] = useState(ruta.vehiculoApoyoId ?? SIN_VEHICULO);
   const [guardando, setGuardando] = useState(false);
 
   const salida = salidaIso(fecha, hora);
   const salidaCambio = fecha !== inicial.fecha || hora !== inicial.hora;
   const vehiculoNuevo = vehiculoId === SIN_VEHICULO ? null : vehiculoId;
-  const vehiculoCambio = vehiculoNuevo !== ruta.vehiculoId;
+  const principal = vehiculos.find((v) => v.id === vehiculoNuevo);
+  const puedeMorocho = principal?.tipo === "MOTO";
+  const apoyoNuevo = puedeMorocho && apoyoId !== SIN_VEHICULO && apoyoId !== vehiculoNuevo ? apoyoId : null;
+  const apoyo = vehiculos.find((v) => v.id === apoyoNuevo);
+  const vehiculoCambio = vehiculoNuevo !== ruta.vehiculoId || apoyoNuevo !== (ruta.vehiculoApoyoId ?? null);
   // Los libres se calcularon para el horario actual: con otro horario ya no
   // valen (la API avisa después si el elegido choca con otra ruta).
   const libresVigentes = !salidaCambio && libres ? new Set(libres) : null;
@@ -81,13 +93,17 @@ export function ProgramarRutaDialog({
     setFecha(inicial.fecha);
     setHora(inicial.hora);
     setVehiculoId(ruta.vehiculoId ?? SIN_VEHICULO);
+    setApoyoId(ruta.vehiculoApoyoId ?? SIN_VEHICULO);
   }
 
   async function guardar() {
     if (!salida) return;
-    const cambios: { salidaProgramada?: string; vehiculoId?: string | null } = {};
+    const cambios: { salidaProgramada?: string; vehiculoId?: string | null; vehiculoApoyoId?: string | null } = {};
     if (salidaCambio) cambios.salidaProgramada = salida;
-    if (vehiculoCambio) cambios.vehiculoId = vehiculoNuevo;
+    if (vehiculoCambio) {
+      cambios.vehiculoId = vehiculoNuevo;
+      cambios.vehiculoApoyoId = apoyoNuevo;
+    }
     setGuardando(true);
     try {
       const actualizada = await apiPatch<Ruta>(`/rutas/${ruta.id}/programacion`, cambios);
@@ -174,7 +190,8 @@ export function ProgramarRutaDialog({
                 {vehiculos.map((v) => {
                   const { texto, problema } = detalleVehiculo(v, {
                     libre: libresVigentes ? libresVigentes.has(v.id) : null,
-                    pesoKg,
+                    // En un Morocho el peso va entre las dos motos.
+                    pesoKg: apoyo ? undefined : pesoKg,
                   });
                   return (
                     <SelectItem key={v.id} value={v.id}>
@@ -202,6 +219,50 @@ export function ProgramarRutaDialog({
               </p>
             )}
           </div>
+
+          {puedeMorocho && (
+            <div className="space-y-1.5">
+              <Label htmlFor={`apoyo-${ruta.id}`}>Segunda moto (Morocho)</Label>
+              <Select value={apoyoNuevo ?? SIN_VEHICULO} onValueChange={setApoyoId}>
+                <SelectTrigger id={`apoyo-${ruta.id}`} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SIN_VEHICULO}>Sin segunda moto</SelectItem>
+                  {vehiculos
+                    .filter((v) => v.tipo === "MOTO" && v.id !== vehiculoNuevo)
+                    .map((v) => {
+                      const { texto, problema } = detalleVehiculo(v, {
+                        libre: libresVigentes ? libresVigentes.has(v.id) : null,
+                      });
+                      return (
+                        <SelectItem key={v.id} value={v.id}>
+                          <span>
+                            {v.placa}
+                            {v.conductor ? (
+                              <span className="font-medium"> · {v.conductor}</span>
+                            ) : (
+                              <span className="text-muted-foreground"> · sin chofer</span>
+                            )}{" "}
+                            — {v.capacidadKg.toLocaleString("es-VE")} kg
+                            {texto && (
+                              <span className={problema ? "text-warning" : "text-muted-foreground"}> · {texto}</span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {apoyo && principal
+                  ? `Entre las dos llevan ${(principal.capacidadKg + apoyo.capacidadKg).toLocaleString("es-VE")} kg` +
+                    (pesoKg != null ? ` · la ruta pesa ${Math.round(pesoKg).toLocaleString("es-VE")} kg` : "") +
+                    ". Los dos motorizados ven la ruta y cobran cada parada."
+                  : "Para un pedido que no cabe en una moto: salen dos motos juntas."}
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

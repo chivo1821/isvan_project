@@ -218,6 +218,7 @@ def _ruta_de_agenda(ruta: dict, pedidos: list[dict], avisos: list[dict], libres:
         "tiempoTotalMin": ruta["tiempoTotalMin"],
         "distanciaTotalKm": ruta["distanciaTotalKm"],
         "vehiculoId": ruta["vehiculoId"],
+        "vehiculoApoyoId": ruta["vehiculoApoyoId"],
         "pedidos": pedidos,
         "pesoKg": round(sum(p["pesoKg"] for p in pedidos), 1),
         "avisos": avisos,

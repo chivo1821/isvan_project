@@ -27,6 +27,9 @@ import { salidaIso } from "@/lib/planificacion";
 type DespachoConCliente = Despacho & { destinoCliente: Cliente };
 type SugerenciaVehiculo = {
   vehiculo: Vehiculo;
+  /** Morocho: la segunda moto (ver backend/app/services/morocho.py). */
+  vehiculoApoyo?: Vehiculo | null;
+  morocho?: boolean;
   holguraKg: number;
   motivos: string[];
 };
@@ -38,6 +41,9 @@ type SugerenciaRuta = {
   /** null si a esa hora no queda ningún vehículo libre: el viaje se propone
    * igual y se le asigna vehículo después. */
   vehiculo: Vehiculo | null;
+  /** Morocho: un pedido que no cabe en una moto sale en dos; esta es la segunda. */
+  vehiculoApoyo?: Vehiculo | null;
+  morocho?: boolean;
   despachoIds: string[];
   paradas: number;
   pesoKg: number;
@@ -59,6 +65,11 @@ function pesoTotal(despacho: Despacho) {
 
 function formatKg(kg: number) {
   return `${kg.toLocaleString("es-VE", { maximumFractionDigits: 0 })} kg`;
+}
+
+/** Dos motos juntas para un pedido grande, como le dice el cliente. */
+function InsigniaMorocho() {
+  return <StatusBadge tone="info" label="Morocho" />;
 }
 
 /** Quién manejaría el viaje: al elegir entre sugerencias el coordinador
@@ -91,7 +102,10 @@ export function NuevaRutaWizard({
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const [buscando, setBuscando] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaVehiculo[] | null>(null);
-  const [vehiculoId, setVehiculoId] = useState<string | null>(null);
+  // El vehículo elegido y, si es un Morocho, la segunda moto: van juntos.
+  const [eleccion, setEleccion] = useState<{ vehiculoId: string; apoyoId: string | null } | null>(null);
+  const vehiculoId = eleccion?.vehiculoId ?? null;
+  const apoyoId = eleccion?.apoyoId ?? null;
   const [creando, setCreando] = useState(false);
   const [plan, setPlan] = useState<PlanRutas | null>(null);
   const [planeando, setPlaneando] = useState(false);
@@ -113,7 +127,7 @@ export function NuevaRutaWizard({
     // A otra hora, otros vehículos libres: lo sugerido ya no vale.
     setPlan(null);
     setSugerencias(null);
-    setVehiculoId(null);
+    setEleccion(null);
   }
 
   function alternar(id: string) {
@@ -124,7 +138,7 @@ export function NuevaRutaWizard({
       return next;
     });
     setSugerencias(null);
-    setVehiculoId(null);
+    setEleccion(null);
   }
 
   async function sugerirAgrupacion() {
@@ -159,17 +173,31 @@ export function NuevaRutaWizard({
     if (!vehiculo) {
       // Sin vehículo libre a esa hora: se planifica sin vehículo.
       setSugerencias(null);
-      setVehiculoId(null);
+      setEleccion(null);
       return;
     }
-    setSugerencias([{ vehiculo, holguraKg: vehiculo.capacidadKg - sugerencia.pesoKg, motivos: sugerencia.motivos }]);
-    setVehiculoId(vehiculo.id);
+    const apoyo = sugerencia.vehiculoApoyo ?? null;
+    // La capacidad con la que se armó (en un Morocho, la de las dos con su tope).
+    const capacidad =
+      apoyo && sugerencia.usoCapacidadPct > 0
+        ? sugerencia.pesoKg / (sugerencia.usoCapacidadPct / 100)
+        : vehiculo.capacidadKg;
+    setSugerencias([
+      {
+        vehiculo,
+        vehiculoApoyo: apoyo,
+        morocho: sugerencia.morocho,
+        holguraKg: capacidad - sugerencia.pesoKg,
+        motivos: sugerencia.motivos,
+      },
+    ]);
+    setEleccion({ vehiculoId: vehiculo.id, apoyoId: apoyo?.id ?? null });
   }
 
   async function buscarVehiculos() {
     if (seleccionados.size === 0) return;
     setBuscando(true);
-    setVehiculoId(null);
+    setEleccion(null);
     try {
       const data = await apiPost<SugerenciaVehiculo[]>("/rutas/vehiculos-sugeridos", {
         despachoIds: [...seleccionados],
@@ -197,6 +225,7 @@ export function NuevaRutaWizard({
       const ruta = await apiPost<Ruta>("/rutas", {
         despachoIds: [...seleccionados],
         vehiculoId,
+        vehiculoApoyoId: apoyoId,
         salidaProgramada,
       });
       toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {
@@ -220,7 +249,9 @@ export function NuevaRutaWizard({
   const despachosSeleccionados = despachos.filter((d) => seleccionados.has(d.id));
   const pesoSeleccionado = despachosSeleccionados.reduce((sum, d) => sum + pesoTotal(d), 0);
   const porId = new Map(despachos.map((d) => [d.id, d]));
-  const vehiculoElegido = sugerencias?.find((s) => s.vehiculo.id === vehiculoId)?.vehiculo;
+  const elegida = sugerencias?.find((s) => s.vehiculo.id === vehiculoId && (s.vehiculoApoyo?.id ?? null) === apoyoId);
+  const vehiculoElegido = elegida?.vehiculo;
+  const apoyoElegido = elegida?.vehiculoApoyo ?? null;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -334,11 +365,21 @@ export function NuevaRutaWizard({
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium text-foreground">Ruta sugerida {index + 1}</span>
+                            {s.morocho && <InsigniaMorocho />}
                             {s.rutasComerciales.map((ruta) => (
                               <StatusBadge key={ruta} tone="neutral" label={ruta} />
                             ))}
                           </div>
-                          {s.vehiculo ? (
+                          {s.vehiculo && s.vehiculoApoyo ? (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                {s.vehiculo.placa} + {s.vehiculoApoyo.placa} — dos motos · {s.paradas} parada(s) ·{" "}
+                                {formatKg(s.pesoKg)} ({s.usoCapacidadPct}% de lo que llevan entre las dos)
+                              </p>
+                              <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
+                              <ChoferDelVehiculo conductor={s.vehiculoApoyo.conductor} />
+                            </>
+                          ) : s.vehiculo ? (
                             <>
                               <p className="text-sm text-muted-foreground">
                                 {s.vehiculo.placa} — {TIPO_VEHICULO_META[s.vehiculo.tipo].label} ·{" "}
@@ -466,7 +507,7 @@ export function NuevaRutaWizard({
                 {buscando ? "Buscando..." : "Buscar vehículos libres"}
               </Button>
               {vehiculoId && (
-                <Button size="sm" variant="ghost" onClick={() => setVehiculoId(null)}>
+                <Button size="sm" variant="ghost" onClick={() => setEleccion(null)}>
                   Planificar sin vehículo
                 </Button>
               )}
@@ -474,20 +515,27 @@ export function NuevaRutaWizard({
 
             {sugerencias && sugerencias.length > 0 && (
               <div className="space-y-2">
-                {sugerencias.map((s, index) => (
+                {sugerencias.map((s, index) => {
+                  const esta = vehiculoId === s.vehiculo.id && apoyoId === (s.vehiculoApoyo?.id ?? null);
+                  return (
                   <div
-                    key={s.vehiculo.id}
+                    key={`${s.vehiculo.id}-${s.vehiculoApoyo?.id ?? ""}`}
                     className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         {index === 0 && <StatusBadge tone="success" label="Recomendado" />}
-                        <span className="font-medium text-foreground">{s.vehiculo.placa}</span>
+                        {s.morocho && <InsigniaMorocho />}
+                        <span className="font-medium text-foreground">
+                          {s.vehiculo.placa}
+                          {s.vehiculoApoyo && ` + ${s.vehiculoApoyo.placa}`}
+                        </span>
                         <span className="text-sm text-muted-foreground">
-                          {TIPO_VEHICULO_META[s.vehiculo.tipo].label}
+                          {s.vehiculoApoyo ? "dos motos" : TIPO_VEHICULO_META[s.vehiculo.tipo].label}
                         </span>
                       </div>
                       <ChoferDelVehiculo conductor={s.vehiculo.conductor} />
+                      {s.vehiculoApoyo && <ChoferDelVehiculo conductor={s.vehiculoApoyo.conductor} />}
                       <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                         {s.motivos.map((motivo) => (
                           <li key={motivo}>✓ {motivo}</li>
@@ -496,13 +544,14 @@ export function NuevaRutaWizard({
                     </div>
                     <Button
                       size="sm"
-                      variant={vehiculoId === s.vehiculo.id ? "secondary" : "outline"}
-                      onClick={() => setVehiculoId(s.vehiculo.id)}
+                      variant={esta ? "secondary" : "outline"}
+                      onClick={() => setEleccion({ vehiculoId: s.vehiculo.id, apoyoId: s.vehiculoApoyo?.id ?? null })}
                     >
-                      {vehiculoId === s.vehiculo.id ? "Elegido" : "Elegir"}
+                      {esta ? "Elegido" : "Elegir"}
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -525,7 +574,11 @@ export function NuevaRutaWizard({
                 {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Falta la fecha y hora de salida"}
                 {" · "}
                 {vehiculoElegido ? (
-                  `en ${vehiculoElegido.placa}`
+                  apoyoElegido ? (
+                    `en Morocho: ${vehiculoElegido.placa} + ${apoyoElegido.placa}`
+                  ) : (
+                    `en ${vehiculoElegido.placa}`
+                  )
                 ) : (
                   <span className="text-warning">sin vehículo (se asigna después)</span>
                 )}

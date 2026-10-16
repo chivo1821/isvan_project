@@ -47,7 +47,11 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
     <div className="space-y-6">
       <PageHeader
         title={ruta.numero}
-        subtitle={`${ruta.origen.nombre} · ${describirVehiculo(ruta.vehiculo)} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`}
+        subtitle={
+          ruta.vehiculoApoyo
+            ? `${ruta.origen.nombre} · Morocho: ${ruta.vehiculo?.placa ?? "—"} (${ruta.conductor ?? "sin chofer"}) + ${ruta.vehiculoApoyo.placa} (${ruta.conductorApoyo ?? "sin chofer"}) · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`
+            : `${ruta.origen.nombre} · ${describirVehiculo(ruta.vehiculo)} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`
+        }
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {puedeProgramar && agenda && (
@@ -62,6 +66,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
             {puedeReversar && (
               <ReversarRutaButton rutaId={ruta.id} numero={ruta.numero} paradas={ruta.despachos.length} />
             )}
+            {ruta.vehiculoApoyo && <StatusBadge tone="info" label="Morocho" />}
             <StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />
             {rutaActiva && (
               <Link href={`/despachador/${ruta.id}`} className="text-sm text-primary hover:underline">

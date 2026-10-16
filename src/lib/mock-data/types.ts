@@ -147,7 +147,13 @@ export type RutaPunto = {
 // visitados en el orden calculado por el optimizador desde Almacén Catia.
 /** Algo que hay que resolver antes de la salida (ver backend
  * app/services/planificacion.py). No bloquea: se muestra. */
-export type TipoAvisoRuta = "SIN_VEHICULO" | "VEHICULO_NO_FUNCIONAL" | "CHOQUE_HORARIO" | "SALIDA_VENCIDA" | "MOTO_LEJOS";
+export type TipoAvisoRuta =
+  | "SIN_VEHICULO"
+  | "VEHICULO_NO_FUNCIONAL"
+  | "CHOQUE_HORARIO"
+  | "SALIDA_VENCIDA"
+  | "MOTO_LEJOS"
+  | "MOROCHO_PESADO";
 export type AvisoRuta = { tipo: TipoAvisoRuta; mensaje: string; rutaId?: string | null };
 
 export type Ruta = {
@@ -155,6 +161,8 @@ export type Ruta = {
   numero: string;
   /** Sin vehículo mientras se planifica y no se le asigna uno. */
   vehiculoId: string | null;
+  /** Morocho: un pedido grande en dos motos; esta es la segunda. */
+  vehiculoApoyoId?: string | null;
   origenId: string;
   creadoPorId: string;
   estado: EstadoRuta;

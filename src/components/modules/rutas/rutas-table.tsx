@@ -25,15 +25,21 @@ export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
     {
       id: "vehiculo",
       header: "Vehículo",
-      accessorFn: (row) => row.vehiculo?.placa ?? "",
+      accessorFn: (row) => [row.vehiculo?.placa, row.vehiculoApoyo?.placa].filter(Boolean).join(" + "),
       cell: ({ row }) => {
-        const vehiculo = row.original.vehiculo;
+        const { vehiculo, vehiculoApoyo } = row.original;
         // Se planifica sin vehículo y se le asigna uno antes de la salida.
         if (!vehiculo) return <span className="text-xs font-medium text-[var(--warning)]">Sin vehículo</span>;
         return (
           <div>
-            <p>{vehiculo.placa}</p>
-            <p className="text-xs text-muted-foreground">{TIPO_VEHICULO_META[vehiculo.tipo].label}</p>
+            <p>
+              {vehiculo.placa}
+              {vehiculoApoyo && ` + ${vehiculoApoyo.placa}`}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {/* Morocho: un pedido grande en dos motos. */}
+              {vehiculoApoyo ? "Morocho (dos motos)" : TIPO_VEHICULO_META[vehiculo.tipo].label}
+            </p>
           </div>
         );
       },
