@@ -254,13 +254,24 @@ export function ProgramarRutaDialog({
                     })}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                {apoyo && principal
-                  ? `Entre las dos llevan ${(principal.capacidadKg + apoyo.capacidadKg).toLocaleString("es-VE")} kg` +
-                    (pesoKg != null ? ` · la ruta pesa ${Math.round(pesoKg).toLocaleString("es-VE")} kg` : "") +
-                    ". Los dos motorizados ven la ruta y cobran cada parada."
-                  : "Para un pedido que no cabe en una moto: salen dos motos juntas."}
-              </p>
+              {apoyo && principal ? (
+                <p className="text-xs text-muted-foreground">
+                  Entre las dos llevan {(principal.capacidadKg + apoyo.capacidadKg).toLocaleString("es-VE")} kg
+                  {pesoKg != null && pesoKg > principal.capacidadKg + apoyo.capacidadKg ? (
+                    <span className="font-medium text-warning">
+                      {" "}
+                      y la ruta pesa {Math.round(pesoKg).toLocaleString("es-VE")} kg: no cabe en un Morocho
+                    </span>
+                  ) : (
+                    pesoKg != null && ` · la ruta pesa ${Math.round(pesoKg).toLocaleString("es-VE")} kg`
+                  )}
+                  . Los dos motorizados ven la ruta y cobran cada parada.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Para un pedido que no cabe en una moto: salen dos motos juntas.
+                </p>
+              )}
             </div>
           )}
         </div>
