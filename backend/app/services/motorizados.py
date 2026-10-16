@@ -228,7 +228,7 @@ def restablecer_pin(cur, usuario: dict) -> str:
 
 def tiene_historial(cur, usuario: dict) -> bool:
     cur.execute(
-        'SELECT EXISTS (SELECT 1 FROM "Ruta" WHERE "vehiculoId" = %s) '
+        'SELECT EXISTS (SELECT 1 FROM "Ruta" WHERE %s IN ("vehiculoId", "vehiculoApoyoId")) '
         'OR EXISTS (SELECT 1 FROM "LiquidacionDelivery" WHERE "repartidorId" = %s) AS "si"',
         (usuario["vehiculoAsignadoId"], usuario["id"]),
     )

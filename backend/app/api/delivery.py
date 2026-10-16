@@ -119,14 +119,16 @@ def crear_liquidacion(data: LiquidacionDeliveryCreate, usuario: dict = Depends(r
         )
         cur.executemany(
             'INSERT INTO "LiquidacionDeliveryParada" ("id", "liquidacionId", "rutaId", "clienteId", '
-            '"entregadoEn", "km", "montoUsd", "rango") VALUES (%s, %s, %s, %s, %s, %s, %s, %s) '
-            'ON CONFLICT ("rutaId", "clienteId") DO NOTHING',
+            '"vehiculoId", "entregadoEn", "km", "montoUsd", "rango") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) '
+            # Por moto: en un Morocho cada motorizado cobra la parada.
+            'ON CONFLICT ("rutaId", "clienteId", "vehiculoId") DO NOTHING',
             [
                 (
                     f"liqpar-{uuid.uuid4().hex[:10]}",
                     liquidacion_id,
                     p["rutaId"],
                     p["clienteId"],
+                    p["vehiculoId"],
                     p["entregadoEn"],
                     p["km"],
                     p["montoUsd"],

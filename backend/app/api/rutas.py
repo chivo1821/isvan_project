@@ -34,6 +34,7 @@ from app.schemas import (
 )
 from app.services import configuracion as cfg
 from app.services.motorizados import actualizar_capacidad_motos
+from app.services import morocho
 from app.services import planificacion as pl
 from app.services.plan_rutas import sugerir_plan_rutas
 from app.services.delivery import guardar_distancias_de_ruta
@@ -123,7 +124,7 @@ def _sin_trazado(cur, ruta_id: str) -> dict:
 def _verificar_ruta_propia(usuario: dict, ruta: dict) -> None:
     """Un REPARTIDOR solo puede tocar la ruta de su vehiculo asignado. Se
     responde 404 (no 403) para no confirmarle que la ruta de otro existe."""
-    if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, ruta["vehiculoId"]):
+    if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, ruta["vehiculoId"], ruta.get("vehiculoApoyoId")):
         raise HTTPException(404, "Ruta no encontrada")
 
 
@@ -140,8 +141,9 @@ def listar_rutas(usuario: dict = Depends(get_current_user)):
             if not vehiculo_id:
                 return []
             # Ahora puede tener varias planificadas: la proxima en salir, primero.
+            # En un Morocho, la ruta tambien es del repartidor de la segunda moto.
             cur.execute(
-                'SELECT * FROM "Ruta" WHERE "vehiculoId" = %s ORDER BY "salidaProgramada" ASC',
+                'SELECT * FROM "Ruta" WHERE %s IN ("vehiculoId", "vehiculoApoyoId") ORDER BY "salidaProgramada" ASC',
                 (vehiculo_id,),
             )
         else:
@@ -319,7 +321,7 @@ def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
             raise HTTPException(404, "Ruta no encontrada")
         # Para un repartidor, una ruta de otro vehiculo simplemente no
         # existe: 404 y no 403, para no confirmarle que hay algo ahi.
-        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"]):
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"], row.get("vehiculoApoyoId")):
             raise HTTPException(404, "Ruta no encontrada")
         return _con_detalle(cur, row)
 
@@ -402,15 +404,17 @@ def crear_ruta(data: RutaCreate, usuario: dict = Depends(requiere_rol("DESPACHOS
             cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoId,))
             if not cur.fetchone():
                 raise HTTPException(400, "El vehiculo no existe")
+        # Morocho: dos motos distintas (ver app/services/morocho.py).
+        morocho.validar_apoyo(cur, data.vehiculoId, data.vehiculoApoyoId)
 
         numero = siguiente_numero(cur, "Ruta", "R", 4)
         ruta_id = f"ruta-{uuid.uuid4().hex[:10]}"
         salida = data.salidaProgramada.astimezone(timezone.utc).replace(tzinfo=None)
         cur.execute(
             'INSERT INTO "Ruta" '
-            '("id", "numero", "vehiculoId", "origenId", "creadoPorId", "estado", "salidaProgramada") '
-            "VALUES (%s, %s, %s, %s, %s, 'PLANIFICADA', %s) RETURNING *",
-            (ruta_id, numero, data.vehiculoId, ALMACEN_BASE_ID, usuario["id"], salida),
+            '("id", "numero", "vehiculoId", "vehiculoApoyoId", "origenId", "creadoPorId", "estado", '
+            '"salidaProgramada") VALUES (%s, %s, %s, %s, %s, %s, \'PLANIFICADA\', %s) RETURNING *',
+            (ruta_id, numero, data.vehiculoId, data.vehiculoApoyoId, ALMACEN_BASE_ID, usuario["id"], salida),
         )
 
         _calcular_y_guardar_trazado(cur, ruta_id, despachos, almacen)
@@ -536,7 +540,8 @@ def recalcular_ruta(ruta_id: str):
 @router.patch("/{ruta_id}/programacion", response_model=Ruta, dependencies=[Depends(requiere_rol("DESPACHOS"))])
 def programar_ruta(ruta_id: str, data: RutaProgramacion):
     """Reprograma la salida de una ruta planificada y/o le cambia el
-    vehiculo (vehiculoId en null se lo quita). Como al crearla, nada de esto
+    vehiculo (vehiculoId en null se lo quita, y tambien la segunda moto de un
+    Morocho; vehiculoApoyoId en null deja de ser Morocho). Como al crearla, nada de esto
     bloquea: los conflictos vuelven como avisos en la respuesta."""
     cambios = data.model_fields_set
     if not cambios:
@@ -555,12 +560,22 @@ def programar_ruta(ruta_id: str, data: RutaProgramacion):
                 'UPDATE "Ruta" SET "salidaProgramada" = %s WHERE "id" = %s',
                 (data.salidaProgramada.astimezone(timezone.utc).replace(tzinfo=None), ruta_id),
             )
-        if "vehiculoId" in cambios:
-            if data.vehiculoId is not None:
-                cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoId,))
+        if "vehiculoId" in cambios or "vehiculoApoyoId" in cambios:
+            principal = data.vehiculoId if "vehiculoId" in cambios else ruta["vehiculoId"]
+            # Sin moto principal no hay Morocho; cambiar la principal sin decir
+            # nada de la segunda la conserva.
+            apoyo = data.vehiculoApoyoId if "vehiculoApoyoId" in cambios else ruta["vehiculoApoyoId"]
+            if principal is None:
+                apoyo = None
+            if principal is not None:
+                cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (principal,))
                 if not cur.fetchone():
                     raise HTTPException(400, "El vehiculo no existe")
-            cur.execute('UPDATE "Ruta" SET "vehiculoId" = %s WHERE "id" = %s', (data.vehiculoId, ruta_id))
+            morocho.validar_apoyo(cur, principal, apoyo)
+            cur.execute(
+                'UPDATE "Ruta" SET "vehiculoId" = %s, "vehiculoApoyoId" = %s WHERE "id" = %s',
+                (principal, apoyo, ruta_id),
+            )
             # Si ahora es una moto, se dejan listas las distancias del pago de
             # delivery (como al crear una ruta de moto).
             guardar_distancias_de_ruta(cur, ruta_id)
@@ -656,9 +671,11 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
         # aca (ver app/services/planificacion.py).
         if not ruta["vehiculoId"]:
             raise HTTPException(400, "La ruta no tiene vehiculo asignado: hay que asignarle uno antes de salir")
+        propios = [v for v in (ruta["vehiculoId"], ruta["vehiculoApoyoId"]) if v]
         cur.execute(
-            'SELECT "numero" FROM "Ruta" WHERE "vehiculoId" = %s AND "estado" = %s AND "id" <> %s',
-            (ruta["vehiculoId"], "EN_TRANSITO", ruta_id),
+            'SELECT "numero" FROM "Ruta" WHERE ("vehiculoId" = ANY(%s) OR "vehiculoApoyoId" = ANY(%s)) '
+            'AND "estado" = %s AND "id" <> %s',
+            (propios, propios, "EN_TRANSITO", ruta_id),
         )
         en_camino = cur.fetchone()
         if en_camino:

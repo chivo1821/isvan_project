@@ -151,9 +151,10 @@ def guardar_distancias_de_ruta(cur, ruta_id: str) -> None:
 
 # ---------- Paradas que se pagan ----------
 
-# Una fila por (ruta, cliente) con entrega marcada en una ruta de moto. La
-# fecha del pago es la de la ultima entrega de esa parada, en hora de
-# Venezuela.
+# Una fila por (ruta, cliente, moto) con entrega marcada en una ruta de
+# moto: en un Morocho (dos motos, ver app/services/morocho.py) cada
+# motorizado cobra la parada completa. La fecha del pago es la de la ultima
+# entrega de esa parada, en hora de Venezuela.
 # entregadoEn esta en UTC sin zona (ver app/core/fechas.py): primero se le
 # dice que es UTC y despues se pasa a Caracas. Con un solo AT TIME ZONE se
 # leia como si ya fuera hora de Caracas, y toda entrega desde las 16:00
@@ -176,10 +177,11 @@ _PARADAS = f"""
            lp."rango" AS "rangoLiquidado", liq."id" AS "liquidacionId", liq."creadoEn" AS "liquidadaEn"
     FROM "Despacho" d
     JOIN "Ruta" r ON r."id" = d."rutaId"
-    JOIN "Vehiculo" v ON v."id" = r."vehiculoId" AND v."tipo" = 'MOTO'
+    JOIN "Vehiculo" v ON v."id" IN (r."vehiculoId", r."vehiculoApoyoId") AND v."tipo" = 'MOTO'
     JOIN "Cliente" cl ON cl."id" = d."destinoClienteId"
     LEFT JOIN "DistanciaCliente" dc ON dc."almacenId" = r."origenId" AND dc."clienteId" = cl."id"
     LEFT JOIN "LiquidacionDeliveryParada" lp ON lp."rutaId" = r."id" AND lp."clienteId" = cl."id"
+         AND lp."vehiculoId" = v."id"
     LEFT JOIN "LiquidacionDelivery" liq ON liq."id" = lp."liquidacionId"
     WHERE d."entregadoEn" IS NOT NULL
       AND {_FECHA_ENTREGA} BETWEEN %(desde)s AND %(hasta)s

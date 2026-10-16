@@ -41,6 +41,18 @@ AJUSTES: dict[str, dict] = {
         ),
         "unidad": "kg",
     },
+    "morochoMaxKg": {
+        "grupo": "planificacion",
+        "defecto": 80.0,
+        "minimo": 10.0,
+        "maximo": 300.0,
+        "etiqueta": "Peso máximo de un Morocho",
+        "descripcion": (
+            "Un pedido que no cabe en una moto puede salir en dos motos juntas (Morocho) si pesa hasta estos kg "
+            "y entre las dos lo cargan. Se sugiere solo dentro de la distancia máxima para motos."
+        ),
+        "unidad": "kg",
+    },
     "cobranzaDiasTolerancia": {
         "grupo": "cobranzas",
         "defecto": 15.0,

@@ -66,6 +66,19 @@ def regresos_min(cur, ruta_ids: list[str]) -> dict[str, int]:
     return salida
 
 
+def vehiculos_de(ruta: dict) -> list[str]:
+    """Los vehiculos que ocupa una ruta: el suyo y, si es un Morocho, la
+    segunda moto (vehiculoApoyoId). Las dos quedan en uso todo el viaje."""
+    return [v for v in (ruta.get("vehiculoId"), ruta.get("vehiculoApoyoId")) if v]
+
+
+# Rutas con algun vehiculo (para ver quien esta ocupado).
+_CON_VEHICULO = '("vehiculoId" IS NOT NULL OR "vehiculoApoyoId" IS NOT NULL)'
+_COLUMNAS_OCUPACION = (
+    '"id", "vehiculoId", "vehiculoApoyoId", "estado", "salidaProgramada", "iniciadaEn", "tiempoTotalMin"'
+)
+
+
 def se_pisan(a: tuple[datetime, datetime], b: tuple[datetime, datetime]) -> bool:
     return a[0] < b[1] and b[0] < a[1]
 
@@ -91,13 +104,15 @@ def vehiculos_libres(cur, inicio: datetime, fin: datetime, excluir_ruta: str | N
     )
     vehiculos = cur.fetchall()
     cur.execute(
-        'SELECT "id", "vehiculoId", "estado", "salidaProgramada", "iniciadaEn", "tiempoTotalMin" FROM "Ruta" '
-        'WHERE "vehiculoId" IS NOT NULL AND "estado" = ANY(%s) AND "id" IS DISTINCT FROM %s',
+        f'SELECT {_COLUMNAS_OCUPACION} FROM "Ruta" '
+        f'WHERE {_CON_VEHICULO} AND "estado" = ANY(%s) AND "id" IS DISTINCT FROM %s',
         (list(ACTIVAS), excluir_ruta),
     )
     activas = cur.fetchall()
     regresos = regresos_min(cur, [r["id"] for r in activas])
-    ocupados = {r["vehiculoId"] for r in activas if se_pisan(ventana(r, regresos.get(r["id"], 0)), (inicio, fin))}
+    ocupados = {
+        v for r in activas if se_pisan(ventana(r, regresos.get(r["id"], 0)), (inicio, fin)) for v in vehiculos_de(r)
+    }
     return [v for v in vehiculos if v["id"] not in ocupados]
 
 
@@ -110,8 +125,7 @@ def libres_por_ruta(cur, rutas: list[dict]) -> dict[str, list[str]]:
     cur.execute("SELECT \"id\" FROM \"Vehiculo\" WHERE \"estado\" = 'FUNCIONAL' ORDER BY \"capacidadKg\" DESC")
     funcionales = [v["id"] for v in cur.fetchall()]
     cur.execute(
-        'SELECT "id", "vehiculoId", "estado", "salidaProgramada", "iniciadaEn", "tiempoTotalMin" FROM "Ruta" '
-        'WHERE "vehiculoId" IS NOT NULL AND "estado" = ANY(%s)',
+        f'SELECT {_COLUMNAS_OCUPACION} FROM "Ruta" WHERE {_CON_VEHICULO} AND "estado" = ANY(%s)',
         (list(ACTIVAS),),
     )
     activas = cur.fetchall()
@@ -120,8 +134,9 @@ def libres_por_ruta(cur, rutas: list[dict]) -> dict[str, list[str]]:
     for r in rutas:
         propia = ventana(r, regresos.get(r["id"], 0))
         ocupados = {
-            o["vehiculoId"] for o in activas
+            v for o in activas
             if o["id"] != r["id"] and se_pisan(propia, ventana(o, regresos.get(o["id"], 0)))
+            for v in vehiculos_de(o)
         }
         salida[r["id"]] = [v for v in funcionales if v not in ocupados]
     return salida
@@ -149,6 +164,17 @@ def _distancias_max_por_ruta(cur, ruta_ids: list[str]) -> dict[str, float]:
     return maximas
 
 
+def _pesos(cur, ruta_ids: list[str]) -> dict[str, float]:
+    if not ruta_ids:
+        return {}
+    cur.execute(
+        'SELECT d."rutaId", COALESCE(SUM(i."cantidad" * i."pesoUnitarioKg"), 0)::float AS "kg" FROM "Despacho" d '
+        'LEFT JOIN "DespachoItem" i ON i."despachoId" = d."id" WHERE d."rutaId" = ANY(%s) GROUP BY d."rutaId"',
+        (ruta_ids,),
+    )
+    return {f["rutaId"]: f["kg"] for f in cur.fetchall()}
+
+
 def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
     """Los avisos de cada ruta activa: lo que alguien tiene que resolver
     antes de la salida. Las completadas y canceladas no llevan."""
@@ -157,42 +183,57 @@ def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
     if not activas:
         return salida
 
-    vehiculo_ids = sorted({r["vehiculoId"] for r in activas if r.get("vehiculoId")})
+    vehiculo_ids = sorted({v for r in activas for v in vehiculos_de(r)})
     vehiculos: dict[str, dict] = {}
     otras_por_vehiculo: dict[str, list[dict]] = {}
     if vehiculo_ids:
-        cur.execute('SELECT "id", "placa", "tipo", "estado" FROM "Vehiculo" WHERE "id" = ANY(%s)', (vehiculo_ids,))
+        cur.execute(
+            'SELECT "id", "placa", "tipo", "estado", "capacidadKg" FROM "Vehiculo" WHERE "id" = ANY(%s)',
+            (vehiculo_ids,),
+        )
         vehiculos = {v["id"]: v for v in cur.fetchall()}
         cur.execute(
-            'SELECT "id", "numero", "vehiculoId", "estado", "salidaProgramada", "iniciadaEn", "tiempoTotalMin" '
-            'FROM "Ruta" WHERE "vehiculoId" = ANY(%s) AND "estado" = ANY(%s)',
-            (vehiculo_ids, list(ACTIVAS)),
+            f'SELECT "numero", {_COLUMNAS_OCUPACION} FROM "Ruta" '
+            'WHERE ("vehiculoId" = ANY(%s) OR "vehiculoApoyoId" = ANY(%s)) AND "estado" = ANY(%s)',
+            (vehiculo_ids, vehiculo_ids, list(ACTIVAS)),
         )
         for r in cur.fetchall():
-            otras_por_vehiculo.setdefault(r["vehiculoId"], []).append(r)
+            for v in vehiculos_de(r):
+                otras_por_vehiculo.setdefault(v, []).append(r)
 
     regresos = regresos_min(
         cur, {r["id"] for r in activas} | {o["id"] for otras in otras_por_vehiculo.values() for o in otras}
     )
-    motos = [r["id"] for r in activas if vehiculos.get(r.get("vehiculoId") or "", {}).get("tipo") == "MOTO"]
+    motos = [
+        r["id"] for r in activas if any(vehiculos.get(v, {}).get("tipo") == "MOTO" for v in vehiculos_de(r))
+    ]
     lejanias = _distancias_max_por_ruta(cur, motos)
     limite_moto = configuracion.leer(cur, "motoDistanciaMaxKm") if motos else None
+    morochos = [r["id"] for r in activas if r.get("vehiculoApoyoId")]
+    pesos = _pesos(cur, morochos)
+    limite_morocho = configuracion.leer(cur, "morochoMaxKg") if morochos else None
     ahora = ahora_utc()
 
     for r in activas:
         avisos = salida[r["id"]]
-        vehiculo = vehiculos.get(r.get("vehiculoId") or "")
-        if not vehiculo:
+        if not r.get("vehiculoId"):
             avisos.append({"tipo": "SIN_VEHICULO", "mensaje": "Sin vehículo asignado: hay que asignarle uno antes de la salida"})
-        else:
+        propia = ventana(r, regresos.get(r["id"], 0))
+        for vehiculo_id in vehiculos_de(r):
+            vehiculo = vehiculos.get(vehiculo_id)
+            if not vehiculo:
+                continue
             if vehiculo["estado"] != "FUNCIONAL":
                 avisos.append({
                     "tipo": "VEHICULO_NO_FUNCIONAL",
                     "mensaje": f"El vehículo {vehiculo['placa']} está {ESTADO_VEHICULO.get(vehiculo['estado'], vehiculo['estado'].lower())}",
                 })
-            propia = ventana(r, regresos.get(r["id"], 0))
+            vistas = set()
             for otra in otras_por_vehiculo.get(vehiculo["id"], []):
-                if otra["id"] != r["id"] and se_pisan(propia, ventana(otra, regresos.get(otra["id"], 0))):
+                if otra["id"] in vistas or otra["id"] == r["id"]:
+                    continue
+                vistas.add(otra["id"])
+                if se_pisan(propia, ventana(otra, regresos.get(otra["id"], 0))):
                     avisos.append({
                         "tipo": "CHOQUE_HORARIO",
                         "mensaje": (
@@ -202,12 +243,26 @@ def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
                         ),
                         "rutaId": otra["id"],
                     })
-            if r["id"] in lejanias and limite_moto is not None and lejanias[r["id"]] > limite_moto:
+            if (
+                vehiculo["tipo"] == "MOTO" and r["id"] in lejanias and limite_moto is not None
+                and lejanias[r["id"]] > limite_moto
+            ):
                 avisos.append({
                     "tipo": "MOTO_LEJOS",
                     "mensaje": (
                         f"La moto {vehiculo['placa']} va a un cliente a unos {lejanias[r['id']]:.0f} km del almacén "
                         f"(el máximo para motos es {limite_moto:g} km)"
+                    ),
+                })
+        if r["id"] in pesos and limite_morocho is not None:
+            capacidad = sum(vehiculos.get(v, {}).get("capacidadKg") or 0 for v in vehiculos_de(r))
+            tope = min(limite_morocho, capacidad)
+            if pesos[r["id"]] > tope:
+                avisos.append({
+                    "tipo": "MOROCHO_PESADO",
+                    "mensaje": (
+                        f"El Morocho lleva {pesos[r['id']]:,.0f} kg y entre las dos motos pueden "
+                        f"{tope:,.0f} kg (máximo de un Morocho: {limite_morocho:g} kg)"
                     ),
                 })
         if r["estado"] == "PLANIFICADA" and r["salidaProgramada"] < ahora - timedelta(minutes=TOLERANCIA_ATRASO_MIN):

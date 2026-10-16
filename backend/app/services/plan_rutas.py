@@ -40,6 +40,7 @@ from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.ubicacion import sin_ubicacion
 from app.services import configuracion
+from app.services import morocho as mo
 from app.services import planificacion as pl
 from app.services.planificacion import km_por_calle
 from app.services.route_analysis import (
@@ -200,6 +201,7 @@ def _armar_grupo(
     mezclar_rutas_comerciales: bool,
     radio_max_km: float,
     max_km_almacen: float | None = None,
+    semilla: _Parada | None = None,
 ) -> list[_Parada]:
     """Arma un viaje: siembra con la parada mas lejana del almacen y va
     agregando la mas cercana al grupo, sin salirse del radio permitido y
@@ -209,7 +211,9 @@ def _armar_grupo(
     dificiles de encajar, y dejarlas para el final produce un ultimo viaje
     disperso con clientes en puntas opuestas de la ciudad. Con el radio
     activo, ademas, el grupo de la semilla queda contenido en su zona (ej.
-    todo Charallave junto) en vez de arrastrar clientes del otro extremo."""
+    todo Charallave junto) en vez de arrastrar clientes del otro extremo.
+
+    semilla: para un Morocho, el pedido grande que lo justifica."""
     candidatas = [
         p for p in pendientes
         if p.peso_kg <= capacidad_kg
@@ -220,7 +224,8 @@ def _armar_grupo(
     if not candidatas:
         return []
 
-    semilla = max(candidatas, key=lambda p: haversine_km(origen, p.ubicacion))
+    if semilla is None or semilla not in candidatas:
+        semilla = max(candidatas, key=lambda p: haversine_km(origen, p.ubicacion))
     grupo = [semilla]
     en_grupo = {semilla.cliente_id}
     peso = semilla.peso_kg
@@ -340,6 +345,63 @@ def _motivos(
     return motivos
 
 
+def _sugerir_morocho(
+    origen: LatLng,
+    pendientes: list[_Parada],
+    libres: list[dict],
+    limite_moto: float,
+    limite_morocho: float,
+    mezclar_rutas_comerciales: bool,
+    radio: float,
+) -> tuple[dict, list[_Parada], set[str]] | None:
+    """El viaje en Morocho para el pedido mas pesado que no cabe en una moto
+    libre pero si en dos (ver app/services/morocho.py). Si sobra espacio,
+    suma paradas cercanas hasta el tope del Morocho."""
+    motos_libres = [v for v in libres if v["tipo"] == "MOTO"]
+    if len(motos_libres) < 2:
+        return None
+    for pesada in sorted(pendientes, key=lambda p: -p.peso_kg):
+        if any(_puede_llevar(v, pesada, limite_moto) for v in motos_libres):
+            continue
+        par = mo.elegir_par(
+            motos_libres, pesada.peso_kg, pesada.requiere_frio, pesada.km_almacen, limite_moto, limite_morocho
+        )
+        if par:
+            break
+    else:
+        return None
+
+    grupo = _armar_grupo(
+        origen, pendientes, par.capacidad_kg, par.con_refrigeracion, mezclar_rutas_comerciales, radio,
+        limite_moto, semilla=pesada,
+    )
+    peso_kg = sum(p.peso_kg for p in grupo)
+    distancia_km, tiempo_min = _estimar_recorrido(origen, grupo)
+    costos = [_costo_por_km(par.principal), _costo_por_km(par.apoyo)]
+    costo = round(distancia_km * sum(costos), 2) if None not in costos else None
+    motivos = _motivos(grupo, {**par.principal, "capacidadKg": par.capacidad_kg}, peso_kg, distancia_km, costo)
+    motivos.insert(
+        0,
+        f"Morocho: el pedido de {pesada.peso_kg:,.0f} kg no cabe en una moto y sale en dos "
+        f"({par.principal['placa']} y {par.apoyo['placa']}, hasta {par.capacidad_kg:,.0f} kg entre las dos)",
+    )
+    sugerencia = {
+        "vehiculo": par.principal,
+        "vehiculoApoyo": par.apoyo,
+        "morocho": True,
+        "despachoIds": [id_ for p in grupo for id_ in p.despacho_ids],
+        "paradas": len(grupo),
+        "pesoKg": round(peso_kg, 2),
+        "usoCapacidadPct": round(peso_kg / par.capacidad_kg * 100, 1),
+        "distanciaKmEstimada": distancia_km,
+        "tiempoMinEstimado": tiempo_min,
+        "costoEstimado": costo,
+        "rutasComerciales": _rutas_comerciales(grupo),
+        "motivos": motivos,
+    }
+    return sugerencia, grupo, {par.principal["id"], par.apoyo["id"]}
+
+
 def sugerir_plan_rutas(
     despacho_ids: list[str],
     mezclar_rutas_comerciales: bool = True,
@@ -376,6 +438,7 @@ def sugerir_plan_rutas(
         )
         flota = _flota_funcional(cur)
         limite_moto = configuracion.leer(cur, "motoDistanciaMaxKm")
+        limite_morocho = configuracion.leer(cur, "morochoMaxKg")
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
         almacen = cur.fetchone()
 
@@ -412,6 +475,21 @@ def sugerir_plan_rutas(
     sugerencias: list[dict] = []
 
     while pendientes:
+        # Un pedido que no cabe en ninguna moto libre pero si en dos juntas
+        # (Morocho): sale en un viaje propio con las dos, antes que lo demas
+        # consuma las motos (pedido del cliente, 2026-10-16).
+        if priorizar_motos:
+            morocho = _sugerir_morocho(
+                origen, pendientes, libres, limite_moto, limite_morocho, mezclar_rutas_comerciales, radio
+            )
+            if morocho:
+                sugerencia, grupo, usadas = morocho
+                sugerencias.append(sugerencia)
+                libres = [v for v in libres if v["id"] not in usadas]
+                en_grupo = {p.cliente_id for p in grupo}
+                pendientes = [p for p in pendientes if p.cliente_id not in en_grupo]
+                continue
+
         # Primero con un vehiculo libre a esa hora. Si ya no queda ninguno que
         # sirva, el viaje se arma igual con el tamano de la flota y queda sin
         # vehiculo, para asignarlo cuando se libere uno.
@@ -480,6 +558,8 @@ def sugerir_plan_rutas(
 
         sugerencias.append({
             "vehiculo": asignado if con_vehiculo else None,
+            "vehiculoApoyo": None,
+            "morocho": False,
             "despachoIds": [id_ for p in grupo for id_ in p.despacho_ids],
             "paradas": len(grupo),
             "pesoKg": round(peso_kg, 2),
@@ -500,9 +580,16 @@ def sugerir_plan_rutas(
     capacidad_maxima = max(v["capacidadKg"] for v in flota)
     hay_frio = any(v["tieneRefrigeracion"] for v in flota)
     hay_no_moto = any(v["tipo"] != "MOTO" for v in flota)
+    motos = sorted((v["capacidadKg"] for v in flota if v["tipo"] == "MOTO"), reverse=True)
+    tope_morocho = min(limite_morocho, sum(motos[:2])) if len(motos) >= 2 else 0
     motivos_fuera: dict[str, list[_Parada]] = {}
     for p in pendientes:
-        if p.peso_kg > capacidad_maxima:
+        if not hay_no_moto and capacidad_maxima < p.peso_kg <= tope_morocho and p.km_almacen <= limite_moto:
+            motivo = (
+                f"Necesitan un Morocho (dos motos juntas, hasta {tope_morocho:,.0f} kg) "
+                "y a esa hora no quedan dos motos libres"
+            )
+        elif p.peso_kg > capacidad_maxima:
             motivo = (
                 f"Superan por si solos la capacidad del vehículo más grande de la flota "
                 f"({capacidad_maxima:,.0f} kg) — hay que dividir el despacho"
