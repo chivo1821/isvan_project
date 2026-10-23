@@ -8,10 +8,12 @@ Reglas:
 - Censado = un censo no duplicado con esa clave (empresa, codigo) que no
   quedo en REVISAR: un codigo dudoso no da al cliente por censado.
 - Por censar = clientes de la maestra vigente, fuera de la ruta 77, sin
-  censar.
+  censar (lo que ve cada vendedor). El vendedor de un cliente sale de su
+  ruta (VendedorRuta).
 - Registrado = cliente de la maestra vigente que ya existe en Clientes (lo
   que se puede despachar), venga del censo o de otra carga; con ubicacion si
-  ademas tiene una valida. El vendedor de un cliente sale de su ruta (VendedorRuta).
+  ademas tiene una valida. El avance del tablero (Principal y Avance) se mide
+  por registrados; por registrar = el resto de la maestra.
 - Pendiente en ventas = censado con un codigo que no esta ni en la maestra
   ni en los clientes de ventas: hay que crearlo en el sistema de ventas.
 - Las preguntas de competencia vienen en dos ramas segun el tipo de
@@ -151,11 +153,12 @@ def censadas(censos: list[dict]) -> set[tuple[str, str]]:
     }
 
 
-def _cliente_por_censar(f: dict, vendedores: dict) -> dict:
+def _cliente_por_censar(f: dict, vendedores: dict, censado: bool = False) -> dict:
     return {
         "empresa": f["empresa"], "codigo": f["codigo"], "razonSocial": f["razonSocial"], "ruta": f["rutaNumero"],
         "diaVisita": f["diaVisita"], "direccion": f["direccion"], "zona": f["zona"],
         "vendedores": [v["nombre"] for v in vendedores.get((f["empresa"], f["rutaNumero"]), [])],
+        "censado": censado,
     }
 
 
@@ -163,7 +166,8 @@ def _cliente_por_censar(f: dict, vendedores: dict) -> dict:
 
 
 def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] | None) -> dict:
-    """Maestra contra lo censado, por empresa, ruta y vendedor."""
+    """Maestra contra lo registrado (y lo censado), por empresa, ruta y
+    vendedor, y la lista de los que faltan por registrar."""
     maestra = _maestra(cur, empresas)
     en_sistema = _en_sistema(cur, empresas)
     vendedores = _vendedores_por_ruta(cur)
@@ -176,22 +180,23 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
                 continue
             clave = (empresa, f["rutaNumero"])
             por_ruta[clave]["maestra"] += 1
-            if (empresa, f["codigo"]) in hechas:
+            censado = (empresa, f["codigo"]) in hechas
+            if censado:
                 por_ruta[clave]["censados"] += 1
             con_ubicacion = en_sistema[empresa].get(f["codigo"])
-            if con_ubicacion is not None:
+            if con_ubicacion is None:
+                pendientes.append(_cliente_por_censar(f, vendedores, censado))
+            else:
                 por_ruta[clave]["registrados"] += 1
                 if con_ubicacion:
                     por_ruta[clave]["registradosConUbicacion"] += 1
-            else:
-                pendientes.append(_cliente_por_censar(f, vendedores))
 
     def fila(etiqueta: dict, n: Counter) -> dict:
-        por_censar = n["maestra"] - n["censados"]
         return {
-            **etiqueta, "maestra": n["maestra"], "censados": n["censados"], "porCensar": por_censar,
+            **etiqueta, "maestra": n["maestra"], "censados": n["censados"],
             "registrados": n["registrados"], "registradosConUbicacion": n["registradosConUbicacion"],
-            "avance": n["censados"] / n["maestra"] if n["maestra"] else None,
+            "porRegistrar": n["maestra"] - n["registrados"],
+            "avance": n["registrados"] / n["maestra"] if n["maestra"] else None,
         }
 
     rutas_filas = [
@@ -213,9 +218,9 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
         "porRuta": rutas_filas,
         "porVendedor": sorted(
             (fila({"vendedor": v, "rutas": sorted(rutas_de[v])}, n) for v, n in por_vendedor.items()),
-            key=lambda x: -x["porCensar"],
+            key=lambda x: -x["porRegistrar"],
         ),
-        "porCensar": pendientes,
+        "porRegistrar": pendientes,
     }
 
 
@@ -350,9 +355,9 @@ def tablero(cur, where: str, params: dict, empresas_filtro: list[str], rutas_fil
         "mapa": mapa,
         "puntos": puntos,
         "avance": {
-            **{k: v for k, v in av.items() if k != "porCensar"},
-            "porCensarTotal": len(av["porCensar"]),
-            "porCensar": av["porCensar"][:LIMITE_LISTA],
+            **{k: v for k, v in av.items() if k != "porRegistrar"},
+            "porRegistrarTotal": len(av["porRegistrar"]),
+            "porRegistrar": av["porRegistrar"][:LIMITE_LISTA],
             "creados": sum(1 for _, k in claves_vigentes if k["accion"] == "CREADO"),
             "completados": sum(1 for _, k in claves_vigentes if k["accion"] == "COMPLETADO"),
             "pendientesVentasTotal": len(pendientes_ventas),
@@ -366,7 +371,8 @@ def tablero(cur, where: str, params: dict, empresas_filtro: list[str], rutas_fil
         },
         # Para el Excel: las listas completas.
         "_completo": {
-            "porCensar": av["porCensar"], "pendientesVentas": pendientes_ventas, "posiblesClientes": posibles, **al,
+            "porRegistrar": av["porRegistrar"], "pendientesVentas": pendientes_ventas, "posiblesClientes": posibles,
+            **al,
         },
     }
 
