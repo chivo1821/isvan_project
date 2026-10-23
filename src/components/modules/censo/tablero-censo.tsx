@@ -114,11 +114,88 @@ function Mapa({ puntos, definicion }: { puntos: PuntoTablero[]; definicion: Defi
 
 // ---------- Principal ----------
 
+/** Barra de dos tramos: registrados (verde) y por registrar (ámbar). */
+function BarraRegistro({ registrados, total, etiqueta }: { registrados: number; total: number; etiqueta: string }) {
+  const pct = total ? (registrados / total) * 100 : 0;
+  return (
+    <div
+      role="meter"
+      aria-label={etiqueta}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={registrados}
+      className="flex h-3 w-full overflow-hidden rounded-full bg-warning/35"
+    >
+      <div className="h-full bg-success transition-all" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/** Clientes de la maestra registrados por el censo contra los que faltan.
+ * Respeta los filtros de empresa y ruta, como la pestaña Avance. */
+function RegistroDeClientes({ t }: { t: TableroCenso }) {
+  const a = t.avance;
+  const total = a.porEmpresa.reduce((s, e) => s + e.maestra, 0);
+  const registrados = a.porEmpresa.reduce((s, e) => s + e.censados, 0);
+  const faltan = total - registrados;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Clientes registrados contra los que faltan por registrar</CardTitle>
+        <CardDescription>
+          {a.conMaestra.length
+            ? `Maestra vigente de ${a.conMaestra.join(" y ")}, sin la ruta 77. Un código en revisión no cuenta como registrado.`
+            : "Todavía no hay maestra cargada."}
+        </CardDescription>
+      </CardHeader>
+      {total > 0 && (
+        <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+              <p className="text-3xl font-semibold tabular-nums">{formatPct(registrados / total)}</p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground tabular-nums">{formatNumero(registrados)}</span> registrados ·{" "}
+                <span className="font-medium text-foreground tabular-nums">{formatNumero(faltan)}</span> por registrar · de{" "}
+                <span className="tabular-nums">{formatNumero(total)}</span> clientes
+              </p>
+            </div>
+            <BarraRegistro registrados={registrados} total={total} etiqueta="Clientes registrados de la maestra" />
+            <div className="flex gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="size-2.5 rounded-full bg-success" aria-hidden /> Registrados
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2.5 rounded-full bg-warning/60" aria-hidden /> Por registrar
+              </span>
+            </div>
+          </div>
+          {a.porEmpresa.length > 1 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {a.porEmpresa.map((e) => (
+                <div key={e.empresa} className="space-y-1.5">
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="font-medium">{e.empresa}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {formatNumero(e.censados)} de {formatNumero(e.maestra)} · {formatPct(e.avance ?? 0)}
+                    </span>
+                  </div>
+                  <BarraRegistro registrados={e.censados} total={e.maestra} etiqueta={`Clientes registrados de ${e.empresa}`} />
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 function Principal({ t }: { t: TableroCenso }) {
   const p = t.principal;
   const conActivo = n(p.poseeActivos, "Si");
   return (
     <div className="space-y-4">
+      <RegistroDeClientes t={t} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={ClipboardCheckIcon}
