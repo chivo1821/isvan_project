@@ -2,13 +2,34 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, SaveIcon, SearchIcon, SparklesIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Loader2Icon,
+  SaveIcon,
+  SearchIcon,
+  SparklesIcon,
+  Undo2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ApiError, apiGet, apiPatch, mensajeDeError } from "@/lib/api-client";
+import { Textarea } from "@/components/ui/textarea";
+import { ApiError, apiGet, apiPatch, apiPost, mensajeDeError } from "@/lib/api-client";
 import {
   CATEGORIAS_CORRECCION,
   type CategoriaCorreccion,
@@ -16,6 +37,7 @@ import {
   type CensosPorCorregir,
   type ConteoCorreccion,
   type ResultadoCorreccion,
+  type ResultadoDevolucion,
   type SugerenciaMaestra,
 } from "@/lib/censo";
 import { formatNumero } from "@/lib/constants";
@@ -75,14 +97,86 @@ function CampoCodigo({
   );
 }
 
+const MOTIVO_MINIMO = 5;
+
+/** Pide el motivo (obligatorio: lo ve el vendedor) y devuelve los censos.
+ * Solo ADMIN. El botón que lo abre se pasa como datos (texto y estilo). */
+function DevolverDialog({
+  titulo,
+  descripcion,
+  boton,
+  onDevolver,
+}: {
+  titulo: string;
+  descripcion: string;
+  boton: { texto: string; variante: "outline" | "ghost" };
+  onDevolver: (motivo: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const valido = motivo.trim().length >= MOTIVO_MINIMO;
+
+  async function devolver() {
+    setEnviando(true);
+    try {
+      await onDevolver(motivo.trim());
+      setOpen(false);
+      setMotivo("");
+    } catch (e) {
+      toast.error(mensajeDeError(e, "No se pudo devolver"));
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant={boton.variante}>
+          <Undo2Icon /> {boton.texto}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{titulo}</DialogTitle>
+          <DialogDescription>{descripcion}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="motivo-devolucion">Motivo (lo verá el vendedor)</Label>
+          <Textarea
+            id="motivo-devolucion"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value.slice(0, 300))}
+            placeholder="Ej.: el código no corresponde al comercio; vuelve a censarlo con el código correcto"
+            rows={3}
+          />
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={enviando}>
+              Cancelar
+            </Button>
+          </DialogClose>
+          <Button onClick={devolver} disabled={!valido || enviando}>
+            {enviando ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />} Devolver
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function FilaCenso({
   censo,
   esAdmin,
   onCorregido,
+  onDevolver,
 }: {
   censo: CensoPorCorregir;
   esAdmin: boolean;
   onCorregido: (r: ResultadoCorreccion) => void;
+  onDevolver: (motivo: string) => Promise<void>;
 }) {
   const inicial = (censo.empresa ?? "").toUpperCase();
   const [empresa, setEmpresa] = useState<string>(EMPRESAS.includes(inicial as never) ? inicial : "");
@@ -224,6 +318,16 @@ function FilaCenso({
               <CheckIcon /> El código es correcto
             </Button>
           )}
+          {esAdmin && (
+            <DevolverDialog
+              titulo="Devolver el censo al vendedor"
+              descripcion={`${censo.nombre ?? "Este censo"} sale de la lista y deja de contar; ${
+                censo.encuestador ?? "el vendedor"
+              } lo verá con el motivo para censarlo de nuevo.`}
+              boton={{ texto: "Devolver", variante: "ghost" }}
+              onDevolver={onDevolver}
+            />
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -287,6 +391,35 @@ export function CensosPorCorregir({
     };
   }, [consulta, onConteo]);
 
+  async function devolver(cuerpo: { ids?: string[]; todos?: boolean }, motivo: string) {
+    const r = await apiPost<ResultadoDevolucion>("/clientes/censo-pendientes/devolver", {
+      ...cuerpo,
+      categoria,
+      q: q || null,
+      motivo,
+    });
+    setVersion((v) => v + 1);
+    const plural = r.devueltos === 1 ? "" : "s";
+    toast.success(`${formatNumero(r.devueltos)} censo${plural} devuelto${plural} al vendedor`, {
+      description: r.clientesEliminados
+        ? `${formatNumero(r.clientesEliminados)} cliente(s) que había creado se eliminaron.`
+        : undefined,
+      duration: 15000,
+      action: {
+        label: "Deshacer",
+        onClick: async () => {
+          try {
+            await apiPost(`/clientes/censo-pendientes/devolver/${encodeURIComponent(r.lote)}/deshacer`);
+            toast.success("Devolución deshecha: los censos volvieron a la lista");
+          } catch (e) {
+            toast.error(mensajeDeError(e, "No se pudo deshacer"));
+          }
+          setVersion((v) => v + 1);
+        },
+      },
+    });
+  }
+
   function corregido(r: ResultadoCorreccion) {
     const m = mensajeResultado(r);
     if (m.ok) toast.success(m.titulo, { description: m.detalle });
@@ -349,6 +482,18 @@ export function CensosPorCorregir({
               <SearchIcon /> Buscar
             </Button>
             {cargando && <Loader2Icon className="mb-2.5 size-4 animate-spin text-muted-foreground" />}
+            {esAdmin && datos && datos.total > 0 && !cargando && (
+              <span className="ml-auto">
+                <DevolverDialog
+                  titulo={`Devolver ${formatNumero(datos.total)} censo${datos.total === 1 ? "" : "s"} a sus vendedores`}
+                  descripcion={`Todos los de “${CATEGORIA[categoria].titulo}”${
+                    q ? ` que coinciden con “${q}”` : ""
+                  }, en todas las páginas. Salen de la lista y dejan de contar; cada vendedor los verá con este motivo para censarlos de nuevo.`}
+                  boton={{ texto: `Devolver todos (${formatNumero(datos.total)})`, variante: "outline" }}
+                  onDevolver={(motivo) => devolver({ todos: true }, motivo)}
+                />
+              </span>
+            )}
           </form>
 
           {datos && datos.censos.length === 0 ? (
@@ -367,7 +512,13 @@ export function CensosPorCorregir({
                 </TableHeader>
                 <TableBody>
                   {datos?.censos.map((c) => (
-                    <FilaCenso key={`${c.id}-${c.categoria}`} censo={c} esAdmin={esAdmin} onCorregido={corregido} />
+                    <FilaCenso
+                      key={`${c.id}-${c.categoria}`}
+                      censo={c}
+                      esAdmin={esAdmin}
+                      onCorregido={corregido}
+                      onDevolver={(motivo) => devolver({ ids: [c.id] }, motivo)}
+                    />
                   ))}
                 </TableBody>
               </Table>

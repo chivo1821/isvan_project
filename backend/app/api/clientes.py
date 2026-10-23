@@ -112,6 +112,39 @@ def corregir_censo(censo_id: str, datos: CorreccionCenso, usuario: dict = Depend
     return resultado
 
 
+class DevolucionCensos(BaseModel):
+    motivo: str
+    # Los censos elegidos, o todos los de la lista con el filtro.
+    ids: list[str] | None = None
+    todos: bool = False
+    categoria: str | None = None
+    q: str | None = None
+
+
+@router.post("/censo-pendientes/devolver")
+def devolver_censos(datos: DevolucionCensos, usuario: dict = Depends(requiere_rol("ADMIN"))):
+    """Devuelve al vendedor censos cuyos errores no permiten registrar el
+    cliente, con un motivo que el vendedor ve. Uno, varios o todos los de la
+    lista (categoria y busqueda). Devuelve el lote para deshacerlo."""
+    if not datos.todos and not datos.ids:
+        raise HTTPException(400, "Elige al menos un censo, o todos los de la lista")
+    with get_connection() as conn, conn.cursor() as cur:
+        if datos.todos:
+            resultado = censo_correccion.devolver_todos(cur, datos.categoria, datos.q, datos.motivo, usuario["id"])
+        else:
+            resultado = censo_correccion.devolver(cur, datos.ids, datos.motivo, usuario["id"])
+        conn.commit()
+    return resultado
+
+
+@router.post("/censo-pendientes/devolver/{lote}/deshacer", dependencies=[Depends(requiere_rol("ADMIN"))])
+def deshacer_devolucion(lote: str):
+    with get_connection() as conn, conn.cursor() as cur:
+        resultado = censo_correccion.deshacer_devolucion(cur, lote)
+        conn.commit()
+    return resultado
+
+
 @router.get("/{cliente_id}", response_model=Cliente)
 def obtener_cliente(cliente_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:

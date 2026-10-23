@@ -292,7 +292,22 @@ export type PendientesVendedor = {
   porCensar: ClientePorCensar[];
   pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string })[];
   revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
+  /** Devueltos por un ADMIN desde Censos por corregir, hasta que se vuelvan a censar. */
+  devueltos: CensoDevuelto[];
 };
+
+export type CensoDevuelto = {
+  id: string;
+  nombre: string | null;
+  ruta: string | null;
+  fecha: string;
+  devueltoEl: string;
+  motivo: string;
+  codigos: string[];
+};
+
+/** POST /clientes/censo-pendientes/devolver */
+export type ResultadoDevolucion = { devueltos: number; lote: string; clientesEliminados: number };
 
 // ---------- Censos por corregir (Clientes, GET /clientes/censo-pendientes) ----------
 

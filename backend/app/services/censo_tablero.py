@@ -416,4 +416,36 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
         "porCensar": por_censar,
         "pendientesVentas": en_ventas,
         "revisar": revisar,
+        "devueltos": _devueltos(cur, usuario_id, censos),
     }
+
+
+def _devueltos(cur, usuario_id: str, vigentes: list[dict]) -> list[dict]:
+    """Los censos del vendedor que un ADMIN devolvio, con el motivo, hasta
+    que alguien vuelva a censar ese cliente (misma clave o mismo RIF)."""
+    cur.execute(
+        'SELECT "id", "nombreComercio", "ruta", "terminadoEn", "devueltoEn", "motivoDevolucion", "respuestas" '
+        'FROM "Censo" WHERE "usuarioId" = %s AND "formulario" = %s AND "devueltoEn" IS NOT NULL '
+        'ORDER BY "devueltoEn" DESC',
+        (usuario_id, cc.FORMULARIO),
+    )
+    salida = []
+    for d in cur.fetchall():
+        claves = {(k.empresa, k.codigo) for k in cc.claves_de(d["respuestas"])}
+        rif = cc.rif_normalizado(d["respuestas"].get("rif"))
+        rehecho = any(
+            c["terminadoEn"] > d["devueltoEn"]
+            and (
+                any((k["empresa"], k["codigo"]) in claves for k in c["claves"])
+                or (rif and cc.rif_normalizado(c["r"].get("rif")) == rif)
+            )
+            for c in vigentes
+        )
+        if rehecho:
+            continue
+        salida.append({
+            "id": d["id"], "nombre": d["nombreComercio"], "ruta": d["ruta"], "fecha": dia_caracas(d["terminadoEn"]),
+            "devueltoEl": dia_caracas(d["devueltoEn"]), "motivo": d["motivoDevolucion"],
+            "codigos": [f"{e} {c}" for e, c in sorted(claves)],
+        })
+    return salida
