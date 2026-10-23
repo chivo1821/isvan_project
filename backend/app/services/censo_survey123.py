@@ -303,10 +303,60 @@ def _usuarios_por_nombre(cur) -> dict[str, str]:
     return {n: ids[0] for n, ids in por_nombre.items() if len(ids) == 1}
 
 
-def importar(cur, lectura: Lectura) -> dict:
+def _importar_fila(cur, f, usuarios, tecnico, ctx, sin_usuario, acciones, resumen, revisar, duplicados) -> None:
+    """Inserta y procesa un censo; acumula en los contadores de importar()."""
+    r = f.respuestas
+    encuestador = r.get("encuestador")
+    usuario_id = usuarios.get(nombre_comparable(encuestador))
+    if not usuario_id:
+        sin_usuario[encuestador or "(sin encuestador)"] += 1
+        usuario_id = tecnico
+    censo_id = f"cen-{uuid.uuid4().hex[:16]}"
+    columnas = {col: r.get(nombre) for col, nombre in cc.COLUMNAS_DE_RESPUESTA.items()}
+    cur.execute(
+        'INSERT INTO "Censo" ("id", "formulario", "version", "usuarioId", "respuestas", "lat", "lng", '
+        '"encuestador", "nombreComercio", "tipoCliente", "empresa", "ruta", "iniciadoEn", "terminadoEn", '
+        '"recibidoEn", "origen", "externoId") '
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'SURVEY123', %s)",
+        (
+            censo_id, cc.FORMULARIO, VERSION, usuario_id, Jsonb(r), f.lat, f.lng,
+            columnas["encuestador"], columnas["nombreComercio"], columnas["tipoCliente"],
+            columnas["empresa"], columnas["ruta"], f.iniciado, f.terminado, f.terminado, f.externo_id,
+        ),
+    )
+    censo = {
+        "id": censo_id, "respuestas": r, "lat": f.lat, "lng": f.lng, "terminadoEn": f.terminado,
+        "nombreComercio": columnas["nombreComercio"], "ruta": columnas["ruta"],
+    }
+    proceso = cc.procesar(cur, censo_id, ctx, censo=censo)
+    smid = f.externo_id.removeprefix(PREFIJO_EXTERNO)
+    resumen["sinUbicacion"] += f.lat is None and not f.invalida
+    resumen["ubicacionInvalida"] += f.invalida
+    resumen["invertidas"] += f.invertida
+    if proceso["duplicadoDe"]:
+        resumen["duplicados"] += 1
+        if len(duplicados) < MAXIMO_EJEMPLOS:
+            duplicados.append({"smid": smid, "nombre": r.get("nombre_comercio")})
+    if proceso["posibleCliente"]:
+        resumen["posiblesClientes"] += 1
+    elif not proceso["clientes"]:
+        resumen["sinCodigo"] += 1
+    for c in proceso["clientes"]:
+        acciones[c["accion"]] += 1
+        if c["accion"] == "REVISAR" and len(revisar) < MAXIMO_EJEMPLOS:
+            revisar.append({"smid": smid, "empresa": c["empresa"], "codigo": c["codigo"], "motivo": c["motivo"]})
+
+
+def importar(cur, lectura: Lectura, progreso=None) -> dict:
     """Guarda los censos nuevos y los procesa (duplicados y clientes), en
     orden cronologico. No hace commit: la vista previa usa la misma funcion
-    y deshace todo."""
+    y deshace todo.
+
+    Va en modo pipeline: los INSERT y UPDATE de cada censo se envian sin
+    esperar respuesta (lo que hace falta leer ya esta en el Contexto). Con la
+    base en Neon, esperar cada consulta eran ~4.000 idas y vueltas.
+    Cada 50 censos se sincroniza (una ida y vuelta) y se llama a
+    `progreso(hechos, total)`."""
     cur.execute(
         'SELECT "externoId" FROM "Censo" WHERE "externoId" = ANY(%s)',
         ([f.externo_id for f in lectura.filas],),
@@ -321,43 +371,13 @@ def importar(cur, lectura: Lectura) -> dict:
     acciones: Counter[str] = Counter()
     resumen = Counter()
     revisar, duplicados = [], []
-    for f in nuevas:
-        r = f.respuestas
-        encuestador = r.get("encuestador")
-        usuario_id = usuarios.get(nombre_comparable(encuestador))
-        if not usuario_id:
-            sin_usuario[encuestador or "(sin encuestador)"] += 1
-            usuario_id = tecnico
-        censo_id = f"cen-{uuid.uuid4().hex[:16]}"
-        columnas = {col: r.get(nombre) for col, nombre in cc.COLUMNAS_DE_RESPUESTA.items()}
-        cur.execute(
-            'INSERT INTO "Censo" ("id", "formulario", "version", "usuarioId", "respuestas", "lat", "lng", '
-            '"encuestador", "nombreComercio", "tipoCliente", "empresa", "ruta", "iniciadoEn", "terminadoEn", '
-            '"recibidoEn", "origen", "externoId") '
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'SURVEY123', %s)",
-            (
-                censo_id, cc.FORMULARIO, VERSION, usuario_id, Jsonb(r), f.lat, f.lng,
-                columnas["encuestador"], columnas["nombreComercio"], columnas["tipoCliente"],
-                columnas["empresa"], columnas["ruta"], f.iniciado, f.terminado, f.terminado, f.externo_id,
-            ),
-        )
-        proceso = cc.procesar(cur, censo_id, ctx)
-        smid = f.externo_id.removeprefix(PREFIJO_EXTERNO)
-        resumen["sinUbicacion"] += f.lat is None and not f.invalida
-        resumen["ubicacionInvalida"] += f.invalida
-        resumen["invertidas"] += f.invertida
-        if proceso["duplicadoDe"]:
-            resumen["duplicados"] += 1
-            if len(duplicados) < MAXIMO_EJEMPLOS:
-                duplicados.append({"smid": smid, "nombre": r.get("nombre_comercio")})
-        if proceso["posibleCliente"]:
-            resumen["posiblesClientes"] += 1
-        elif not proceso["clientes"]:
-            resumen["sinCodigo"] += 1
-        for c in proceso["clientes"]:
-            acciones[c["accion"]] += 1
-            if c["accion"] == "REVISAR" and len(revisar) < MAXIMO_EJEMPLOS:
-                revisar.append({"smid": smid, "empresa": c["empresa"], "codigo": c["codigo"], "motivo": c["motivo"]})
+    with cur.connection.pipeline() as tuberia:
+        for i, f in enumerate(nuevas, 1):
+            _importar_fila(cur, f, usuarios, tecnico, ctx, sin_usuario, acciones, resumen, revisar, duplicados)
+            if i % 50 == 0 or i == len(nuevas):
+                tuberia.sync()
+                if progreso:
+                    progreso(i, len(nuevas))
 
     return {
         "filas": len(lectura.filas) + len(lectura.errores),

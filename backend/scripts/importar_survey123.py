@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -35,7 +36,12 @@ def ejecutar(ruta: Path, confirmar: bool) -> dict:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT DISTINCT "empresa"::text AS "e" FROM "MaestraCarga" ORDER BY 1')
         con_maestra = [r["e"] for r in cur.fetchall()]
-        resumen = s123.importar(cur, lectura)
+        print(f"Leidas {len(lectura.filas)} filas; importando...", flush=True)
+        inicio = time.monotonic()
+        resumen = s123.importar(
+            cur, lectura, progreso=lambda hechos, total: print(f"  {hechos}/{total} censos", flush=True)
+        )
+        print(f"Procesado en {time.monotonic() - inicio:.0f} s", flush=True)
         if confirmar:
             conn.commit()
         else:
