@@ -131,12 +131,14 @@ function BarraRegistro({ registrados, total, etiqueta }: { registrados: number; 
   );
 }
 
-/** Clientes de la maestra registrados por el censo contra los que faltan.
- * Respeta los filtros de empresa y ruta, como la pestaña Avance. */
+/** Clientes de la maestra que ya existen en el sistema (Clientes: se pueden
+ * despachar) contra los que faltan, vengan o no del censo. Respeta los
+ * filtros de empresa y ruta, como la pestaña Avance. */
 function RegistroDeClientes({ t }: { t: TableroCenso }) {
   const a = t.avance;
   const total = a.porEmpresa.reduce((s, e) => s + e.maestra, 0);
-  const registrados = a.porEmpresa.reduce((s, e) => s + e.censados, 0);
+  const registrados = a.porEmpresa.reduce((s, e) => s + e.registrados, 0);
+  const sinUbicacion = registrados - a.porEmpresa.reduce((s, e) => s + e.registradosConUbicacion, 0);
   const faltan = total - registrados;
   return (
     <Card>
@@ -144,7 +146,7 @@ function RegistroDeClientes({ t }: { t: TableroCenso }) {
         <CardTitle className="text-base">Clientes registrados contra los que faltan por registrar</CardTitle>
         <CardDescription>
           {a.conMaestra.length
-            ? `Maestra vigente de ${a.conMaestra.join(" y ")}, sin la ruta 77. Un código en revisión no cuenta como registrado.`
+            ? `Clientes de la maestra vigente de ${a.conMaestra.join(" y ")} (sin la ruta 77) que ya existen en el sistema y se pueden despachar.`
             : "Todavía no hay maestra cargada."}
         </CardDescription>
       </CardHeader>
@@ -157,6 +159,7 @@ function RegistroDeClientes({ t }: { t: TableroCenso }) {
                 <span className="font-medium text-foreground tabular-nums">{formatNumero(registrados)}</span> registrados ·{" "}
                 <span className="font-medium text-foreground tabular-nums">{formatNumero(faltan)}</span> por registrar · de{" "}
                 <span className="tabular-nums">{formatNumero(total)}</span> clientes
+                {sinUbicacion > 0 && <> · {formatNumero(sinUbicacion)} registrados sin ubicación</>}
               </p>
             </div>
             <BarraRegistro registrados={registrados} total={total} etiqueta="Clientes registrados de la maestra" />
@@ -176,10 +179,11 @@ function RegistroDeClientes({ t }: { t: TableroCenso }) {
                   <div className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="font-medium">{e.empresa}</span>
                     <span className="text-muted-foreground tabular-nums">
-                      {formatNumero(e.censados)} de {formatNumero(e.maestra)} · {formatPct(e.avance ?? 0)}
+                      {formatNumero(e.registrados)} de {formatNumero(e.maestra)} ·{" "}
+                      {formatPct(e.maestra ? e.registrados / e.maestra : 0)}
                     </span>
                   </div>
-                  <BarraRegistro registrados={e.censados} total={e.maestra} etiqueta={`Clientes registrados de ${e.empresa}`} />
+                  <BarraRegistro registrados={e.registrados} total={e.maestra} etiqueta={`Clientes registrados de ${e.empresa}`} />
                 </div>
               ))}
             </div>

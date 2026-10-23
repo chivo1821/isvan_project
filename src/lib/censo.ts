@@ -217,7 +217,15 @@ export type CensoBreve = {
   origen: "PAGINA" | "SURVEY123";
 };
 
-export type FilaAvance = { maestra: number; censados: number; porCensar: number; avance: number | null };
+export type FilaAvance = {
+  maestra: number;
+  censados: number;
+  porCensar: number;
+  avance: number | null;
+  /** Ya existen en Clientes (se pueden despachar), vengan o no del censo. */
+  registrados: number;
+  registradosConUbicacion: number;
+};
 
 export type ClientePorCensar = {
   empresa: EmpresaMaestra;
