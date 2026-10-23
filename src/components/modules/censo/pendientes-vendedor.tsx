@@ -12,12 +12,14 @@ function porRuta(clientes: ClientePorCensar[]) {
   return [...grupos.entries()];
 }
 
-/** Arriba del formulario del censo: lo que le falta al vendedor en sus
- * rutas (según la maestra) y sus censos con algo pendiente. */
+/** Arriba del formulario del censo: los clientes de sus rutas (según la
+ * maestra) que faltan por registrar en el sistema, y sus censos con algo
+ * pendiente. */
 export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) {
-  const { porCensar, pendientesVentas, revisar, devueltos } = datos;
+  const { porRegistrar, pendientesVentas, revisar, sinCodigo, devueltos } = datos;
   if (
     !devueltos.length &&
+    !sinCodigo.length &&
     (!datos.rutas.length || (!datos.conMaestra.length && !pendientesVentas.length && !revisar.length))
   )
     return null;
@@ -49,15 +51,20 @@ export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) 
           </AlertDescription>
         </Alert>
       )}
-      {porCensar.length > 0 ? (
+      {porRegistrar.length > 0 ? (
         <Alert>
           <MapPinIcon />
           <AlertTitle>
-            Tienes {formatNumero(porCensar.length)} cliente{porCensar.length === 1 ? "" : "s"} por censar en tus rutas
+            Tienes {formatNumero(porRegistrar.length)} cliente{porRegistrar.length === 1 ? "" : "s"} por registrar en
+            tus rutas
           </AlertTitle>
           <AlertDescription>
             <div className="w-full space-y-1">
-              {porRuta(porCensar).map(([ruta, clientes]) => (
+              <p className="text-sm">
+                Todavía no están en el sistema. Los marcados “Ya censado” tienen censo, pero falta corregirlo (revisa
+                los avisos de abajo).
+              </p>
+              {porRuta(porRegistrar).map(([ruta, clientes]) => (
                 <details key={ruta} className="group rounded-md border border-border px-3 py-2">
                   <summary className="cursor-pointer text-sm font-medium text-foreground">
                     {ruta}: {formatNumero(clientes.length)}
@@ -67,6 +74,9 @@ export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) 
                       <li key={`${c.empresa}-${c.codigo}`} className="py-1.5">
                         <span className="font-medium text-foreground">{c.razonSocial}</span>{" "}
                         <span className="tabular-nums text-muted-foreground">({c.codigo})</span>
+                        {c.censado && (
+                          <span className="ml-1.5 rounded-full bg-info/15 px-1.5 text-xs text-foreground">Ya censado</span>
+                        )}
                         <span className="block text-xs text-muted-foreground">
                           {[c.diaVisita && `Día de visita ${c.diaVisita}`, c.zona, c.direccion]
                             .filter(Boolean)
@@ -84,7 +94,7 @@ export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) 
         datos.conMaestra.length > 0 && (
           <Alert>
             <MapPinIcon />
-            <AlertTitle>Ya censaste a todos los clientes de tus rutas</AlertTitle>
+            <AlertTitle>Todos los clientes de tus rutas ya están registrados</AlertTitle>
           </Alert>
         )
       )}
@@ -101,6 +111,33 @@ export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) 
                 <li key={`${r.id}-${r.empresa}`}>{r.motivo}</li>
               ))}
             </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {sinCodigo.length > 0 && (
+        <Alert>
+          <AlertTriangleIcon />
+          <AlertTitle>
+            {formatNumero(sinCodigo.length)} censo{sinCodigo.length === 1 ? "" : "s"} sin código de cliente
+          </AlertTitle>
+          <AlertDescription>
+            <p className="text-sm">
+              Sin el código no se pueden registrar. Vuelve a censarlos con su empresa y código.
+            </p>
+            <details className="w-full rounded-md border border-border px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">Ver la lista</summary>
+              <ul className="mt-2 divide-y text-sm">
+                {sinCodigo.map((c) => (
+                  <li key={c.id} className="py-1.5">
+                    <span className="font-medium text-foreground">{c.nombre ?? "Sin nombre"}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {[c.tipoCliente, c.rif && `RIF ${c.rif}`, c.ruta, c.fecha].filter(Boolean).join(" · ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           </AlertDescription>
         </Alert>
       )}
