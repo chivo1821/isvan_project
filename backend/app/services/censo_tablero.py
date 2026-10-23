@@ -8,7 +8,10 @@ Reglas:
 - Censado = un censo no duplicado con esa clave (empresa, codigo) que no
   quedo en REVISAR: un codigo dudoso no da al cliente por censado.
 - Por censar = clientes de la maestra vigente, fuera de la ruta 77, sin
-  censar. El vendedor de un cliente sale de su ruta (VendedorRuta).
+  censar.
+- Registrado = cliente de la maestra vigente que ya existe en Clientes (lo
+  que se puede despachar), venga del censo o de otra carga; con ubicacion si
+  ademas tiene una valida. El vendedor de un cliente sale de su ruta (VendedorRuta).
 - Pendiente en ventas = censado con un codigo que no esta ni en la maestra
   ni en los clientes de ventas: hay que crearlo en el sistema de ventas.
 - Las preguntas de competencia vienen en dos ramas segun el tipo de
@@ -21,9 +24,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from app.core.permisos import rutas_del_vendedor
+from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
 from app.services import censo_clientes as cc
 from app.services.indicadores_venta import ruta_comparable
-from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA
+from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado
 
 _DESFASE_CARACAS = timedelta(hours=-4)
 # Respuestas que usa el tablero, para no traer el JSON completo.
@@ -110,6 +114,20 @@ def _maestra(cur, empresas: tuple[str, ...]) -> dict[str, list[dict]]:
     return por_empresa
 
 
+def _en_sistema(cur, empresas: tuple[str, ...]) -> dict[str, dict[str, bool]]:
+    """Los Clientes por empresa: codigo -> si tiene una ubicacion valida."""
+    cur.execute(
+        'SELECT "empresa"::text AS "empresa", "codigo", "lat", "lng" FROM "Cliente" WHERE "empresa"::text = ANY(%s)',
+        (list(empresas),),
+    )
+    por_empresa: dict[str, dict[str, bool]] = defaultdict(dict)
+    for f in cur.fetchall():
+        con_ubicacion = not (sin_ubicacion(f["lat"], f["lng"]) or fuera_de_venezuela(f["lat"], f["lng"]))
+        codigo = codigo_normalizado(f["codigo"])
+        por_empresa[f["empresa"]][codigo] = por_empresa[f["empresa"]].get(codigo, False) or con_ubicacion
+    return por_empresa
+
+
 def _vendedores_por_ruta(cur) -> dict[tuple[str, str], list[dict]]:
     cur.execute(
         'SELECT vr."empresa"::text AS "empresa", vr."ruta", u."id", u."nombre" FROM "VendedorRuta" vr '
@@ -147,6 +165,7 @@ def _cliente_por_censar(f: dict, vendedores: dict) -> dict:
 def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] | None) -> dict:
     """Maestra contra lo censado, por empresa, ruta y vendedor."""
     maestra = _maestra(cur, empresas)
+    en_sistema = _en_sistema(cur, empresas)
     vendedores = _vendedores_por_ruta(cur)
     hechas = censadas(censos)
     por_ruta: dict[tuple[str, str], Counter] = defaultdict(Counter)
@@ -159,6 +178,11 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
             por_ruta[clave]["maestra"] += 1
             if (empresa, f["codigo"]) in hechas:
                 por_ruta[clave]["censados"] += 1
+            con_ubicacion = en_sistema[empresa].get(f["codigo"])
+            if con_ubicacion is not None:
+                por_ruta[clave]["registrados"] += 1
+                if con_ubicacion:
+                    por_ruta[clave]["registradosConUbicacion"] += 1
             else:
                 pendientes.append(_cliente_por_censar(f, vendedores))
 
@@ -166,6 +190,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
         por_censar = n["maestra"] - n["censados"]
         return {
             **etiqueta, "maestra": n["maestra"], "censados": n["censados"], "porCensar": por_censar,
+            "registrados": n["registrados"], "registradosConUbicacion": n["registradosConUbicacion"],
             "avance": n["censados"] / n["maestra"] if n["maestra"] else None,
         }
 
