@@ -513,7 +513,7 @@ def tablero(f: _Filtros = Depends()):
 
 @router.get("/tablero.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
 def tablero_excel(f: _Filtros = Depends()):
-    """Las listas de trabajo del tablero, completas: por censar, pendientes
+    """Las listas de trabajo del tablero, completas: por registrar, pendientes
     en ventas, codigos a revisar, duplicados, mismo codigo lejos, sin codigo
     y posibles clientes."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -521,12 +521,12 @@ def tablero_excel(f: _Filtros = Depends()):
     libro = openpyxl.Workbook()
     hojas = [
         (
-            "Por censar",
-            ["Empresa", "Código", "Razón social", "Ruta", "Día de visita", "Dirección", "Zona", "Vendedor"],
+            "Por registrar",
+            ["Empresa", "Código", "Razón social", "Ruta", "Día de visita", "Dirección", "Zona", "Vendedor", "Censado"],
             [
                 [x["empresa"], x["codigo"], x["razonSocial"], x["ruta"], x["diaVisita"], x["direccion"], x["zona"],
-                 ", ".join(x["vendedores"])]
-                for x in listas["porCensar"]
+                 ", ".join(x["vendedores"]), "Sí" if x["censado"] else "No"]
+                for x in listas["porRegistrar"]
             ],
         ),
         (

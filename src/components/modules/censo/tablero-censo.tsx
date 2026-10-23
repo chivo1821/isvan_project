@@ -408,25 +408,26 @@ function Alerta({
   );
 }
 
-function ListaPorCensar({ t }: { t: TableroCenso }) {
+function ListaPorRegistrar({ t }: { t: TableroCenso }) {
   const [busqueda, setBusqueda] = useState("");
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    const lista = t.avance.porCensar;
+    const lista = t.avance.porRegistrar;
     if (!q) return lista;
     return lista.filter((c) =>
       [c.codigo, c.razonSocial, c.ruta, c.zona, c.direccion, ...c.vendedores].some((v) => v?.toLowerCase().includes(q))
     );
-  }, [busqueda, t.avance.porCensar]);
+  }, [busqueda, t.avance.porRegistrar]);
   const mostrados = filtrados.slice(0, 200);
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-2 space-y-0">
         <div>
-          <CardTitle className="text-base">Clientes por censar</CardTitle>
+          <CardTitle className="text-base">Clientes por registrar</CardTitle>
           <CardDescription>
-            {formatNumero(t.avance.porCensarTotal)} de la maestra, sin la ruta 77.
-            {t.avance.porCensarTotal > t.avance.porCensar.length ? " La lista completa está en el Excel." : ""}
+            {formatNumero(t.avance.porRegistrarTotal)} de la maestra (sin la ruta 77) que todavía no existen en el
+            sistema. “Censado” marca los que ya tienen censo pero no se pudieron registrar.
+            {t.avance.porRegistrarTotal > t.avance.porRegistrar.length ? " La lista completa está en el Excel." : ""}
           </CardDescription>
         </div>
         <span className="relative">
@@ -436,7 +437,7 @@ function ListaPorCensar({ t }: { t: TableroCenso }) {
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Código, nombre, zona o vendedor"
             className="w-64 pl-8"
-            aria-label="Buscar en clientes por censar"
+            aria-label="Buscar en clientes por registrar"
           />
         </span>
       </CardHeader>
@@ -456,6 +457,9 @@ function ListaPorCensar({ t }: { t: TableroCenso }) {
               <TableRow key={`${c.empresa}-${c.codigo}`}>
                 <TableCell>
                   <span className="font-medium">{c.razonSocial}</span>
+                  {c.censado && (
+                    <span className="ml-1.5 rounded-full bg-info/15 px-1.5 text-xs text-foreground">Censado</span>
+                  )}
                   <span className="block text-xs text-muted-foreground">
                     {c.empresa} {c.codigo}
                     {c.direccion ? ` · ${c.direccion}` : ""}
@@ -474,7 +478,7 @@ function ListaPorCensar({ t }: { t: TableroCenso }) {
             Mostrando {formatNumero(mostrados.length)} de {formatNumero(filtrados.length)}: busca para acotar.
           </p>
         )}
-        {filtrados.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Nadie por censar.</p>}
+        {filtrados.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Nadie por registrar.</p>}
       </CardContent>
     </Card>
   );
@@ -484,13 +488,13 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
   const a = t.avance;
   const al = t.alertas;
   const maestra = a.porEmpresa.reduce((s, e) => s + e.maestra, 0);
-  const censados = a.porEmpresa.reduce((s, e) => s + e.censados, 0);
+  const registrados = a.porEmpresa.reduce((s, e) => s + e.registrados, 0);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           {a.conMaestra.length
-            ? `Contra la maestra vigente de ${a.conMaestra.join(" y ")}. Un código en revisión no da al cliente por censado.`
+            ? `Contra la maestra vigente de ${a.conMaestra.join(" y ")}: registrado es un cliente que ya existe en el sistema.`
             : "Todavía no hay maestra cargada: cárgala con el botón “Maestra de clientes” para ver quién falta por censar."}
         </p>
         <Button variant="outline" asChild>
@@ -502,12 +506,12 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={MapPinnedIcon}
-          label="Censados de la maestra"
-          value={maestra ? formatPct(censados / maestra) : "—"}
-          trend={`${formatNumero(censados)} de ${formatNumero(maestra)} clientes (sin la ruta 77)`}
+          label="Registrados de la maestra"
+          value={maestra ? formatPct(registrados / maestra) : "—"}
+          trend={`${formatNumero(registrados)} de ${formatNumero(maestra)} clientes (sin la ruta 77)`}
           tone="success"
         />
-        <StatCard icon={UsersIcon} label="Por censar" value={formatNumero(a.porCensarTotal)} tone="warning" />
+        <StatCard icon={UsersIcon} label="Por registrar" value={formatNumero(a.porRegistrarTotal)} tone="warning" />
         <StatCard
           icon={UserPlusIcon}
           label="Creados en el sistema"
@@ -535,8 +539,8 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
                   <TableHead>Ruta</TableHead>
                   <TableHead>Vendedor</TableHead>
                   <TableHead className="text-right">Maestra</TableHead>
-                  <TableHead className="text-right">Censados</TableHead>
-                  <TableHead className="text-right">Por censar</TableHead>
+                  <TableHead className="text-right">Registrados</TableHead>
+                  <TableHead className="text-right">Por registrar</TableHead>
                   <TableHead className="w-40">Avance</TableHead>
                 </TableRow>
               </TableHeader>
@@ -548,8 +552,8 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{r.vendedores.join(", ") || "Sin asignar"}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatNumero(r.maestra)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(r.censados)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(r.porCensar)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumero(r.registrados)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumero(r.porRegistrar)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Progress value={(r.avance ?? 0) * 100} className="h-2" aria-label={`Avance de la ruta ${r.ruta}`} />
@@ -639,7 +643,7 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
         </CardContent>
       </Card>
 
-      <ListaPorCensar t={t} />
+      <ListaPorRegistrar t={t} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

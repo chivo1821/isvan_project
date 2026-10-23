@@ -220,11 +220,12 @@ export type CensoBreve = {
 export type FilaAvance = {
   maestra: number;
   censados: number;
-  porCensar: number;
+  /** registrados / maestra. */
   avance: number | null;
   /** Ya existen en Clientes (se pueden despachar), vengan o no del censo. */
   registrados: number;
   registradosConUbicacion: number;
+  porRegistrar: number;
 };
 
 export type ClientePorCensar = {
@@ -236,6 +237,8 @@ export type ClientePorCensar = {
   direccion: string | null;
   zona: string | null;
   vendedores: string[];
+  /** Tiene un censo válido (en la lista por registrar: censado pero aún no en Clientes). */
+  censado?: boolean;
 };
 
 export type TableroCenso = {
@@ -264,8 +267,8 @@ export type TableroCenso = {
     porEmpresa: (FilaAvance & { empresa: EmpresaMaestra })[];
     porRuta: (FilaAvance & { empresa: EmpresaMaestra; ruta: string; vendedores: string[] })[];
     porVendedor: (FilaAvance & { vendedor: string; rutas: string[] })[];
-    porCensarTotal: number;
-    porCensar: ClientePorCensar[];
+    porRegistrarTotal: number;
+    porRegistrar: ClientePorCensar[];
     creados: number;
     completados: number;
     pendientesVentasTotal: number;
