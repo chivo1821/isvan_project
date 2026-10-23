@@ -348,16 +348,24 @@ def _procesar_clave(ctx: Contexto, censo: dict, clave: Clave, confiar_en_codigo:
             "enMaestra": maestra is not None, "enVentas": venta is not None}
 
 
-def procesar(cur, censo_id: str, ctx: Contexto | None = None, confiar_en_codigo: bool = False) -> dict:
+def procesar(
+    cur, censo_id: str, ctx: Contexto | None = None, confiar_en_codigo: bool = False, censo: dict | None = None
+) -> dict:
     """Procesa un censo recien guardado (o recien corregido): duplicado y
     clientes. Se llama en la misma transaccion que lo inserta. Para procesar
-    muchos, pasar el mismo Contexto y hacerlo en orden de terminadoEn."""
+    muchos, pasar el mismo Contexto y hacerlo en orden de terminadoEn.
+
+    `censo` (id, respuestas, lat, lng, terminadoEn, nombreComercio, ruta)
+    evita volver a leerlo: quien lo acaba de insertar ya lo tiene, y sin
+    lecturas la importacion puede ir en modo pipeline."""
     ctx = ctx or Contexto(cur)
-    cur.execute(
-        'SELECT "id", "respuestas", "lat", "lng", "terminadoEn", "nombreComercio", "ruta" FROM "Censo" WHERE "id" = %s',
-        (censo_id,),
-    )
-    censo = cur.fetchone()
+    if censo is None:
+        cur.execute(
+            'SELECT "id", "respuestas", "lat", "lng", "terminadoEn", "nombreComercio", "ruta" FROM "Censo" '
+            'WHERE "id" = %s',
+            (censo_id,),
+        )
+        censo = cur.fetchone()
     respuestas = censo["respuestas"]
     claves = claves_de(respuestas)
     posible = not claves and es_posible_cliente(respuestas)

@@ -1,4 +1,4 @@
-import { AlertTriangleIcon, MapPinIcon, StoreIcon } from "lucide-react";
+import { AlertTriangleIcon, MapPinIcon, StoreIcon, Undo2Icon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { ClientePorCensar, PendientesVendedor } from "@/lib/censo";
 import { formatNumero } from "@/lib/constants";
@@ -15,11 +15,40 @@ function porRuta(clientes: ClientePorCensar[]) {
 /** Arriba del formulario del censo: lo que le falta al vendedor en sus
  * rutas (según la maestra) y sus censos con algo pendiente. */
 export function PendientesDelVendedor({ datos }: { datos: PendientesVendedor }) {
-  const { porCensar, pendientesVentas, revisar } = datos;
-  if (!datos.rutas.length || (!datos.conMaestra.length && !pendientesVentas.length && !revisar.length)) return null;
+  const { porCensar, pendientesVentas, revisar, devueltos } = datos;
+  if (
+    !devueltos.length &&
+    (!datos.rutas.length || (!datos.conMaestra.length && !pendientesVentas.length && !revisar.length))
+  )
+    return null;
 
   return (
     <div className="space-y-3">
+      {devueltos.length > 0 && (
+        <Alert variant="destructive">
+          <Undo2Icon />
+          <AlertTitle>
+            {formatNumero(devueltos.length)} censo{devueltos.length === 1 ? "" : "s"} devuelto
+            {devueltos.length === 1 ? "" : "s"}: vuelve a censarlo{devueltos.length === 1 ? "" : "s"}
+          </AlertTitle>
+          <AlertDescription>
+            <ul className="w-full divide-y text-sm">
+              {devueltos.map((d) => (
+                <li key={d.id} className="py-1.5">
+                  <span className="font-medium text-foreground">{d.nombre ?? "Sin nombre"}</span>
+                  {d.codigos.length > 0 && (
+                    <span className="tabular-nums text-muted-foreground"> ({d.codigos.join(", ")})</span>
+                  )}
+                  <span className="block">{d.motivo}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {[d.ruta, `censado el ${d.fecha}`, `devuelto el ${d.devueltoEl}`].filter(Boolean).join(" · ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
       {porCensar.length > 0 ? (
         <Alert>
           <MapPinIcon />

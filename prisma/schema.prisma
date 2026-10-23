@@ -157,6 +157,7 @@ model Usuario {
   censos                Censo[]               @relation("CensosLlenados")
   maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
   censosCorregidos      Censo[]               @relation("CensosCorregidos")
+  censosDevueltos       Censo[]               @relation("CensosDevueltos")
   configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta            VendedorRuta[]
@@ -734,40 +735,49 @@ model RutaCalculada {
 // y las respuestas tal cual (solo las relevantes), mas unas columnas sacadas
 // de ellas para listar y filtrar sin abrir el JSON.
 model Censo {
-  id             String      @id @default(cuid())
-  formulario     String
-  version        String
-  usuarioId      String
-  usuario        Usuario     @relation("CensosLlenados", fields: [usuarioId], references: [id])
-  respuestas     Json
-  lat            Float?
-  lng            Float?
-  encuestador    String?
-  nombreComercio String?
-  tipoCliente    String?
-  empresa        String?
-  ruta           String?
+  id               String      @id @default(cuid())
+  formulario       String
+  version          String
+  usuarioId        String
+  usuario          Usuario     @relation("CensosLlenados", fields: [usuarioId], references: [id])
+  respuestas       Json
+  lat              Float?
+  lng              Float?
+  encuestador      String?
+  nombreComercio   String?
+  tipoCliente      String?
+  empresa          String?
+  ruta             String?
   // Del telefono: cuando se abrio el formulario y cuando se envio.
-  iniciadoEn     DateTime
-  terminadoEn    DateTime
-  recibidoEn     DateTime    @default(now())
+  iniciadoEn       DateTime
+  terminadoEn      DateTime
+  recibidoEn       DateTime    @default(now())
   // PAGINA: lleno aca. SURVEY123: importado del historico; externoId es su
   // id alla, para que reimportar el mismo archivo no duplique.
-  origen         OrigenCenso @default(PAGINA)
-  externoId      String?     @unique
+  origen           OrigenCenso @default(PAGINA)
+  externoId        String?     @unique
   // Otro censo anterior del mismo cliente en el mismo lugar (ver
   // backend/app/services/censo_clientes.py): no cuenta en los indicadores y
   // queda listado para borrarlo.
-  duplicadoDeId  String?
-  duplicadoDe    Censo?      @relation("CensoDuplicado", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados     Censo[]     @relation("CensoDuplicado")
+  duplicadoDeId    String?
+  duplicadoDe      Censo?      @relation("CensoDuplicado", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados       Censo[]     @relation("CensoDuplicado")
   // Descartado por el ADMIN (un duplicado): sale de todo, pero la fila
   // queda para que reimportar el historico no lo traiga de vuelta.
-  descartadoEn   DateTime?
+  descartadoEn     DateTime?
   // Empresa o codigo corregidos desde Clientes (censos por corregir).
-  corregidoEn    DateTime?
-  corregidoPorId String?
-  corregidoPor   Usuario?    @relation("CensosCorregidos", fields: [corregidoPorId], references: [id], onDelete: SetNull)
+  corregidoEn      DateTime?
+  corregidoPorId   String?
+  corregidoPor     Usuario?    @relation("CensosCorregidos", fields: [corregidoPorId], references: [id], onDelete: SetNull)
+  // Devuelto al vendedor desde Censos por corregir (sus errores no permiten
+  // registrar el cliente): ademas queda descartado (descartadoEn), asi sale
+  // de todo; el vendedor lo ve con el motivo para censarlo de nuevo.
+  // loteDevolucion agrupa los devueltos de una vez, para deshacerlos juntos.
+  devueltoEn       DateTime?
+  devueltoPorId    String?
+  devueltoPor      Usuario?    @relation("CensosDevueltos", fields: [devueltoPorId], references: [id], onDelete: SetNull)
+  motivoDevolucion String?
+  loteDevolucion   String?
 
   fotos    CensoFoto[]
   clientes CensoCliente[]
@@ -775,6 +785,7 @@ model Censo {
   @@index([formulario, recibidoEn])
   @@index([usuarioId, recibidoEn])
   @@index([duplicadoDeId])
+  @@index([loteDevolucion])
 }
 
 enum OrigenCenso {

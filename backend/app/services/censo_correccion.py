@@ -13,10 +13,18 @@ lo que el codigo viejo creo (el cliente, si nadie mas lo usa) y vuelve a
 procesar el censo con las reglas de siempre (censo_clientes.procesar). Si
 alguien confirma que un codigo con otro nombre es el correcto, se acepta.
 Los duplicados, descartados y posibles clientes no entran.
+
+Devolver (solo ADMIN): cuando los errores no permiten registrar el cliente,
+el censo vuelve al vendedor con un motivo obligatorio. Se deshace lo que creo
+(como al corregir), queda descartado (sale de la lista y de los indicadores,
+asi el cliente vuelve a "por censar") y el vendedor lo ve con el motivo. Se
+puede devolver uno o todos los de la lista (categoria y busqueda), y
+deshacer por lote: vuelve a procesarse con las reglas de siempre.
 """
 
 from __future__ import annotations
 
+import uuid
 from collections import defaultdict
 
 import psycopg
@@ -30,6 +38,8 @@ from app.services.maestra_import import EMPRESAS, palabra_comun_mas_larga, palab
 
 CATEGORIAS = ("ambas", "revisar", "sin_codigo", "no_encontrado")
 POR_PAGINA = 50
+MOTIVO_MINIMO = 5
+MOTIVO_MAXIMO = 300
 MAXIMO_SUGERENCIAS = 3
 # Una sugerencia necesita una palabra distintiva en comun (no basta
 # "INVERSIONES"; en su ruta vale una sigla exacta como "HJ"); fuera de su
@@ -120,14 +130,7 @@ def _fila(c: dict, categoria: str) -> dict:
     }
 
 
-def pendientes(cur, categoria: str | None, q: str | None, pagina: int, solo_conteo: bool = False) -> dict:
-    if categoria and categoria not in CATEGORIAS:
-        raise HTTPException(400, f"Categoría desconocida: {categoria}")
-    censos = tc.cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
-    con_categoria = [(c, k) for c in censos if (k := categoria_de(c))]
-    conteo = {k: sum(1 for _, x in con_categoria if x == k) for k in CATEGORIAS}
-    if solo_conteo:
-        return {"conteo": conteo}
+def _filtrar(con_categoria: list[tuple[dict, str]], categoria: str | None, q: str | None) -> list[tuple[dict, str]]:
     filas = [(c, k) for c, k in con_categoria if not categoria or k == categoria]
     if q and q.strip():
         texto = q.strip().lower()
@@ -140,6 +143,18 @@ def pendientes(cur, categoria: str | None, q: str | None, pagina: int, solo_cont
                 if v
             )
         ]
+    return filas
+
+
+def pendientes(cur, categoria: str | None, q: str | None, pagina: int, solo_conteo: bool = False) -> dict:
+    if categoria and categoria not in CATEGORIAS:
+        raise HTTPException(400, f"Categoría desconocida: {categoria}")
+    censos = tc.cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
+    con_categoria = [(c, k) for c in censos if (k := categoria_de(c))]
+    conteo = {k: sum(1 for _, x in con_categoria if x == k) for k in CATEGORIAS}
+    if solo_conteo:
+        return {"conteo": conteo}
+    filas = _filtrar(con_categoria, categoria, q)
     filas.sort(key=lambda ck: (CATEGORIAS.index(ck[1]), ck[0]["ruta"] or "", ck[0]["nombreComercio"] or ""))
     total = len(filas)
     pagina_filas = filas[(pagina - 1) * POR_PAGINA: pagina * POR_PAGINA]
@@ -243,3 +258,75 @@ def corregir(
     else:
         categoria = None
     return {**resultado, "categoria": categoria, "clientesEliminados": eliminados}
+
+
+# ---------- Devolver al vendedor ----------
+
+
+def _motivo(texto: str | None) -> str:
+    motivo = " ".join((texto or "").split())
+    if len(motivo) < MOTIVO_MINIMO:
+        raise HTTPException(
+            422, {"mensaje": "Falta el motivo", "errores": {"motivo": "Escribe por qué se devuelve (lo verá el vendedor)"}}
+        )
+    return motivo[:MOTIVO_MAXIMO]
+
+
+def devolver(cur, ids: list[str], motivo: str | None, usuario_id: str) -> dict:
+    """Devuelve al vendedor los censos de la lista que siguen pendientes
+    (los demas se ignoran). Todos quedan en un mismo lote."""
+    motivo = _motivo(motivo)
+    cur.execute(
+        'SELECT "id" FROM "Censo" WHERE "id" = ANY(%s) AND "formulario" = %s AND "descartadoEn" IS NULL '
+        'ORDER BY "id" FOR UPDATE',
+        (list(ids), cc.FORMULARIO),
+    )
+    vigentes = [r["id"] for r in cur.fetchall()]
+    if not vigentes:
+        raise HTTPException(404, "Ningún censo para devolver: ya fueron corregidos o devueltos")
+    cur.execute(
+        'SELECT "censoId", "clienteId" FROM "CensoCliente" WHERE "censoId" = ANY(%s) '
+        "AND \"accion\" = 'CREADO' AND \"clienteId\" IS NOT NULL",
+        (vigentes,),
+    )
+    creados = cur.fetchall()
+    cur.execute('DELETE FROM "CensoCliente" WHERE "censoId" = ANY(%s)', (vigentes,))
+    eliminados = sum(_borrar_cliente_si_libre(cur, c["clienteId"], c["censoId"]) for c in creados)
+    lote = f"dev-{uuid.uuid4().hex[:12]}"
+    cur.execute(
+        'UPDATE "Censo" SET "descartadoEn" = now(), "devueltoEn" = now(), "devueltoPorId" = %s, '
+        '"motivoDevolucion" = %s, "loteDevolucion" = %s WHERE "id" = ANY(%s)',
+        (usuario_id, motivo, lote, vigentes),
+    )
+    return {"devueltos": len(vigentes), "lote": lote, "clientesEliminados": eliminados}
+
+
+def devolver_todos(cur, categoria: str | None, q: str | None, motivo: str | None, usuario_id: str) -> dict:
+    """Todos los de la lista con ese filtro (todas las paginas)."""
+    if categoria and categoria not in CATEGORIAS:
+        raise HTTPException(400, f"Categoría desconocida: {categoria}")
+    _motivo(motivo)
+    censos = tc.cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
+    con_categoria = [(c, k) for c in censos if (k := categoria_de(c))]
+    ids = [c["id"] for c, _ in _filtrar(con_categoria, categoria, q)]
+    if not ids:
+        raise HTTPException(404, "No hay censos en la lista para devolver")
+    return devolver(cur, ids, motivo, usuario_id)
+
+
+def deshacer_devolucion(cur, lote: str) -> dict:
+    """Vuelven a la lista: se quita la devolucion y se procesan de nuevo, en
+    orden, como si acabaran de llegar."""
+    cur.execute(
+        'UPDATE "Censo" SET "descartadoEn" = NULL, "devueltoEn" = NULL, "devueltoPorId" = NULL, '
+        '"motivoDevolucion" = NULL, "loteDevolucion" = NULL '
+        'WHERE "loteDevolucion" = %s AND "devueltoEn" IS NOT NULL RETURNING "id", "terminadoEn"',
+        (lote,),
+    )
+    filas = sorted(cur.fetchall(), key=lambda f: (f["terminadoEn"], f["id"]))
+    if not filas:
+        raise HTTPException(404, "Esa devolución ya no se puede deshacer")
+    ctx = cc.Contexto(cur)
+    for f in filas:
+        cc.procesar(cur, f["id"], ctx)
+    return {"restaurados": len(filas)}
