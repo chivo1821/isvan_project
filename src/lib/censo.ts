@@ -292,9 +292,12 @@ export type TableroCenso = {
 export type PendientesVendedor = {
   rutas: { empresa: EmpresaMaestra; ruta: string }[];
   conMaestra: EmpresaMaestra[];
-  porCensar: ClientePorCensar[];
+  /** Clientes de sus rutas que todavía no existen en el sistema. */
+  porRegistrar: ClientePorCensar[];
   pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string })[];
   revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
+  /** Clientes existentes (o nuevos que compran) censados sin código. */
+  sinCodigo: (CensoBreve & { tipoCliente: string | null; rif: string | null })[];
   /** Devueltos por un ADMIN desde Censos por corregir, hasta que se vuelvan a censar. */
   devueltos: CensoDevuelto[];
 };

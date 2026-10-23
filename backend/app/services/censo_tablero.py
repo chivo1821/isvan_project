@@ -8,12 +8,12 @@ Reglas:
 - Censado = un censo no duplicado con esa clave (empresa, codigo) que no
   quedo en REVISAR: un codigo dudoso no da al cliente por censado.
 - Por censar = clientes de la maestra vigente, fuera de la ruta 77, sin
-  censar (lo que ve cada vendedor). El vendedor de un cliente sale de su
-  ruta (VendedorRuta).
+  censar. El vendedor de un cliente sale de su ruta (VendedorRuta).
 - Registrado = cliente de la maestra vigente que ya existe en Clientes (lo
   que se puede despachar), venga del censo o de otra carga; con ubicacion si
-  ademas tiene una valida. El avance del tablero (Principal y Avance) se mide
-  por registrados; por registrar = el resto de la maestra.
+  ademas tiene una valida. El avance del tablero (Principal y Avance) y la
+  lista de cada vendedor se miden por registrados; por registrar = el resto
+  de la maestra.
 - Pendiente en ventas = censado con un codigo que no esta ni en la maestra
   ni en los clientes de ventas: hay que crearlo en el sistema de ventas.
 - Las preguntas de competencia vienen en dos ramas segun el tipo de
@@ -29,7 +29,8 @@ from app.core.permisos import rutas_del_vendedor
 from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
 from app.services import censo_clientes as cc
 from app.services.indicadores_venta import ruta_comparable
-from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado
+from app.services.censo_survey123 import USUARIO_TECNICO
+from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado, nombre_comparable
 
 _DESFASE_CARACAS = timedelta(hours=-4)
 # Respuestas que usa el tablero, para no traer el JSON completo.
@@ -392,23 +393,51 @@ def _tabla_vendedores(vigentes: list[dict]) -> list[dict]:
 # ---------- Del vendedor ----------
 
 
+def _de_quien(cur, usuario_id: str):
+    """Que censos son del vendedor: los que lleno, y los importados de
+    Survey123 a nombre del usuario tecnico (su encuestador no tenia usuario
+    al importar) cuyo encuestador se llama como el."""
+    cur.execute('SELECT "nombre" FROM "Usuario" WHERE "id" = %s', (usuario_id,))
+    fila = cur.fetchone()
+    nombre = nombre_comparable(fila["nombre"]) if fila else ""
+
+    def es_mio(usuario: str, encuestador: str | None) -> bool:
+        return usuario == usuario_id or (
+            usuario == USUARIO_TECNICO["id"] and bool(nombre) and nombre_comparable(encuestador) == nombre
+        )
+
+    return es_mio
+
+
 def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
-    """Los clientes por censar de las rutas del vendedor y sus censos que
-    todavia no estan en ventas o tienen un codigo para revisar."""
+    """Los clientes de las rutas del vendedor que faltan por registrar en el
+    sistema (con su ruta de venta y si ya tienen censo) y sus censos con algo
+    pendiente: codigo para revisar, por crear en ventas, sin codigo o
+    devueltos por un ADMIN."""
     rutas = {(str(e), ruta_comparable(r)) for e, r in rutas_del_vendedor(cur, usuario_id)}
     rutas = {(e, r) for e, r in rutas if r != RUTA_DE_BAJA}
     censos = cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
     hechas = censadas(censos)
-    maestra = _maestra(cur, tuple(sorted({e for e, _ in rutas}))) if rutas else {}
-    por_censar = [
-        _cliente_por_censar(f, {})
+    empresas = tuple(sorted({e for e, _ in rutas}))
+    maestra = _maestra(cur, empresas) if rutas else {}
+    en_sistema = _en_sistema(cur, empresas) if rutas else {}
+    por_registrar = [
+        _cliente_por_censar(f, {}, (empresa, f["codigo"]) in hechas)
         for empresa, filas in maestra.items()
         for f in filas
-        if (empresa, f["rutaNumero"]) in rutas and (empresa, f["codigo"]) not in hechas
+        if (empresa, f["rutaNumero"]) in rutas and f["codigo"] not in en_sistema.get(empresa, {})
     ]
-    por_censar.sort(key=lambda p: (p["empresa"], _orden_ruta(p["ruta"] or ""), p["razonSocial"]))
-    mios = [c for c in censos if c["usuarioId"] == usuario_id and not c["duplicadoDeId"]]
+    por_registrar.sort(key=lambda p: (p["empresa"], _orden_ruta(p["ruta"] or ""), p["razonSocial"]))
+    es_mio = _de_quien(cur, usuario_id)
+    mios = [c for c in censos if es_mio(c["usuarioId"], c["encuestador"]) and not c["duplicadoDeId"]]
     en_ventas, revisar = [], []
+    # Cliente existente (o nuevo que compra) censado sin codigo: no se puede
+    # cruzar con la maestra ni registrar.
+    sin_codigo = [
+        {**_resumen_censo(c), "tipoCliente": c["tipoCliente"], "rif": c["r"].get("rif")}
+        for c in mios
+        if not c["claves"] and not c["posibleCliente"]
+    ]
     for c in mios:
         for k in c["claves"]:
             item = {**_resumen_censo(c), "empresa": k["empresa"], "codigo": k["codigo"]}
@@ -419,24 +448,27 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
     return {
         "rutas": [{"empresa": e, "ruta": r} for e, r in sorted(rutas)],
         "conMaestra": sorted(maestra),
-        "porCensar": por_censar,
+        "porRegistrar": por_registrar,
         "pendientesVentas": en_ventas,
         "revisar": revisar,
-        "devueltos": _devueltos(cur, usuario_id, censos),
+        "sinCodigo": sin_codigo,
+        "devueltos": _devueltos(cur, usuario_id, es_mio, censos),
     }
 
 
-def _devueltos(cur, usuario_id: str, vigentes: list[dict]) -> list[dict]:
+def _devueltos(cur, usuario_id: str, es_mio, vigentes: list[dict]) -> list[dict]:
     """Los censos del vendedor que un ADMIN devolvio, con el motivo, hasta
     que alguien vuelva a censar ese cliente (misma clave o mismo RIF)."""
     cur.execute(
-        'SELECT "id", "nombreComercio", "ruta", "terminadoEn", "devueltoEn", "motivoDevolucion", "respuestas" '
-        'FROM "Censo" WHERE "usuarioId" = %s AND "formulario" = %s AND "devueltoEn" IS NOT NULL '
-        'ORDER BY "devueltoEn" DESC',
-        (usuario_id, cc.FORMULARIO),
+        'SELECT "id", "usuarioId", "encuestador", "nombreComercio", "ruta", "terminadoEn", "devueltoEn", '
+        '"motivoDevolucion", "respuestas" FROM "Censo" WHERE "usuarioId" = ANY(%s) AND "formulario" = %s '
+        'AND "devueltoEn" IS NOT NULL ORDER BY "devueltoEn" DESC',
+        ([usuario_id, USUARIO_TECNICO["id"]], cc.FORMULARIO),
     )
     salida = []
     for d in cur.fetchall():
+        if not es_mio(d["usuarioId"], d["encuestador"]):
+            continue
         claves = {(k.empresa, k.codigo) for k in cc.claves_de(d["respuestas"])}
         rif = cc.rif_normalizado(d["respuestas"].get("rif"))
         rehecho = any(
