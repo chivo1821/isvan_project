@@ -476,65 +476,47 @@ def _de_quien(cur, usuario_id: str):
 
 
 def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
-    """Los clientes de las rutas del vendedor que faltan por registrar en el
-    sistema (con su ruta de venta y si ya tienen censo) y sus censos con algo
-    pendiente: codigo para revisar, por crear en ventas, sin codigo o
-    devueltos por un ADMIN."""
+    """Lo que ve el vendedor arriba del formulario: los clientes de la
+    maestra de sus rutas que faltan por registrar en el sistema (con su ruta
+    de venta) y los censos suyos, hechos en la pagina, que un ADMIN le
+    devolvio. Los avisos del censo anterior (Survey123: sin codigo, codigos
+    a revisar...) no se le muestran: tienen mucho margen de error y se
+    resuelven desde Clientes (Censos por corregir)."""
     rutas = {(str(e), ruta_comparable(r)) for e, r in rutas_del_vendedor(cur, usuario_id)}
     rutas = {(e, r) for e, r in rutas if r != RUTA_DE_BAJA}
-    censos = cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
-    # Toda la maestra para el cruce por nombre (un censo puede ser de otra
-    # empresa que las del vendedor); para sus listas, solo sus rutas.
+    # Toda la maestra para el cruce por nombre de los devueltos (pueden ser
+    # de otra empresa que las del vendedor); para su lista, solo sus rutas.
     maestra_toda = _maestra(cur, EMPRESAS)
     en_sistema = _en_sistema(cur, EMPRESAS)
-    cruce = Cruce(maestra_toda, en_sistema)
-    hechas = censadas(censos) | censadas_por_nombre(cruce, censos)
     maestra = {e: f for e, f in maestra_toda.items() if any(e == x for x, _ in rutas)}
     por_registrar = [
-        _cliente_por_censar(f, {}, (empresa, f["codigo"]) in hechas)
+        _cliente_por_censar(f, {})
         for empresa, filas in maestra.items()
         for f in filas
         if (empresa, f["rutaNumero"]) in rutas and f["codigo"] not in en_sistema.get(empresa, {})
     ]
     por_registrar.sort(key=lambda p: (p["empresa"], _orden_ruta(p["ruta"] or ""), p["razonSocial"]))
-    es_mio = _de_quien(cur, usuario_id)
-    mios = [c for c in censos if es_mio(c["usuarioId"], c["encuestador"]) and not c["duplicadoDeId"]]
-    en_ventas, revisar = [], []
-    # Sin codigo y sin un cliente de la maestra que le corresponda por nombre:
-    # no se puede registrar (los que si corresponden ya cuentan en la lista
-    # por registrar, o estan registrados).
-    sin_codigo_mios = [
-        {**_resumen_censo(c), "tipoCliente": c["tipoCliente"], "rif": c["r"].get("rif")}
-        for c in mios
-        if sin_codigo(c) and not cruce.de(c["nombreComercio"], c["ruta"])
-    ]
-    for c in mios:
-        for k in c["claves"]:
-            item = {**_resumen_censo(c), "empresa": k["empresa"], "codigo": k["codigo"]}
-            if k["accion"] == "REVISAR":
-                revisar.append({**item, "motivo": k["motivo"]})
-            elif not k["enMaestra"] and not k["enVentas"]:
-                en_ventas.append(item)
+    censos = cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
     return {
         "rutas": [{"empresa": e, "ruta": r} for e, r in sorted(rutas)],
         "conMaestra": sorted(maestra),
         "porRegistrar": por_registrar,
-        "pendientesVentas": en_ventas,
-        "revisar": revisar,
-        "sinCodigo": sin_codigo_mios,
-        "devueltos": _devueltos(cur, usuario_id, es_mio, censos, cruce),
+        "devueltos": _devueltos(
+            cur, usuario_id, _de_quien(cur, usuario_id), censos, Cruce(maestra_toda, en_sistema)
+        ),
     }
 
 
 def _devueltos(cur, usuario_id: str, es_mio, vigentes: list[dict], cruce: Cruce) -> list[dict]:
-    """Los censos del vendedor que un ADMIN devolvio, con el motivo, hasta
-    que alguien vuelva a censar ese cliente (misma clave o mismo RIF). Si por
-    su nombre corresponde a un cliente de la maestra, no se lista: o ya esta
-    registrado o ya sale en la lista por registrar."""
+    """Los censos del vendedor hechos en la pagina que un ADMIN devolvio, con
+    el motivo, hasta que alguien vuelva a censar ese cliente (misma clave o
+    mismo RIF). Los del historico de Survey123 no: se devolvieron para
+    limpiar. Si por su nombre corresponde a un cliente de la maestra, tampoco:
+    o ya esta registrado o ya sale en la lista por registrar."""
     cur.execute(
         'SELECT "id", "usuarioId", "encuestador", "nombreComercio", "ruta", "terminadoEn", "devueltoEn", '
         '"motivoDevolucion", "respuestas" FROM "Censo" WHERE "usuarioId" = ANY(%s) AND "formulario" = %s '
-        'AND "devueltoEn" IS NOT NULL ORDER BY "devueltoEn" DESC',
+        "AND \"devueltoEn\" IS NOT NULL AND \"origen\" = 'PAGINA' ORDER BY \"devueltoEn\" DESC",
         ([usuario_id, USUARIO_TECNICO["id"]], cc.FORMULARIO),
     )
     salida = []
