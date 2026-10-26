@@ -14,6 +14,11 @@ Reglas:
   ademas tiene una valida. El avance del tablero (Principal y Avance) y la
   lista de cada vendedor se miden por registrados; por registrar = el resto
   de la maestra.
+- Censo sin codigo o devuelto: se cruza por nombre con la maestra de su
+  ruta (Cruce). Si corresponde a un cliente ya registrado, esta resuelto; si
+  corresponde a uno por registrar, ese cliente sale "ya censado" en la lista.
+  En los dos casos deja de listarse aparte: solo quedan los que no
+  corresponden a ningun cliente de la maestra (los pendientes reales).
 - Pendiente en ventas = censado con un codigo que no esta ni en la maestra
   ni en los clientes de ventas: hay que crearlo en el sistema de ventas.
 - Las preguntas de competencia vienen en dos ramas segun el tipo de
@@ -30,7 +35,14 @@ from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
 from app.services import censo_clientes as cc
 from app.services.indicadores_venta import ruta_comparable
 from app.services.censo_survey123 import USUARIO_TECNICO
-from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado, nombre_comparable
+from app.services.maestra_import import (
+    EMPRESAS,
+    RUTA_DE_BAJA,
+    codigo_normalizado,
+    nombre_comparable,
+    palabra_comun_mas_larga,
+    palabras_distintivas,
+)
 
 _DESFASE_CARACAS = timedelta(hours=-4)
 # Respuestas que usa el tablero, para no traer el JSON completo.
@@ -142,6 +154,50 @@ def _vendedores_por_ruta(cur) -> dict[tuple[str, str], list[dict]]:
     return por_ruta
 
 
+# Cruce por nombre: una palabra distintiva de al menos 4 letras en comun, y
+# lo comun cubre al menos la mitad del nombre del censo (si no, "forum plaza
+# venezuela" seria cualquier FORUM de la ruta).
+MINIMO_LETRAS = 4
+COBERTURA = 0.5
+
+
+class Cruce:
+    """A que cliente de la maestra corresponde un censo sin codigo (o
+    devuelto), por su nombre dentro de su ruta."""
+
+    def __init__(self, maestra: dict[str, list[dict]], en_sistema: dict[str, dict[str, bool]]):
+        self._por_ruta: dict[str, list[tuple[list[str], dict, bool]]] = defaultdict(list)
+        for empresa, filas in maestra.items():
+            for f in filas:
+                self._por_ruta[f["rutaNumero"]].append(
+                    (palabras_distintivas(f["razonSocial"]), f, f["codigo"] in en_sistema.get(empresa, {}))
+                )
+
+    def de(self, nombre: str | None, ruta: str | None) -> dict | None:
+        """{"registrado": bool, "clientes": [fila de la maestra...]} con los
+        mejores candidatos, o None si no corresponde a ninguno o empatan
+        clientes en distinta situacion."""
+        palabras = palabras_distintivas(nombre)
+        largo = sum(len(p) for p in palabras if not p.isdigit())
+        if not largo:
+            return None
+        candidatos = []
+        for suyas, fila, registrado in self._por_ruta.get(ruta_comparable(ruta), []):
+            if palabra_comun_mas_larga(palabras, suyas) < MINIMO_LETRAS:
+                continue
+            puntaje = sum(palabra_comun_mas_larga([p], suyas) for p in palabras)
+            if puntaje >= COBERTURA * largo:
+                candidatos.append((puntaje, fila, registrado))
+        if not candidatos:
+            return None
+        mejor = max(p for p, _, _ in candidatos)
+        top = [(f, r) for p, f, r in candidatos if p == mejor]
+        estados = {r for _, r in top}
+        if len(estados) > 1:
+            return None
+        return {"registrado": estados.pop(), "clientes": [f for f, _ in top]}
+
+
 def censadas(censos: list[dict]) -> set[tuple[str, str]]:
     """Las claves que cuentan como censadas: de censos no duplicados y que
     no quedaron en REVISAR."""
@@ -152,6 +208,21 @@ def censadas(censos: list[dict]) -> set[tuple[str, str]]:
         for k in c["claves"]
         if k["accion"] != "REVISAR"
     }
+
+
+def sin_codigo(c: dict) -> bool:
+    """Cliente existente (o nuevo que compra) censado sin codigo."""
+    return not c["duplicadoDeId"] and not c["claves"] and not c["posibleCliente"]
+
+
+def censadas_por_nombre(cruce: Cruce, censos: list[dict]) -> set[tuple[str, str]]:
+    """Los clientes de la maestra a los que corresponde, por nombre, algun
+    censo sin codigo."""
+    salida = set()
+    for c in censos:
+        if sin_codigo(c) and (m := cruce.de(c["nombreComercio"], c["ruta"])):
+            salida |= {(f["empresa"], f["codigo"]) for f in m["clientes"]}
+    return salida
 
 
 def _cliente_por_censar(f: dict, vendedores: dict, censado: bool = False) -> dict:
@@ -172,7 +243,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
     maestra = _maestra(cur, empresas)
     en_sistema = _en_sistema(cur, empresas)
     vendedores = _vendedores_por_ruta(cur)
-    hechas = censadas(censos)
+    hechas = censadas(censos) | censadas_por_nombre(Cruce(maestra, en_sistema), censos)
     por_ruta: dict[tuple[str, str], Counter] = defaultdict(Counter)
     pendientes = []
     for empresa, filas in maestra.items():
@@ -278,16 +349,11 @@ def alertas(censos: list[dict]) -> dict:
         for k in c["claves"]
         if k["accion"] == "REVISAR"
     ]
-    sin_codigo = [
-        {**_resumen_censo(c), "tipoCliente": c["tipoCliente"]}
-        for c in censos
-        if not c["duplicadoDeId"] and not c["claves"] and not c["posibleCliente"]
-    ]
     return {
         "duplicados": duplicados,
         "mismoCodigoLejos": lejos,
         "revisar": revisar,
-        "sinCodigo": sin_codigo,
+        "sinCodigo": [{**_resumen_censo(c), "tipoCliente": c["tipoCliente"]} for c in censos if sin_codigo(c)],
     }
 
 
@@ -417,10 +483,13 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
     rutas = {(str(e), ruta_comparable(r)) for e, r in rutas_del_vendedor(cur, usuario_id)}
     rutas = {(e, r) for e, r in rutas if r != RUTA_DE_BAJA}
     censos = cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
-    hechas = censadas(censos)
-    empresas = tuple(sorted({e for e, _ in rutas}))
-    maestra = _maestra(cur, empresas) if rutas else {}
-    en_sistema = _en_sistema(cur, empresas) if rutas else {}
+    # Toda la maestra para el cruce por nombre (un censo puede ser de otra
+    # empresa que las del vendedor); para sus listas, solo sus rutas.
+    maestra_toda = _maestra(cur, EMPRESAS)
+    en_sistema = _en_sistema(cur, EMPRESAS)
+    cruce = Cruce(maestra_toda, en_sistema)
+    hechas = censadas(censos) | censadas_por_nombre(cruce, censos)
+    maestra = {e: f for e, f in maestra_toda.items() if any(e == x for x, _ in rutas)}
     por_registrar = [
         _cliente_por_censar(f, {}, (empresa, f["codigo"]) in hechas)
         for empresa, filas in maestra.items()
@@ -431,12 +500,13 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
     es_mio = _de_quien(cur, usuario_id)
     mios = [c for c in censos if es_mio(c["usuarioId"], c["encuestador"]) and not c["duplicadoDeId"]]
     en_ventas, revisar = [], []
-    # Cliente existente (o nuevo que compra) censado sin codigo: no se puede
-    # cruzar con la maestra ni registrar.
-    sin_codigo = [
+    # Sin codigo y sin un cliente de la maestra que le corresponda por nombre:
+    # no se puede registrar (los que si corresponden ya cuentan en la lista
+    # por registrar, o estan registrados).
+    sin_codigo_mios = [
         {**_resumen_censo(c), "tipoCliente": c["tipoCliente"], "rif": c["r"].get("rif")}
         for c in mios
-        if not c["claves"] and not c["posibleCliente"]
+        if sin_codigo(c) and not cruce.de(c["nombreComercio"], c["ruta"])
     ]
     for c in mios:
         for k in c["claves"]:
@@ -451,14 +521,16 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
         "porRegistrar": por_registrar,
         "pendientesVentas": en_ventas,
         "revisar": revisar,
-        "sinCodigo": sin_codigo,
-        "devueltos": _devueltos(cur, usuario_id, es_mio, censos),
+        "sinCodigo": sin_codigo_mios,
+        "devueltos": _devueltos(cur, usuario_id, es_mio, censos, cruce),
     }
 
 
-def _devueltos(cur, usuario_id: str, es_mio, vigentes: list[dict]) -> list[dict]:
+def _devueltos(cur, usuario_id: str, es_mio, vigentes: list[dict], cruce: Cruce) -> list[dict]:
     """Los censos del vendedor que un ADMIN devolvio, con el motivo, hasta
-    que alguien vuelva a censar ese cliente (misma clave o mismo RIF)."""
+    que alguien vuelva a censar ese cliente (misma clave o mismo RIF). Si por
+    su nombre corresponde a un cliente de la maestra, no se lista: o ya esta
+    registrado o ya sale en la lista por registrar."""
     cur.execute(
         'SELECT "id", "usuarioId", "encuestador", "nombreComercio", "ruta", "terminadoEn", "devueltoEn", '
         '"motivoDevolucion", "respuestas" FROM "Censo" WHERE "usuarioId" = ANY(%s) AND "formulario" = %s '
@@ -467,7 +539,7 @@ def _devueltos(cur, usuario_id: str, es_mio, vigentes: list[dict]) -> list[dict]
     )
     salida = []
     for d in cur.fetchall():
-        if not es_mio(d["usuarioId"], d["encuestador"]):
+        if not es_mio(d["usuarioId"], d["encuestador"]) or cruce.de(d["nombreComercio"], d["ruta"]):
             continue
         claves = {(k.empresa, k.codigo) for k in cc.claves_de(d["respuestas"])}
         rif = cc.rif_normalizado(d["respuestas"].get("rif"))
