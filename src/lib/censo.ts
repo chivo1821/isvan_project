@@ -294,11 +294,7 @@ export type PendientesVendedor = {
   conMaestra: EmpresaMaestra[];
   /** Clientes de sus rutas que todavía no existen en el sistema. */
   porRegistrar: ClientePorCensar[];
-  pendientesVentas: (CensoBreve & { empresa: EmpresaMaestra; codigo: string })[];
-  revisar: (CensoBreve & { empresa: EmpresaMaestra; codigo: string; motivo: string })[];
-  /** Clientes existentes (o nuevos que compran) censados sin código. */
-  sinCodigo: (CensoBreve & { tipoCliente: string | null; rif: string | null })[];
-  /** Devueltos por un ADMIN desde Censos por corregir, hasta que se vuelvan a censar. */
+  /** Censos suyos hechos en la página que un ADMIN devolvió, hasta que se vuelvan a censar. */
   devueltos: CensoDevuelto[];
 };
 
