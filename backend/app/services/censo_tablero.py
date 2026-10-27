@@ -9,6 +9,9 @@ Reglas:
   quedo en REVISAR: un codigo dudoso no da al cliente por censado.
 - Por censar = clientes de la maestra vigente, fuera de la ruta 77, sin
   censar. El vendedor de un cliente sale de su ruta (VendedorRuta).
+- Ruta = la del cliente en ventas (VentaCliente), la misma de los vendedores
+  y del encuestador; la de la maestra solo si no esta en ventas. Es de baja
+  si cualquiera de las dos es la 77.
 - Registrado = cliente de la maestra vigente que ya existe en Clientes (lo
   que se puede despachar), venga del censo o de otra carga; con ubicacion si
   ademas tiene una valida. El avance del tablero (Principal y Avance) y la
@@ -113,9 +116,22 @@ def cargar(cur, where: str, params: dict) -> list[dict]:
     return censos
 
 
+def _rutas_de_venta(cur, empresas: tuple[str, ...]) -> dict[tuple[str, str], str]:
+    """(empresa, codigo) -> ruta del cliente en el sistema de ventas
+    (VentaCliente, la ultima carga)."""
+    cur.execute(
+        'SELECT "empresa"::text AS "empresa", "codigo", "ruta" FROM "VentaCliente" WHERE "empresa"::text = ANY(%s)',
+        (list(empresas),),
+    )
+    return {(f["empresa"], codigo_normalizado(f["codigo"])): f["ruta"] for f in cur.fetchall()}
+
+
 def _maestra(cur, empresas: tuple[str, ...], con_baja: bool = False) -> dict[str, list[dict]]:
     """La maestra vigente por empresa, sin la ruta 77 (con `con_baja`,
-    incluida: para saber que un cliente esta de baja)."""
+    incluida: para saber que un cliente esta de baja). La ruta es la de
+    ventas si el cliente esta ahi (la que tienen los vendedores), si no la de
+    la maestra ("rutaMaestra" guarda la original); de baja si cualquiera de
+    las dos es la 77."""
     cur.execute(
         'SELECT mc."empresa"::text AS "empresa", mc."codigo", mc."razonSocial", mc."ruta", mc."diaVisita", '
         'mc."direccion", mc."zona" FROM "MaestraCliente" mc WHERE mc."cargaId" IN ('
@@ -123,10 +139,17 @@ def _maestra(cur, empresas: tuple[str, ...], con_baja: bool = False) -> dict[str
         '  ORDER BY "empresa", "subidaEn" DESC)',
         (list(empresas),),
     )
+    maestra = cur.fetchall()
+    de_venta = _rutas_de_venta(cur, empresas)
     por_empresa: dict[str, list[dict]] = defaultdict(list)
-    for f in cur.fetchall():
+    for f in maestra:
+        f["rutaMaestra"] = f["ruta"]
+        f["ruta"] = de_venta.get((f["empresa"], f["codigo"]), f["ruta"])
         f["rutaNumero"] = ruta_comparable(f["ruta"])
-        if con_baja or f["rutaNumero"] != RUTA_DE_BAJA:
+        de_baja = RUTA_DE_BAJA in (f["rutaNumero"], ruta_comparable(f["rutaMaestra"]))
+        if de_baja:
+            f["rutaNumero"] = RUTA_DE_BAJA
+        if con_baja or not de_baja:
             por_empresa[f["empresa"]].append(f)
     return por_empresa
 
