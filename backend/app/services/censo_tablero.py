@@ -227,9 +227,24 @@ def censadas_por_nombre(cruce: Cruce, censos: list[dict]) -> set[tuple[str, str]
     return salida
 
 
-def _cliente_por_censar(f: dict, vendedores: dict, censado: bool = False) -> dict:
+def _nombres_de_ruta(maestra: dict[str, list[dict]]) -> dict[tuple[str, str], str]:
+    """(empresa, ruta comparable) -> la ruta como la escribe la maestra ("R1"
+    en una, "11" en otra); si mezcla formatos, el mas usado."""
+    nombres: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    for empresa, filas in maestra.items():
+        for f in filas:
+            nombres[(empresa, f["rutaNumero"])][" ".join(str(f["ruta"] or "").split()) or f["rutaNumero"]] += 1
+    return {clave: n.most_common(1)[0][0] for clave, n in nombres.items()}
+
+
+def _orden_cliente(p: dict) -> tuple:
+    return (p["empresa"], _orden_ruta(ruta_comparable(p["ruta"])), p["razonSocial"])
+
+
+def _cliente_por_censar(f: dict, vendedores: dict, nombres: dict, censado: bool = False) -> dict:
     return {
-        "empresa": f["empresa"], "codigo": f["codigo"], "razonSocial": f["razonSocial"], "ruta": f["rutaNumero"],
+        "empresa": f["empresa"], "codigo": f["codigo"], "razonSocial": f["razonSocial"],
+        "ruta": nombres[(f["empresa"], f["rutaNumero"])],
         "diaVisita": f["diaVisita"], "direccion": f["direccion"], "zona": f["zona"],
         "vendedores": [v["nombre"] for v in vendedores.get((f["empresa"], f["rutaNumero"]), [])],
         "censado": censado,
@@ -246,9 +261,8 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
     en_sistema = _en_sistema(cur, empresas)
     vendedores = _vendedores_por_ruta(cur)
     hechas = censadas(censos) | censadas_por_nombre(Cruce(maestra, en_sistema), censos)
+    nombres = _nombres_de_ruta(maestra)
     por_ruta: dict[tuple[str, str], Counter] = defaultdict(Counter)
-    # Como la escribe la maestra ("R1" en una, "1" en otra): la mas usada.
-    nombres: dict[tuple[str, str], Counter] = defaultdict(Counter)
     pendientes = []
     for empresa, filas in maestra.items():
         for f in filas:
@@ -256,13 +270,12 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
                 continue
             clave = (empresa, f["rutaNumero"])
             por_ruta[clave]["maestra"] += 1
-            nombres[clave][" ".join(str(f["ruta"] or "").split()) or f["rutaNumero"]] += 1
             censado = (empresa, f["codigo"]) in hechas
             if censado:
                 por_ruta[clave]["censados"] += 1
             con_ubicacion = en_sistema[empresa].get(f["codigo"])
             if con_ubicacion is None:
-                pendientes.append(_cliente_por_censar(f, vendedores, censado))
+                pendientes.append(_cliente_por_censar(f, vendedores, nombres, censado))
             else:
                 por_ruta[clave]["registrados"] += 1
                 if con_ubicacion:
@@ -278,7 +291,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
 
     rutas_filas = [
         fila({
-            "empresa": e, "ruta": r, "nombre": nombres[(e, r)].most_common(1)[0][0],
+            "empresa": e, "ruta": r, "nombre": nombres[(e, r)],
             "vendedores": [v["nombre"] for v in vendedores.get((e, r), [])],
         }, n)
         for (e, r), n in sorted(por_ruta.items(), key=lambda kv: (kv[0][0], _orden_ruta(kv[0][1])))
@@ -291,7 +304,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
         for v in vendedores.get((e, r), []):
             por_vendedor[v["nombre"]].update(n)
             rutas_de[v["nombre"]].append(f"{e} {r}")
-    pendientes.sort(key=lambda p: (p["empresa"], _orden_ruta(p["ruta"] or ""), p["razonSocial"]))
+    pendientes.sort(key=_orden_cliente)
     return {
         "conMaestra": sorted(maestra),
         "porEmpresa": [fila({"empresa": e}, n) for e, n in sorted(por_empresa.items())],
@@ -497,13 +510,14 @@ def pendientes_de_vendedor(cur, usuario_id: str) -> dict:
     maestra_toda = _maestra(cur, EMPRESAS)
     en_sistema = _en_sistema(cur, EMPRESAS)
     maestra = {e: f for e, f in maestra_toda.items() if any(e == x for x, _ in rutas)}
+    nombres = _nombres_de_ruta(maestra)
     por_registrar = [
-        _cliente_por_censar(f, {})
+        _cliente_por_censar(f, {}, nombres)
         for empresa, filas in maestra.items()
         for f in filas
         if (empresa, f["rutaNumero"]) in rutas and f["codigo"] not in en_sistema.get(empresa, {})
     ]
-    por_registrar.sort(key=lambda p: (p["empresa"], _orden_ruta(p["ruta"] or ""), p["razonSocial"]))
+    por_registrar.sort(key=_orden_cliente)
     censos = cargar(cur, 'WHERE c."formulario" = %(f)s AND c."descartadoEn" IS NULL', {"f": cc.FORMULARIO})
     return {
         "rutas": [{"empresa": e, "ruta": r} for e, r in sorted(rutas)],

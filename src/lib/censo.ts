@@ -232,6 +232,7 @@ export type ClientePorCensar = {
   empresa: EmpresaMaestra;
   codigo: string;
   razonSocial: string;
+  /** Como la escribe la maestra ("R1", "11"). */
   ruta: string;
   diaVisita: string | null;
   direccion: string | null;
