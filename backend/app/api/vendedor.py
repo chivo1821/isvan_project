@@ -122,8 +122,7 @@ def clientes_de_visita(cur) -> dict[tuple[str, str], dict]:
     maestra vigente de cada empresa sin la ruta 77, como el censo, mas los
     que aparecen en las ventas cargadas y no estan en ella (asi no se pierde
     nadie si una maestra viene incompleta). Uno de baja en la maestra no
-    vuelve por las ventas. Nombre, el de la maestra si esta; ruta, la de
-    ventas (ver ct._maestra).
+    vuelve por las ventas. Nombre y ruta, los de la maestra si esta.
     "rutaNumero" es la ruta comparable ("R4", "4" y "Ruta 4" son la misma)."""
     clientes: dict[tuple[str, str], dict] = {}
     de_baja: set[tuple[str, str]] = set()
