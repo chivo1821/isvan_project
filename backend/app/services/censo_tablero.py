@@ -247,6 +247,8 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
     vendedores = _vendedores_por_ruta(cur)
     hechas = censadas(censos) | censadas_por_nombre(Cruce(maestra, en_sistema), censos)
     por_ruta: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    # Como la escribe la maestra ("R1" en una, "1" en otra): la mas usada.
+    nombres: dict[tuple[str, str], Counter] = defaultdict(Counter)
     pendientes = []
     for empresa, filas in maestra.items():
         for f in filas:
@@ -254,6 +256,7 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
                 continue
             clave = (empresa, f["rutaNumero"])
             por_ruta[clave]["maestra"] += 1
+            nombres[clave][" ".join(str(f["ruta"] or "").split()) or f["rutaNumero"]] += 1
             censado = (empresa, f["codigo"]) in hechas
             if censado:
                 por_ruta[clave]["censados"] += 1
@@ -274,7 +277,10 @@ def avance(cur, censos: list[dict], empresas: tuple[str, ...], rutas: set[str] |
         }
 
     rutas_filas = [
-        fila({"empresa": e, "ruta": r, "vendedores": [v["nombre"] for v in vendedores.get((e, r), [])]}, n)
+        fila({
+            "empresa": e, "ruta": r, "nombre": nombres[(e, r)].most_common(1)[0][0],
+            "vendedores": [v["nombre"] for v in vendedores.get((e, r), [])],
+        }, n)
         for (e, r), n in sorted(por_ruta.items(), key=lambda kv: (kv[0][0], _orden_ruta(kv[0][1])))
     ]
     por_empresa: dict[str, Counter] = defaultdict(Counter)

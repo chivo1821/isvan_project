@@ -512,7 +512,7 @@ function AvanceDeEmpresa({ empresa, rutas }: { empresa: TableroCenso["avance"]["
           </TableHeader>
           <TableBody>
             {rutas.map((r) => (
-              <FilaAvanceRuta key={r.ruta} etiqueta={`Ruta ${r.ruta}`} fila={r} vendedores={r.vendedores} />
+              <FilaAvanceRuta key={r.ruta} etiqueta={r.nombre} fila={r} vendedores={r.vendedores} />
             ))}
           </TableBody>
           <TableFooter>
