@@ -113,7 +113,9 @@ def cargar(cur, where: str, params: dict) -> list[dict]:
     return censos
 
 
-def _maestra(cur, empresas: tuple[str, ...]) -> dict[str, list[dict]]:
+def _maestra(cur, empresas: tuple[str, ...], con_baja: bool = False) -> dict[str, list[dict]]:
+    """La maestra vigente por empresa, sin la ruta 77 (con `con_baja`,
+    incluida: para saber que un cliente esta de baja)."""
     cur.execute(
         'SELECT mc."empresa"::text AS "empresa", mc."codigo", mc."razonSocial", mc."ruta", mc."diaVisita", '
         'mc."direccion", mc."zona" FROM "MaestraCliente" mc WHERE mc."cargaId" IN ('
@@ -124,7 +126,7 @@ def _maestra(cur, empresas: tuple[str, ...]) -> dict[str, list[dict]]:
     por_empresa: dict[str, list[dict]] = defaultdict(list)
     for f in cur.fetchall():
         f["rutaNumero"] = ruta_comparable(f["ruta"])
-        if f["rutaNumero"] != RUTA_DE_BAJA:
+        if con_baja or f["rutaNumero"] != RUTA_DE_BAJA:
             por_empresa[f["empresa"]].append(f)
     return por_empresa
 

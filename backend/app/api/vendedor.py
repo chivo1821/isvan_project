@@ -9,14 +9,18 @@
 - El rendimiento por vendedor para el dashboard (solo ADMIN).
 
 Las rutas del vendedor son las del sistema de ventas (VendedorRuta: R1..R8,
-10, 11...) y sus clientes, los VentaCliente de esas rutas. El cruce con el
-cliente de logistica (despachos, coordenadas) es por (empresa, codigo).
+10, 11...). Los clientes que visita salen de la maestra vigente de cada
+empresa, como el censo, mas los de las ventas cargadas que no estan en ella
+(ver clientes_de_visita). Los despachos siguen cruzando por VentaCliente. El
+cruce con el cliente de logistica (despachos, coordenadas) es por (empresa,
+codigo).
 """
 
 from __future__ import annotations
 
 import calendar
 import uuid
+from collections import Counter
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -28,6 +32,8 @@ from app.core.db import get_connection
 from app.core.fechas import ahora_utc, hoy_caracas
 from app.core.permisos import rutas_del_vendedor
 from app.core.ubicacion import sin_ubicacion
+from app.services import censo_tablero as ct
+from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado
 from app.schemas import (
     DespachosVendedor,
     IniciarVisitaRequest,
@@ -111,21 +117,55 @@ def _rutas_ordenadas(rutas: list[tuple[str, str]]) -> list[dict]:
     ]
 
 
+def clientes_de_visita(cur) -> dict[tuple[str, str], dict]:
+    """Los clientes que visitan los vendedores, por (empresa, codigo): la
+    maestra vigente de cada empresa sin la ruta 77, como el censo, mas los
+    que aparecen en las ventas cargadas y no estan en ella (asi no se pierde
+    nadie si una maestra viene incompleta). Uno de baja en la maestra no
+    vuelve por las ventas. Nombre y ruta, los de la maestra si esta.
+    "rutaNumero" es la ruta comparable ("R4", "4" y "Ruta 4" son la misma)."""
+    clientes: dict[tuple[str, str], dict] = {}
+    de_baja: set[tuple[str, str]] = set()
+    for empresa, filas in ct._maestra(cur, EMPRESAS, con_baja=True).items():
+        for f in filas:
+            if f["rutaNumero"] == RUTA_DE_BAJA:
+                de_baja.add((empresa, f["codigo"]))
+            else:
+                clientes[(empresa, f["codigo"])] = {
+                    "empresa": empresa, "codigo": f["codigo"], "nombre": f["razonSocial"],
+                    "ruta": f["ruta"], "rutaNumero": f["rutaNumero"],
+                }
+    cur.execute('SELECT "empresa"::text AS "empresa", "codigo", "nombre", "ruta" FROM "VentaCliente"')
+    for v in cur.fetchall():
+        clave = (v["empresa"], codigo_normalizado(v["codigo"]))
+        if clave not in clientes and clave not in de_baja:
+            clientes[clave] = {
+                "empresa": v["empresa"], "codigo": clave[1], "nombre": v["nombre"],
+                "ruta": v["ruta"], "rutaNumero": iv.ruta_comparable(v["ruta"]),
+            }
+    return clientes
+
+
+def _de_sus_rutas(rutas: list[tuple[str, str]]) -> set[tuple[str, str]]:
+    return {(str(empresa), iv.ruta_comparable(ruta)) for empresa, ruta in rutas}
+
+
 def _clientes_de_sus_rutas(cur, rutas: list[tuple[str, str]]) -> list[dict]:
     """Los clientes de sus rutas, con las coordenadas del maestro de
     logistica si estan ahi (y no en 0,0)."""
-    cur.execute(
-        'SELECT vc."empresa", vc."codigo", vc."nombre", vc."ruta", cl."lat", cl."lng" '
-        'FROM "VentaCliente" vc '
-        'LEFT JOIN "Cliente" cl ON cl."empresa" = vc."empresa" AND cl."codigo" = vc."codigo" '
-        f"WHERE {_ES_DE_SUS_RUTAS} "
-        'ORDER BY vc."ruta", vc."nombre"',
-        (_claves(rutas),),
-    )
-    clientes = cur.fetchall()
+    suyas = _de_sus_rutas(rutas)
+    clientes = [
+        {k: c[k] for k in ("empresa", "codigo", "nombre", "ruta")}
+        for c in clientes_de_visita(cur).values()
+        if (c["empresa"], c["rutaNumero"]) in suyas
+    ]
+    cur.execute('SELECT "empresa"::text AS "empresa", "codigo", "lat", "lng" FROM "Cliente"')
+    ubicacion = {(f["empresa"], codigo_normalizado(f["codigo"])): f for f in cur.fetchall()}
     for c in clientes:
-        if sin_ubicacion(c["lat"], c["lng"]):
-            c["lat"] = c["lng"] = None
+        u = ubicacion.get((c["empresa"], c["codigo"]))
+        valida = u is not None and not sin_ubicacion(u["lat"], u["lng"])
+        c["lat"], c["lng"] = (u["lat"], u["lng"]) if valida else (None, None)
+    clientes.sort(key=lambda c: (iv.orden_ruta(iv.ruta_comparable(c["ruta"])), c["nombre"] or ""))
     return clientes
 
 
@@ -176,33 +216,36 @@ def visitas_de_la_semana(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
 def iniciar_visita(data: IniciarVisitaRequest, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
     """Empieza la encuesta de una visita: guarda la hora de llegada y la
     unica toma de GPS, y la distancia de ese punto al cliente."""
-    codigo = data.codigoCliente.strip()
+    codigo = codigo_normalizado(data.codigoCliente.strip())
     if not (-90 <= data.lat <= 90 and -180 <= data.lng <= 180) or sin_ubicacion(data.lat, data.lng):
         raise HTTPException(400, "La ubicacion del telefono no es valida: vuelve a intentarlo con el GPS activado")
 
     with get_connection() as conn, conn.cursor() as cur:
         rutas = rutas_del_vendedor(cur, usuario["id"])
-        cur.execute(
-            'SELECT vc."nombre", cl."lat", cl."lng" FROM "VentaCliente" vc '
-            'LEFT JOIN "Cliente" cl ON cl."empresa" = vc."empresa" AND cl."codigo" = vc."codigo" '
-            f'WHERE vc."empresa" = %s AND vc."codigo" = %s AND {_ES_DE_SUS_RUTAS}',
-            (data.empresa, codigo, _claves(rutas)),
-        )
-        cliente = cur.fetchone()
-        if not cliente:
+        clientes = clientes_de_visita(cur)
+        cliente = clientes.get((data.empresa, codigo))
+        if not cliente or (cliente["empresa"], cliente["rutaNumero"]) not in _de_sus_rutas(rutas):
             raise HTTPException(404, "Ese cliente no es de tus rutas")
+        cur.execute(
+            'SELECT "codigo", "lat", "lng" FROM "Cliente" WHERE "empresa" = %s', (data.empresa,)
+        )
+        cliente = {**cliente, "lat": None, "lng": None}
+        for f in cur.fetchall():
+            if codigo_normalizado(f["codigo"]) == codigo:
+                cliente["lat"], cliente["lng"] = f["lat"], f["lng"]
+                break
 
         cur.execute(
-            'SELECT v."codigoCliente", vc."nombre" FROM "Visita" v '
-            'LEFT JOIN "VentaCliente" vc ON vc."empresa" = v."empresa" AND vc."codigo" = v."codigoCliente" '
-            'WHERE v."vendedorId" = %s AND v."salidaEn" IS NULL',
+            'SELECT "empresa"::text AS "empresa", "codigoCliente" FROM "Visita" '
+            'WHERE "vendedorId" = %s AND "salidaEn" IS NULL',
             (usuario["id"],),
         )
         abierta = cur.fetchone()
         if abierta:
+            otro = clientes.get((abierta["empresa"], codigo_normalizado(abierta["codigoCliente"])))
             raise HTTPException(
                 400,
-                f'Tienes una visita abierta en {abierta["nombre"] or abierta["codigoCliente"]}: '
+                f'Tienes una visita abierta en {(otro and otro["nombre"]) or abierta["codigoCliente"]}: '
                 "terminala antes de empezar otra.",
             )
 
@@ -304,8 +347,8 @@ def rendimiento_vendedores(semana: date | None = None):
         for r in cur.fetchall():
             rutas_por_vendedor.setdefault(r["usuarioId"], []).append((r["empresa"], r["ruta"]))
 
-        cur.execute('SELECT "empresa", "ruta", COUNT(*) AS "clientes" FROM "VentaCliente" GROUP BY 1, 2')
-        clientes_por_ruta = {(r["empresa"], r["ruta"]): r["clientes"] for r in cur.fetchall()}
+        # Los mismos clientes que ve cada vendedor en sus visitas.
+        clientes_por_ruta = Counter((c["empresa"], c["rutaNumero"]) for c in clientes_de_visita(cur).values())
 
         cur.execute(
             'SELECT "vendedorId", "empresa", "codigoCliente", "llegadaEn", "salidaEn", "distanciaClienteM" '
@@ -321,7 +364,7 @@ def rendimiento_vendedores(semana: date | None = None):
         for vendedor in vendedores:
             rutas = sorted(rutas_por_vendedor.get(vendedor["id"], []), key=lambda r: (r[0], iv.orden_ruta(r[1])))
             visitas = visitas_por_vendedor.get(vendedor["id"], [])
-            asignados = sum(clientes_por_ruta.get(r, 0) for r in rutas)
+            asignados = sum(clientes_por_ruta[r] for r in _de_sus_rutas(rutas))
             atendidos = {(v["empresa"], v["codigoCliente"]) for v in visitas if v["salidaEn"]}
             minutos = [(v["salidaEn"] - v["llegadaEn"]).total_seconds() / 60 for v in visitas if v["salidaEn"]]
             una_empresa = len({e for e, _ in rutas}) <= 1
