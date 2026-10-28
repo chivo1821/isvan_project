@@ -24,6 +24,10 @@ import {
 // Mismo umbral que el rendimiento del dashboard
 // (DISTANCIA_MAX_AL_CLIENTE_M en backend/app/api/vendedor.py).
 const DISTANCIA_LEJOS_M = 300;
+/** Con esta precisión la lectura ya sirve y no se espera más. */
+const PRECISION_SUFICIENTE_M = 50;
+/** Lo más que se espera a que el GPS afine. */
+const ESPERA_GPS_MS = 30000;
 const ESTATUS: EstatusVisita[] = ["por_visitar", "en_cliente", "atendido"];
 
 const claveCliente = (empresa: string, codigo: string) => `${empresa}|${codigo}`;
@@ -31,26 +35,56 @@ const claveCliente = (empresa: string, codigo: string) => `${empresa}|${codigo}`
 class ErrorUbicacion extends Error {}
 
 /** La única toma de GPS de la visita, al empezarla. Alta precisión y sin
- * caché: una posición vieja no probaría que el vendedor está en el cliente. */
-function ubicacionActual(): Promise<GeolocationPosition> {
+ * caché: una posición vieja no probaría que el vendedor está en el cliente.
+ *
+ * Con poca señal la primera lectura suele salir de antenas o wifi, con
+ * cientos de metros de error, y marcaba la visita lejos del cliente. Por eso
+ * se escucha el GPS hasta ESPERA_GPS_MS y se queda la lectura más precisa,
+ * o la primera de PRECISION_SUFICIENTE_M o menos. */
+function ubicacionActual(alAfinar: (precisionM: number) => void): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new ErrorUbicacion("Este navegador no permite obtener la ubicación."));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      resolve,
-      (error) =>
+    let mejor: GeolocationPosition | null = null;
+    let ultimoError: GeolocationPositionError | null = null;
+    const limite = window.setTimeout(() => {
+      navigator.geolocation.clearWatch(escucha);
+      if (mejor) resolve(mejor);
+      else
         reject(
           new ErrorUbicacion(
-            error.code === error.PERMISSION_DENIED
-              ? "La app no tiene permiso para usar tu ubicación. Actívalo en la configuración del navegador (el candado junto a la dirección) y vuelve a intentar."
-              : error.code === error.TIMEOUT
-                ? "El GPS tardó demasiado en responder. Revisa que la ubicación del teléfono esté activada e intenta de nuevo."
-                : "No se pudo obtener tu ubicación. Revisa que el GPS esté activado."
+            ultimoError && ultimoError.code === ultimoError.POSITION_UNAVAILABLE
+              ? "No se pudo obtener tu ubicación. Revisa que el GPS esté activado."
+              : "El GPS tardó demasiado en responder. Revisa que la ubicación del teléfono esté activada e intenta de nuevo."
           )
-        ),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+    }, ESPERA_GPS_MS);
+    const escucha = navigator.geolocation.watchPosition(
+      (posicion) => {
+        if (mejor && posicion.coords.accuracy >= mejor.coords.accuracy) return;
+        mejor = posicion;
+        alAfinar(Math.round(posicion.coords.accuracy));
+        if (posicion.coords.accuracy <= PRECISION_SUFICIENTE_M) {
+          window.clearTimeout(limite);
+          navigator.geolocation.clearWatch(escucha);
+          resolve(posicion);
+        }
+      },
+      (error) => {
+        ultimoError = error;
+        if (error.code === error.PERMISSION_DENIED) {
+          window.clearTimeout(limite);
+          navigator.geolocation.clearWatch(escucha);
+          reject(
+            new ErrorUbicacion(
+              "La app no tiene permiso para usar tu ubicación. Actívalo en la configuración del navegador (el candado junto a la dirección) y vuelve a intentar."
+            )
+          );
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 0 }
     );
   });
 }
@@ -63,6 +97,9 @@ export function VisitasVendedor({ inicial }: { inicial: VisitasSemana }) {
   const [observaciones, setObservaciones] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [errorGps, setErrorGps] = useState<string | null>(null);
+  // Mientras se busca el GPS: undefined sin lectura todavía, o la precisión
+  // de la mejor hasta ahora. null fuera de la búsqueda.
+  const [buscandoGps, setBuscandoGps] = useState<number | undefined | null>(null);
 
   const abierta = datos.visitaAbierta ?? null;
   const porClave = new Map(datos.clientes.map((c) => [claveCliente(c.empresa, c.codigo), c]));
@@ -90,7 +127,8 @@ export function VisitasVendedor({ inicial }: { inicial: VisitasSemana }) {
     setEnviando(true);
     setErrorGps(null);
     try {
-      const posicion = await ubicacionActual();
+      setBuscandoGps(undefined);
+      const posicion = await ubicacionActual(setBuscandoGps).finally(() => setBuscandoGps(null));
       const visita = await apiPost<Visita>("/vendedor/visitas", {
         empresa: cliente.empresa,
         codigoCliente: cliente.codigo,
@@ -203,10 +241,21 @@ export function VisitasVendedor({ inicial }: { inicial: VisitasSemana }) {
               </Button>
               <Button onClick={() => iniciar(elegido)} disabled={enviando} className="flex-1 sm:flex-none">
                 <LocateFixedIcon />
-                {enviando ? "Tomando ubicación..." : "Llegué, empezar visita"}
+                {buscandoGps === undefined
+                  ? "Buscando señal GPS..."
+                  : buscandoGps != null
+                    ? `Afinando ubicación · ±${buscandoGps} m`
+                    : enviando
+                      ? "Guardando..."
+                      : "Llegué, empezar visita"}
               </Button>
             </div>
           </CardContent>
+          {buscandoGps !== null && (
+            <p className="px-6 text-xs text-muted-foreground">
+              Quédate quieto unos segundos: el teléfono está afinando tu ubicación (hasta 30 s).
+            </p>
+          )}
         </Card>
       )}
 
