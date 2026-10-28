@@ -102,7 +102,9 @@ export type RendimientoVendedor = {
 };
 
 export type RendimientoVendedores = {
-  semana: string;
+  /** Días de Caracas, incluidos ("YYYY-MM-DD"). */
+  desde: string;
+  hasta: string;
   mesVenta?: string | null;
   distanciaMaxM: number;
   porVendedor: RendimientoVendedor[];

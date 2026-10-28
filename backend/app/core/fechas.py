@@ -30,6 +30,13 @@ def hoy_caracas() -> date:
     return (datetime.now(timezone.utc) + _DESFASE_CARACAS).date()
 
 
+def dias_caracas_en_utc(desde: date, hasta: date) -> tuple[datetime, datetime]:
+    """Los dias de Caracas de `desde` a `hasta` (incluidos) como un rango
+    [inicio, fin) de instantes UTC, para filtrar columnas como llegadaEn."""
+    inicio = datetime.combine(desde, datetime.min.time()) - _DESFASE_CARACAS
+    return inicio, datetime.combine(hasta + timedelta(days=1), datetime.min.time()) - _DESFASE_CARACAS
+
+
 def a_caracas(instante: datetime) -> datetime:
     """Un instante guardado en UTC, en hora de Caracas y sin zona: para
     mostrarlo donde no hay navegador que lo convierta (un Excel)."""

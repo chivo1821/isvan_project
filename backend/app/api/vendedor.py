@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api import indicadores as ind
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
-from app.core.fechas import ahora_utc, hoy_caracas
+from app.core.fechas import ahora_utc, dias_caracas_en_utc, hoy_caracas
 from app.core.permisos import rutas_del_vendedor
 from app.core.ubicacion import sin_ubicacion
 from app.services import censo_tablero as ct
@@ -59,6 +59,9 @@ _ESTADOS_CERRADOS = ["ENTREGADO", "CANCELADO", "RECHAZADO"]
 # proposito: el GPS de un telefono dentro de un local puede errar decenas de
 # metros, y la coordenada del cliente tampoco es exacta.
 DISTANCIA_MAX_AL_CLIENTE_M = 300
+
+# Rango maximo del filtro de fechas del rendimiento (un año).
+MAXIMO_DIAS_RENDIMIENTO = 366
 
 # El filtro por las rutas del vendedor, como "EMPRESA|RUTA" = ANY(...): una
 # sola condicion para cualquier cantidad de rutas y de las dos empresas.
@@ -336,8 +339,16 @@ def _venta_de_sus_rutas(cur, rutas: list[tuple[str, str]], meses: dict[str, tupl
     response_model=RendimientoVendedores,
     dependencies=[Depends(requiere_rol("ADMIN"))],
 )
-def rendimiento_vendedores(semana: date | None = None):
-    lunes = lunes_de(semana or hoy_caracas())
+def rendimiento_vendedores(desde: date | None = None, hasta: date | None = None):
+    """Las visitas de cada vendedor entre `desde` y `hasta` (dias de Caracas,
+    incluidos); sin fechas, las de hoy."""
+    desde = desde or hasta or hoy_caracas()
+    hasta = hasta or desde
+    if hasta < desde:
+        raise HTTPException(400, "La fecha final no puede ser anterior a la inicial")
+    if (hasta - desde).days > MAXIMO_DIAS_RENDIMIENTO:
+        raise HTTPException(400, f"Elige un rango de hasta {MAXIMO_DIAS_RENDIMIENTO} dias")
+    inicio, fin = dias_caracas_en_utc(desde, hasta)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute('SELECT "id", "nombre" FROM "Usuario" WHERE "rol" = \'VENDEDOR\' AND "activo" ORDER BY "nombre"')
         vendedores = cur.fetchall()
@@ -352,8 +363,8 @@ def rendimiento_vendedores(semana: date | None = None):
 
         cur.execute(
             'SELECT "vendedorId", "empresa", "codigoCliente", "llegadaEn", "salidaEn", "distanciaClienteM" '
-            'FROM "Visita" WHERE "semana" = %s',
-            (lunes,),
+            'FROM "Visita" WHERE "llegadaEn" >= %s AND "llegadaEn" < %s',
+            (inicio, fin),
         )
         visitas_por_vendedor: dict[str, list[dict]] = {}
         for v in cur.fetchall():
@@ -386,7 +397,8 @@ def rendimiento_vendedores(semana: date | None = None):
             })
 
     return {
-        "semana": lunes,
+        "desde": desde,
+        "hasta": hasta,
         "mesVenta": max((desde for desde, _ in meses.values()), default=None),
         "distanciaMaxM": DISTANCIA_MAX_AL_CLIENTE_M,
         "porVendedor": filas,
