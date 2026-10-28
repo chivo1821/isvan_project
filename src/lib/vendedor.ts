@@ -108,6 +108,20 @@ export type RendimientoVendedores = {
   mesVenta?: string | null;
   distanciaMaxM: number;
   porVendedor: RendimientoVendedor[];
+  /** Las visitas del período con la ubicación del teléfono al empezarlas. */
+  visitas: VisitaEnMapa[];
+};
+
+export type VisitaEnMapa = {
+  vendedorId: string;
+  empresa: Empresa;
+  codigoCliente: string;
+  cliente?: string | null;
+  lat: number;
+  lng: number;
+  llegadaEn: string;
+  salidaEn?: string | null;
+  distanciaClienteM?: number | null;
 };
 
 export function rutasComoTexto(rutas: RutaVenta[]) {

@@ -5,6 +5,7 @@ import type { DateRange } from "react-day-picker";
 import { es } from "react-day-picker/locale";
 import { CalendarIcon, Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
+import { MapasVisitasVendedores } from "@/components/modules/dashboard/mapas-visitas-vendedores";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -200,6 +201,13 @@ export function RendimientoVendedoresCard({ rendimiento: inicial }: { rendimient
               «Lejos del cliente»: la ubicación del teléfono al empezar la visita quedó a más de {r.distanciaMaxM} m
               de la del cliente en el maestro.
             </p>
+            <div className="mt-6 space-y-2">
+              <MapasVisitasVendedores rendimiento={r} />
+              <p className="text-xs text-muted-foreground">
+                Cada punto es dónde estaba el teléfono al empezar la visita, con el color de su vendedor. Toca un
+                punto para ver el cliente y la hora.
+              </p>
+            </div>
           </>
         )}
       </CardContent>
