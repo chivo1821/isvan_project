@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2Icon, MapPinCheckIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPost, mensajeDeError } from "@/lib/api-client";
+import { ReversarDialog } from "@/components/modules/rutas/reversar-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { estadoDeParada, formatHora } from "@/lib/constants";
@@ -29,12 +30,15 @@ export function ParadaAcciones({
   rutaEnTransito,
   marcas,
   onMarcado,
+  onNoEntregado,
 }: {
   rutaId: string;
   despachoId: string;
   rutaEnTransito: boolean;
   marcas: MarcasParada;
   onMarcado: (marcas: MarcasParada) => void;
+  /** La parada salió de la ruta («No se pudo entregar»). */
+  onNoEntregado: () => void;
 }) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
@@ -88,6 +92,18 @@ export function ParadaAcciones({
             </Button>
           ))}
       </div>
+      {puedeMarcar && (
+        <ReversarDialog
+          endpoint={`/rutas/${rutaId}/paradas/${despachoId}/no-entregado`}
+          boton="No se pudo entregar"
+          titulo="No se pudo entregar"
+          descripcion="La parada sale de tu ruta y la oficina la programa en otro viaje. Explica qué pasó."
+          confirmar="Confirmar"
+          placeholder="Ej.: el local estaba cerrado"
+          exito={{ titulo: "Parada marcada como no entregada" }}
+          onHecho={onNoEntregado}
+        />
+      )}
     </div>
   );
 }

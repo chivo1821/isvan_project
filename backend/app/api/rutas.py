@@ -19,7 +19,6 @@ from app.core.fechas import ahora_utc
 from app.core.numero import siguiente_numero
 from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.ubicacion import sin_ubicacion
-from psycopg.types.json import Jsonb
 
 from app.schemas import (
     PlanRutasRequest,
@@ -36,6 +35,7 @@ from app.services import configuracion as cfg
 from app.services.motorizados import actualizar_capacidad_motos
 from app.services import morocho
 from app.services import planificacion as pl
+from app.services import reversos
 from app.services.plan_rutas import sugerir_plan_rutas
 from app.services.delivery import guardar_distancias_de_ruta
 from app.services.route_analysis import MINUTOS_POR_PARADA, LatLng, calcular_mejor_ruta_multi
@@ -589,67 +589,70 @@ def programar_ruta(ruta_id: str, data: RutaProgramacion):
 def reversar_ruta(
     ruta_id: str,
     data: ReversarRutaRequest,
-    # Solo ADMIN: requiere_rol deja pasar siempre a ADMIN y, al no listar
-    # ningun otro rol, a nadie mas. Es un control que el cliente pidio
-    # reservado a los administradores.
-    usuario: dict = Depends(requiere_rol("ADMIN")),
+    usuario: dict = Depends(requiere_rol("DESPACHOS")),
 ):
-    """Deshace la asignacion de una ruta: queda CANCELADA (con quien, cuando
-    y por que) y sus despachos vuelven a "Aprobado" sin ruta, listos para
-    armar otro viaje. El vehiculo queda libre y su repartidor deja de verla.
+    """Cancela una ruta activa (el camion se accidento, el viaje no sale...):
+    queda CANCELADA con quien, cuando y por que, y sus despachos sin entregar
+    vuelven a "Aprobado" sin ruta, listos para armar otro viaje. El vehiculo
+    queda libre y su repartidor deja de verla.
 
-    Solo mientras no haya pasado nada en la calle: planificada, o en
-    transito sin ninguna marca de llegada ni de entrega. Una ruta con
-    entregas hechas no se reversa — eso borraria lo que ya ocurrio."""
-    motivo = data.motivo.strip()
-    if len(motivo) < 5:
-        raise HTTPException(400, "Escribe el motivo del reverso (queda registrado en la ruta)")
-
+    Lo ya entregado se queda en la ruta con sus marcas (y se le paga al
+    motorizado): solo se deshace lo que no ocurrio."""
+    motivo = reversos.motivo_valido(data.motivo)
     with get_connection() as conn, conn.cursor() as cur:
-        # FOR UPDATE: que el repartidor no marque una llegada justo mientras
-        # se esta reversando la ruta.
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
-        ruta = cur.fetchone()
-        if not ruta:
-            raise HTTPException(404, "Ruta no encontrada")
-        if ruta["estado"] not in ("PLANIFICADA", "EN_TRANSITO"):
-            raise HTTPException(
-                400, f'La ruta {ruta["numero"]} ya esta {ruta["estado"].lower()}: solo se reversan rutas activas'
-            )
-
+        ruta = reversos.ruta_activa_bloqueada(cur, ruta_id)
         cur.execute(
-            'SELECT "numero", "estado", "llegadaEn", "entregadoEn" FROM "Despacho" '
-            'WHERE "rutaId" = %s ORDER BY "ordenEnRuta"',
+            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "rutaId" = %s ORDER BY "ordenEnRuta"',
             (ruta_id,),
         )
         despachos = cur.fetchall()
-        con_marcas = [
-            d["numero"] for d in despachos
-            if d["llegadaEn"] or d["entregadoEn"] or d["estado"] == "ENTREGADO"
-        ]
-        if con_marcas:
-            raise HTTPException(
-                400,
-                "No se puede reversar: el repartidor ya marco la llegada o la entrega en "
-                f'{", ".join(con_marcas)}.',
-            )
+        pendientes = [d for d in despachos if d["estado"] != "ENTREGADO"]
+        if not pendientes:
+            raise HTTPException(400, f'Todas las paradas de la ruta {ruta["numero"]} ya se entregaron')
 
-        cur.execute(
-            'UPDATE "Ruta" SET "estado" = \'CANCELADA\', "canceladaEn" = %s, "canceladaPorId" = %s, '
-            '"motivoCancelacion" = %s, "despachosAlCancelar" = %s WHERE "id" = %s',
-            (ahora_utc(), usuario["id"], motivo, Jsonb([d["numero"] for d in despachos]), ruta_id),
-        )
-        # El trazado ya no sirve: los despachos se van a otro viaje.
-        cur.execute('DELETE FROM "RutaPunto" WHERE "rutaId" = %s', (ruta_id,))
-        cur.execute(
-            'UPDATE "Despacho" SET "estado" = \'APROBADO\', "rutaId" = NULL, "ordenEnRuta" = NULL '
-            'WHERE "rutaId" = %s',
-            (ruta_id,),
+        reversos.liberar(cur, ruta_id, pendientes, usuario["id"], motivo, "RUTA")
+        reversos.cancelar_ruta(
+            cur, ruta, usuario["id"], motivo, pendientes, hubo_entregas=len(pendientes) < len(despachos)
         )
         conn.commit()
 
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
         return _con_detalle(cur, cur.fetchone())
+
+
+@router.post(
+    "/{ruta_id}/paradas/{despacho_id}/no-entregado",
+    response_model=Ruta,
+    dependencies=[Depends(requiere_rol("REPARTIDOR"))],
+)
+def marcar_parada_no_entregada(
+    ruta_id: str, despacho_id: str, data: ReversarRutaRequest, usuario: dict = Depends(get_current_user)
+):
+    """El repartidor no pudo entregar una parada (cliente cerrado, no lo
+    recibio...): sale de la ruta y vuelve a "Aprobado" para otro viaje, con
+    su motivo. Cuenta en el rendimiento del repartidor (ver reportes.py)."""
+    motivo = reversos.motivo_valido(data.motivo)
+    with get_connection() as conn, conn.cursor() as cur:
+        ruta = reversos.ruta_activa_bloqueada(cur, ruta_id)
+        _verificar_ruta_propia(usuario, ruta)
+        if ruta["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "La ruta no esta en transito")
+
+        cur.execute(
+            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
+            (despacho_id, ruta_id),
+        )
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(404, "El despacho no pertenece a esta ruta")
+        if despacho["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "Este despacho ya fue entregado (o no esta en transito)")
+
+        reversos.liberar(cur, ruta_id, [despacho], usuario["id"], motivo, "REPARTIDOR")
+        reversos.cerrar_ruta_si_corresponde(cur, ruta, usuario["id"], motivo, [despacho])
+        conn.commit()
+
+        return _sin_trazado(cur, ruta_id)
 
 
 @router.post(

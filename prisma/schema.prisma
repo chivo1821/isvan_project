@@ -53,6 +53,13 @@ enum EstadoRuta {
   CANCELADA
 }
 
+// Quien saco el despacho de su ruta (ver DespachoReverso).
+enum AlcanceReverso {
+  RUTA // el coordinador reverso la ruta entera
+  DESPACHO // el coordinador saco ese despacho de la ruta
+  REPARTIDOR // el repartidor marco la parada como "No se pudo entregar"
+}
+
 enum TipoVehiculo {
   CAMION_REFRIGERADO
   CAMIONETA
@@ -147,6 +154,7 @@ model Usuario {
   aprobacionesDespacho  DespachoAprobacion[]
   rutasCreadas          Ruta[]                @relation("RutasCreadas")
   rutasCanceladas       Ruta[]                @relation("RutasCanceladas")
+  reversosDespacho      DespachoReverso[]     @relation("ReversosDespacho")
   sesiones              Sesion[]
   cargasVenta           VentaCarga[]
   tabuladorDelivery     TabuladorDelivery[]   @relation("TabuladorDeliveryActualizadoPor")
@@ -293,6 +301,7 @@ model Despacho {
   puntosEntrega RutaPunto[] // puntos de la ruta marcados como la parada de este despacho
   // Si se aprobo aunque el cliente tenia deuda vencida.
   excepcion     ExcepcionDespacho?
+  reversos      DespachoReverso[]
 }
 
 model DespachoItem {
@@ -322,6 +331,31 @@ model DespachoAprobacion {
   accion     AccionRevision
   comentario String?
   fecha      DateTime       @default(now())
+}
+
+// Un despacho que salio de su ruta sin entregarse y volvio a "Aprobado" (ver
+// liberar_despachos en backend/app/api/rutas.py). Una fila por despacho y por
+// vez: es el historial del despacho y la estadistica de cuantas paradas no
+// entrego cada repartidor.
+model DespachoReverso {
+  id             String         @id @default(cuid())
+  despachoId     String
+  despacho       Despacho       @relation(fields: [despachoId], references: [id])
+  rutaId         String
+  ruta           Ruta           @relation(fields: [rutaId], references: [id])
+  usuarioId      String
+  usuario        Usuario        @relation("ReversosDespacho", fields: [usuarioId], references: [id])
+  alcance        AlcanceReverso
+  motivo         String
+  estadoAnterior EstadoDespacho
+  // La marca de llegada que tenia (el repartidor llego pero no pudo
+  // entregar): al liberarlo se borra del despacho y queda aca.
+  llegadaEn      DateTime?
+  fecha          DateTime       @default(now())
+
+  @@index([despachoId])
+  @@index([rutaId])
+  @@index([fecha])
 }
 
 // ---------- Rutas (multi-parada) ----------
@@ -361,10 +395,10 @@ model Ruta {
   distanciaTotalKm Float?
   tiempoTotalMin   Int?
 
-  // Reverso (solo ADMIN, ver POST /rutas/{id}/reversar): la ruta queda
-  // CANCELADA y sus despachos vuelven a "Aprobado" sin ruta. Como al
-  // liberarlos se pierde Despacho.rutaId, los numeros que llevaba se
-  // guardan aca para que el historial siga diciendo que tenia.
+  // Reverso (ver POST /rutas/{id}/reversar): la ruta queda CANCELADA y sus
+  // despachos sin entregar vuelven a "Aprobado" sin ruta; los entregados se
+  // quedan. Como al liberarlos se pierde Despacho.rutaId, los numeros de los
+  // liberados se guardan aca para que el historial siga diciendo que tenia.
   canceladaEn         DateTime?
   canceladaPorId      String?
   canceladaPor        Usuario?  @relation("RutasCanceladas", fields: [canceladaPorId], references: [id])
@@ -374,6 +408,7 @@ model Ruta {
   despachos         Despacho[]
   puntos            RutaPunto[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+  reversos          DespachoReverso[]
 
   @@index([salidaProgramada])
   @@index([vehiculoId, estado])

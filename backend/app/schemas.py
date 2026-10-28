@@ -417,6 +417,18 @@ class DespachoItemCreate(BaseModel):
     requiereFrio: bool = True
 
 
+class ReversoDespacho(BaseModel):
+    fecha: Instante
+    rutaId: str
+    rutaNumero: str
+    usuario: str
+    rol: str
+    alcance: Literal["RUTA", "DESPACHO", "REPARTIDOR"]
+    motivo: str
+    # La llegada que tenia marcada en esa ruta, si la tenia.
+    llegadaEn: Optional[Instante] = None
+
+
 class Despacho(BaseModel):
     id: str
     numero: str
@@ -433,6 +445,9 @@ class Despacho(BaseModel):
     llegadaEn: Optional[Instante] = None
     entregadoEn: Optional[Instante] = None
     items: list[DespachoItem] = []
+    # Solo en el detalle (GET /despachos/{id}): las veces que salio de una
+    # ruta sin entregarse (ver app/services/reversos.py).
+    reversos: list[ReversoDespacho] = []
 
 
 class DespachoCreate(BaseModel):
@@ -590,7 +605,7 @@ class Ruta(BaseModel):
     distanciaTotalKm: Optional[float] = None
     tiempoTotalMin: Optional[int] = None
     # Reverso (ver POST /rutas/{id}/reversar): quien, cuando, por que y que
-    # despachos llevaba la ruta antes de liberarlos.
+    # despachos sin entregar llevaba la ruta al liberarlos.
     canceladaEn: Optional[Instante] = None
     canceladaPorId: Optional[str] = None
     motivoCancelacion: Optional[str] = None
@@ -691,6 +706,10 @@ class RendimientoConductor(BaseModel):
     viajes: int
     entregas: int
     distanciaKm: float
+    # Paradas que el repartidor marco "No se pudo entregar", y despachos de
+    # sus rutas que reverso la oficina (ver app/services/reversos.py).
+    noEntregados: int = 0
+    reversadosOficina: int = 0
 
 
 class RangoTabuladorDelivery(BaseModel):

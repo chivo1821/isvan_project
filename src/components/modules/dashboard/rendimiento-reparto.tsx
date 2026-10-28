@@ -1,5 +1,6 @@
 import { ClockIcon, PackageCheckIcon, TruckIcon, WeightIcon } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -24,6 +25,10 @@ export type ResumenRendimiento = {
     viajes: number;
     entregas: number;
     distanciaKm: number;
+    /** Paradas que el repartidor marcó «No se pudo entregar». */
+    noEntregados: number;
+    /** Despachos de sus rutas que reversó la oficina (no cuentan contra él). */
+    reversadosOficina: number;
   }[];
 };
 
@@ -83,6 +88,8 @@ export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento })
                     <TableHead className="text-right">Viajes</TableHead>
                     <TableHead className="text-right">Entregas</TableHead>
                     <TableHead className="text-right">Distancia</TableHead>
+                    <TableHead className="text-right">No entregados</TableHead>
+                    <TableHead className="text-right">Reversados por la oficina</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -97,10 +104,23 @@ export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento })
                       <TableCell className="text-right text-muted-foreground">
                         {c.distanciaKm.toLocaleString("es-VE", { maximumFractionDigits: 1 })} km
                       </TableCell>
+                      <TableCell className="text-right">
+                        {c.noEntregados > 0 ? (
+                          <StatusBadge tone="warning" label={String(c.noEntregados)} />
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{c.reversadosOficina}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              <p className="mt-3 text-xs text-muted-foreground">
+                «No entregados»: paradas que el repartidor marcó «No se pudo entregar». «Reversados por la
+                oficina»: despachos que sacó de sus rutas el coordinador (por ejemplo, una ruta cancelada); no
+                cuentan contra el repartidor. Los motivos están en la hoja «Reversos» del Excel de rutas.
+              </p>
               {resumen.paradasMedidas === 0 && (
                 <p className="mt-3 text-xs text-muted-foreground">
                   Los promedios de tiempo aparecerán cuando los repartidores marquen la llegada y la

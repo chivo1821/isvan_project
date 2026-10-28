@@ -33,7 +33,12 @@ export function ViajeEnCurso({
   // que pasa todas las paradas a EN_TRANSITO), la pantalla los toma. La
   // capa y el servidor terminan diciendo lo mismo.
   const [marcasPropias, setMarcasPropias] = useState<Record<string, MarcasParada>>({});
-  const paradas = paradasDelServidor.map((p) => ({ ...p, ...marcasPropias[p.id] }));
+  // Las que marcó «No se pudo entregar»: salen de la lista y del mapa sin
+  // esperar a que el servidor deje de mandarlas.
+  const [noEntregadas, setNoEntregadas] = useState<string[]>([]);
+  const paradas = paradasDelServidor
+    .filter((p) => !noEntregadas.includes(p.id))
+    .map((p) => ({ ...p, ...marcasPropias[p.id] }));
 
   return (
     <>
@@ -78,6 +83,7 @@ export function ViajeEnCurso({
                 rutaEnTransito={estadoRuta === "EN_TRANSITO"}
                 marcas={{ estado: d.estado, llegadaEn: d.llegadaEn, entregadoEn: d.entregadoEn }}
                 onMarcado={(marcas) => setMarcasPropias((previas) => ({ ...previas, [d.id]: marcas }))}
+                onNoEntregado={() => setNoEntregadas((previas) => [...previas, d.id])}
               />
             </div>
           ))}

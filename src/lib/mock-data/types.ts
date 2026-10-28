@@ -128,6 +128,22 @@ export type Despacho = {
   llegadaEn?: string | null;
   entregadoEn?: string | null;
   items: DespachoItem[];
+  /** Solo en el detalle: las veces que salió de una ruta sin entregarse. */
+  reversos?: ReversoDespacho[];
+};
+
+/** Un despacho sacado de su ruta sin entregarse (ver backend/app/services/reversos.py). */
+export type ReversoDespacho = {
+  fecha: string;
+  rutaId: string;
+  rutaNumero: string;
+  usuario: string;
+  rol: RolUsuario;
+  /** RUTA: el coordinador reversó la ruta; DESPACHO: sacó ese despacho; REPARTIDOR: «No se pudo entregar». */
+  alcance: "RUTA" | "DESPACHO" | "REPARTIDOR";
+  motivo: string;
+  /** La llegada que tenía marcada en esa ruta, si la tenía. */
+  llegadaEn?: string | null;
 };
 
 export type RutaPunto = {
