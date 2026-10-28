@@ -237,7 +237,9 @@ function CampoFoto({
   const id = useId();
   const [preparando, setPreparando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [vista, setVista] = useState<string | null>(null);
+  // Si el campo se monta con una foto (un borrador recuperado), su vista
+  // previa se arma de entrada.
+  const [vista, setVista] = useState<string | null>(() => (archivo ? URL.createObjectURL(archivo) : null));
   const [camara, setCamara] = useState(false);
   const inputCamara = useRef<HTMLInputElement>(null);
   const inputGaleria = useRef<HTMLInputElement>(null);
