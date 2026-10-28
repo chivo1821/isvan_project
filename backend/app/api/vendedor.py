@@ -359,11 +359,13 @@ def rendimiento_vendedores(desde: date | None = None, hasta: date | None = None)
             rutas_por_vendedor.setdefault(r["usuarioId"], []).append((r["empresa"], r["ruta"]))
 
         # Los mismos clientes que ve cada vendedor en sus visitas.
-        clientes_por_ruta = Counter((c["empresa"], c["rutaNumero"]) for c in clientes_de_visita(cur).values())
+        clientes = clientes_de_visita(cur)
+        clientes_por_ruta = Counter((c["empresa"], c["rutaNumero"]) for c in clientes.values())
 
         cur.execute(
-            'SELECT "vendedorId", "empresa", "codigoCliente", "llegadaEn", "salidaEn", "distanciaClienteM" '
-            'FROM "Visita" WHERE "llegadaEn" >= %s AND "llegadaEn" < %s',
+            'SELECT "vendedorId", "empresa"::text AS "empresa", "codigoCliente", "llegadaEn", "salidaEn", '
+            '"distanciaClienteM", "llegadaLat", "llegadaLng" '
+            'FROM "Visita" WHERE "llegadaEn" >= %s AND "llegadaEn" < %s ORDER BY "llegadaEn"',
             (inicio, fin),
         )
         visitas_por_vendedor: dict[str, list[dict]] = {}
@@ -396,12 +398,33 @@ def rendimiento_vendedores(desde: date | None = None, hasta: date | None = None)
                 "ventaNetaMes": _venta_de_sus_rutas(cur, rutas, meses) if rutas else None,
             })
 
+    # Donde estaba el telefono al empezar cada visita (la que no tomo GPS no
+    # sale), solo de los vendedores de la tabla.
+    activos = {v["id"] for v in vendedores}
+    en_mapa = [
+        {
+            "vendedorId": v["vendedorId"],
+            "empresa": v["empresa"],
+            "codigoCliente": v["codigoCliente"],
+            "cliente": clientes.get((v["empresa"], v["codigoCliente"]), {}).get("nombre"),
+            "lat": v["llegadaLat"],
+            "lng": v["llegadaLng"],
+            "llegadaEn": v["llegadaEn"],
+            "salidaEn": v["salidaEn"],
+            "distanciaClienteM": v["distanciaClienteM"],
+        }
+        for lista in visitas_por_vendedor.values()
+        for v in lista
+        if v["vendedorId"] in activos and not sin_ubicacion(v["llegadaLat"], v["llegadaLng"])
+    ]
+
     return {
         "desde": desde,
         "hasta": hasta,
         "mesVenta": max((desde for desde, _ in meses.values()), default=None),
         "distanciaMaxM": DISTANCIA_MAX_AL_CLIENTE_M,
         "porVendedor": filas,
+        "visitas": en_mapa,
     }
 
 

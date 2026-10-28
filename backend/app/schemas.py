@@ -223,12 +223,28 @@ class RendimientoVendedor(BaseModel):
     ventaNetaMes: Optional[float] = None
 
 
+class VisitaEnMapa(BaseModel):
+    """Una visita del periodo con la ubicacion del telefono al empezarla."""
+
+    vendedorId: str
+    empresa: str
+    codigoCliente: str
+    cliente: Optional[str] = None
+    lat: float
+    lng: float
+    llegadaEn: Instante
+    salidaEn: Optional[Instante] = None
+    distanciaClienteM: Optional[float] = None
+
+
 class RendimientoVendedores(BaseModel):
     desde: date
     hasta: date
     mesVenta: Optional[date] = None
     distanciaMaxM: int
     porVendedor: list[RendimientoVendedor]
+    # Para los mapas de visitas del resumen (uno por empresa).
+    visitas: list[VisitaEnMapa] = []
 
 
 # ---------- Motorizados autogestionados (ver app/services/motorizados.py) ----------
