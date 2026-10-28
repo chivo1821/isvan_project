@@ -6,7 +6,7 @@ import { formatNumero } from "@/lib/constants";
 function porRuta(clientes: ClientePorCensar[]) {
   const grupos = new Map<string, ClientePorCensar[]>();
   for (const c of clientes) {
-    const clave = `${c.empresa} · Ruta ${c.ruta}`;
+    const clave = `${c.empresa} · ${c.ruta}`;
     grupos.set(clave, [...(grupos.get(clave) ?? []), c]);
   }
   return [...grupos.entries()];

@@ -232,6 +232,7 @@ export type ClientePorCensar = {
   empresa: EmpresaMaestra;
   codigo: string;
   razonSocial: string;
+  /** Como la escribe la maestra ("R1", "11"). */
   ruta: string;
   diaVisita: string | null;
   direccion: string | null;
@@ -265,7 +266,8 @@ export type TableroCenso = {
   avance: {
     conMaestra: EmpresaMaestra[];
     porEmpresa: (FilaAvance & { empresa: EmpresaMaestra })[];
-    porRuta: (FilaAvance & { empresa: EmpresaMaestra; ruta: string; vendedores: string[] })[];
+    /** `ruta`: el numero (para filtrar); `nombre`: como la escribe la maestra ("R1", "11"). */
+    porRuta: (FilaAvance & { empresa: EmpresaMaestra; ruta: string; nombre: string; vendedores: string[] })[];
     porVendedor: (FilaAvance & { vendedor: string; rutas: string[] })[];
     porRegistrarTotal: number;
     porRegistrar: ClientePorCensar[];

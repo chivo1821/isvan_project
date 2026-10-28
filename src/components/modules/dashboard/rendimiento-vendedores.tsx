@@ -1,23 +1,142 @@
+"use client";
+
+import { useRef, useState } from "react";
+import type { DateRange } from "react-day-picker";
+import { es } from "react-day-picker/locale";
+import { CalendarIcon, Loader2Icon } from "lucide-react";
+import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { apiGet, mensajeDeError } from "@/lib/api-client";
 import { formatDate, formatDateTime, formatNumero, formatUsd } from "@/lib/constants";
+import { hoyCaracas, inicioDeMes, sumarDias } from "@/lib/delivery";
 import { formatMes } from "@/lib/indicadores";
 import type { RendimientoVendedores } from "@/lib/vendedor";
 
-/** Cómo va cada vendedor esta semana: a cuántos de sus clientes atendió,
- * cuánto tarda en cada uno y si las visitas se hicieron en el cliente. */
-export function RendimientoVendedoresCard({ rendimiento: r }: { rendimiento: RendimientoVendedores }) {
+// El calendario trabaja con Date locales; la API, con "YYYY-MM-DD".
+function aFecha(texto: string) {
+  return new Date(`${texto}T00:00:00`);
+}
+function aTexto(fecha: Date) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+}
+
+function atajos(hoy: string) {
+  const mes = inicioDeMes(hoy);
+  const finDeMesAnterior = sumarDias(mes, -1);
+  return [
+    { label: "Hoy", desde: hoy, hasta: hoy },
+    { label: "Ayer", desde: sumarDias(hoy, -1), hasta: sumarDias(hoy, -1) },
+    { label: "Últimos 7 días", desde: sumarDias(hoy, -6), hasta: hoy },
+    { label: "Mes en curso", desde: mes, hasta: hoy },
+    { label: "Mes anterior", desde: inicioDeMes(finDeMesAnterior), hasta: finDeMesAnterior },
+  ];
+}
+
+function periodo(desde: string, hasta: string) {
+  if (desde === hasta) return desde === hoyCaracas() ? `de hoy, ${formatDate(desde)}` : `del ${formatDate(desde)}`;
+  return `del ${formatDate(desde)} al ${formatDate(hasta)}`;
+}
+
+/** Cómo va cada vendedor en el período (por defecto, hoy): a cuántos de sus
+ * clientes atendió, cuánto tarda en cada uno y si las visitas se hicieron
+ * en el cliente. */
+export function RendimientoVendedoresCard({ rendimiento: inicial }: { rendimiento: RendimientoVendedores }) {
+  const [r, setR] = useState(inicial);
+  const [cargando, setCargando] = useState(false);
+  const [abierto, setAbierto] = useState(false);
+  const [rango, setRango] = useState<DateRange | undefined>();
+  // Primer clic en el calendario: el día inicial; el segundo cierra el rango
+  // (el mismo día dos veces = un solo día).
+  const [inicio, setInicio] = useState<Date | null>(null);
+  const ultimaPedida = useRef(0);
+
+  async function elegirPeriodo(desde: string, hasta: string) {
+    setAbierto(false);
+    const pedida = ++ultimaPedida.current;
+    setCargando(true);
+    try {
+      const nuevo = await apiGet<RendimientoVendedores>(`/vendedor/rendimiento?desde=${desde}&hasta=${hasta}`);
+      if (pedida === ultimaPedida.current) setR(nuevo);
+    } catch (err) {
+      if (pedida === ultimaPedida.current) {
+        toast.error("No se pudo cargar el rendimiento", { description: mensajeDeError(err, "Intenta de nuevo") });
+      }
+    } finally {
+      if (pedida === ultimaPedida.current) setCargando(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Rendimiento por vendedor</CardTitle>
         <CardDescription>
-          Visitas de la semana del {formatDate(r.semana)}
+          Visitas {periodo(r.desde, r.hasta)}
           {r.mesVenta && ` · venta de sus rutas en ${formatMes(r.mesVenta)}`}
         </CardDescription>
+        <CardAction>
+          <Popover
+            open={abierto}
+            onOpenChange={(v) => {
+              setAbierto(v);
+              if (v) {
+                setRango({ from: aFecha(r.desde), to: aFecha(r.hasta) });
+                setInicio(null);
+              }
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" disabled={cargando}>
+                {cargando ? <Loader2Icon className="animate-spin" /> : <CalendarIcon />}
+                {r.desde === r.hasta ? formatDate(r.desde) : `${formatDate(r.desde)} – ${formatDate(r.hasta)}`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-auto p-0">
+              <div className="flex flex-col gap-1 border-b border-border p-2 sm:flex-row">
+                {atajos(hoyCaracas()).map((a) => (
+                  <Button
+                    key={a.label}
+                    variant="ghost"
+                    size="sm"
+                    className="justify-start"
+                    onClick={() => elegirPeriodo(a.desde, a.hasta)}
+                  >
+                    {a.label}
+                  </Button>
+                ))}
+              </div>
+              <Calendar
+                mode="range"
+                locale={es}
+                numberOfMonths={2}
+                defaultMonth={aFecha(inicioDeMes(sumarDias(inicioDeMes(r.hasta), -1)))}
+                disabled={{ after: aFecha(hoyCaracas()) }}
+                selected={rango}
+                onSelect={(_, dia) => {
+                  if (!inicio) {
+                    setInicio(dia);
+                    setRango({ from: dia, to: dia });
+                    return;
+                  }
+                  const [a, b] = inicio <= dia ? [inicio, dia] : [dia, inicio];
+                  elegirPeriodo(aTexto(a), aTexto(b));
+                }}
+              />
+              <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                {inicio
+                  ? `Desde el ${formatDate(aTexto(inicio))}: elige el día final (el mismo para un solo día).`
+                  : "Elige el día inicial y después el final."}
+              </p>
+            </PopoverContent>
+          </Popover>
+        </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className={cargando ? "opacity-60 transition-opacity" : "transition-opacity"}>
         {r.porVendedor.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             Todavía no hay vendedores. Créalos en Usuarios con el rol Vendedor y asígnales sus rutas de venta.

@@ -11,6 +11,12 @@
  *
  * Volver a codificar además endereza la foto (la orientación del EXIF) y le
  * quita los metadatos de la cámara.
+ *
+ * Memoria: una foto de 108 MP abierta completa ocupa unos 430 MB, y en un
+ * teléfono eso puede cerrar la pestaña (y perder el censo). Por eso primero
+ * se leen sus medidas, sin abrirla, y se le pide al navegador la imagen ya
+ * reducida. Si el navegador no la entrega con la forma esperada (alguno
+ * aplica la reducción antes de enderezarla), se abre completa como antes.
  */
 
 export const FOTO_MAXIMA_BYTES = 10_000_000;
@@ -21,10 +27,48 @@ export class ErrorFoto extends Error {}
 
 const enMb = (bytes: number) => (bytes / 1_000_000).toLocaleString("es-VE", { maximumFractionDigits: 1 });
 
+/** Ancho y alto de la foto ya enderezada, sin decodificarla: el evento
+ * load de una imagen fuera de la página llega con solo leer la cabecera. */
+async function medidas(archivo: File): Promise<{ ancho: number; alto: number } | null> {
+  const url = URL.createObjectURL(archivo);
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("imagen"));
+      img.src = url;
+    });
+    return img.naturalWidth && img.naturalHeight ? { ancho: img.naturalWidth, alto: img.naturalHeight } : null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** La foto como imagen dibujable, ya reducida a LADO_MAXIMO si se puede. */
+async function abrirReducida(archivo: File): Promise<ImageBitmap> {
+  const m = await medidas(archivo);
+  const escala = m ? Math.min(1, LADO_MAXIMO / Math.max(m.ancho, m.alto)) : 1;
+  if (m && escala < 1) {
+    const ancho = Math.round(m.ancho * escala);
+    const alto = Math.round(m.alto * escala);
+    try {
+      const reducida = await createImageBitmap(archivo, { resizeWidth: ancho, resizeHeight: alto, resizeQuality: "high" });
+      // Misma forma que la foto enderezada: si no, quedaría deformada.
+      if (Math.abs(reducida.width / reducida.height - m.ancho / m.alto) < 0.02) return reducida;
+      reducida.close();
+    } catch {
+      // Se intenta abajo con la foto completa.
+    }
+  }
+  return createImageBitmap(archivo);
+}
+
 export async function comprimirFoto(archivo: File): Promise<File> {
   let imagen: ImageBitmap;
   try {
-    imagen = await createImageBitmap(archivo);
+    imagen = await abrirReducida(archivo);
   } catch {
     // Formatos que el navegador no sabe dibujar (HEIC fuera de Safari): se
     // manda tal cual si entra en el tope y es de un tipo que el servidor acepta.
@@ -50,6 +94,9 @@ export async function comprimirFoto(archivo: File): Promise<File> {
     if (!blob) throw new ErrorFoto("No se pudo preparar la foto.");
     if (blob.size <= FOTO_MAXIMA_BYTES) break;
   }
+  // Soltar el lienzo ya: en el teléfono la memoria es justa.
+  lienzo.width = 0;
+  lienzo.height = 0;
   if (!blob || blob.size > FOTO_MAXIMA_BYTES) {
     throw new ErrorFoto(
       `La foto pesa ${enMb(blob?.size ?? archivo.size)} MB y el máximo es ${enMb(FOTO_MAXIMA_BYTES)} MB. Tómala de nuevo.`

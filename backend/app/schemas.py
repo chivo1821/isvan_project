@@ -224,7 +224,8 @@ class RendimientoVendedor(BaseModel):
 
 
 class RendimientoVendedores(BaseModel):
-    semana: date
+    desde: date
+    hasta: date
     mesVenta: Optional[date] = None
     distanciaMaxM: int
     porVendedor: list[RendimientoVendedor]

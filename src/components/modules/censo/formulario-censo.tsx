@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2Icon, SendIcon } from "lucide-react";
+import { HistoryIcon, Loader2Icon, SendIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError, apiPost, mensajeDeError } from "@/lib/api-client";
 import { avisoDeEnvio, type ResultadoEnvioCenso } from "@/lib/censo";
+import { formatDateTime } from "@/lib/constants";
+import { borrarBorrador, guardarBorrador, leerBorrador, type Borrador } from "@/lib/formulario/borrador";
 import type { Valor } from "@/lib/formulario/expresiones";
 import {
   aplicarRelevancia,
@@ -104,7 +107,15 @@ async function subirFoto(pregunta: string, foto: File): Promise<string> {
   return enlace.clave;
 }
 
-export function FormularioCenso({ definicion, nombreUsuario }: { definicion: DefinicionFormulario; nombreUsuario: string }) {
+export function FormularioCenso({
+  definicion,
+  nombreUsuario,
+  usuarioId,
+}: {
+  definicion: DefinicionFormulario;
+  nombreUsuario: string;
+  usuarioId: string;
+}) {
   const router = useRouter();
   const [inicio, setInicio] = useState(() => new Date());
   const [respuestas, setRespuestas] = useState<Respuestas>(() => iniciales(definicion, nombreUsuario, new Date()));
@@ -120,6 +131,14 @@ export function FormularioCenso({ definicion, nombreUsuario }: { definicion: Def
   // Al limpiar el formulario se vuelven a montar los campos (vistas previas
   // de las fotos, avisos del GPS).
   const [vuelta, setVuelta] = useState(0);
+  // Borrador en el teléfono (ver lib/formulario/borrador.ts): uno por usuario
+  // y formulario. No se guarda nada hasta haber intentado recuperar el que
+  // hubiera, para no pisarlo.
+  const claveBorrador = `${usuarioId}:${definicion.id}`;
+  const versionFormulario = `${definicion.id}@${definicion.version}`;
+  const [borradorLeido, setBorradorLeido] = useState(false);
+  const [recuperadoEn, setRecuperadoEn] = useState<number | null>(null);
+  const porGuardar = useRef<Borrador | null>(null);
 
   const { relevantes, valores, gruposVisibles } = useMemo(
     () => aplicarRelevancia(definicion, respuestas),
@@ -137,6 +156,54 @@ export function FormularioCenso({ definicion, nombreUsuario }: { definicion: Def
     [definicion, respuestas, fotos]
   );
   const sucio = tocadas.size > 0;
+
+  useEffect(() => {
+    let vigente = true;
+    void leerBorrador(claveBorrador, versionFormulario).then((b) => {
+      if (!vigente) return;
+      if (b) {
+        setInicio(new Date(b.inicio));
+        setRespuestas(b.respuestas);
+        setFotos(b.fotos);
+        setTocadas(new Set(b.tocadas));
+        setVuelta((v) => v + 1);
+        setRecuperadoEn(b.guardadoEn);
+      }
+      setBorradorLeido(true);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [claveBorrador, versionFormulario]);
+
+  // Cada cambio se guarda al rato (para no escribir en cada tecla) y, si la
+  // página pasa a segundo plano (se abrió la cámara), en el acto: es justo
+  // cuando el sistema puede cerrar la pestaña.
+  useEffect(() => {
+    if (!borradorLeido || !sucio) return;
+    porGuardar.current = {
+      formulario: versionFormulario,
+      guardadoEn: Date.now(),
+      inicio: inicio.toISOString(),
+      respuestas,
+      fotos,
+      tocadas: [...tocadas],
+    };
+    const espera = window.setTimeout(() => {
+      if (porGuardar.current) void guardarBorrador(claveBorrador, { ...porGuardar.current, guardadoEn: Date.now() });
+    }, 400);
+    return () => window.clearTimeout(espera);
+  }, [borradorLeido, sucio, versionFormulario, claveBorrador, inicio, respuestas, fotos, tocadas]);
+
+  useEffect(() => {
+    const alOcultar = () => {
+      if (document.visibilityState === "hidden" && porGuardar.current) {
+        void guardarBorrador(claveBorrador, { ...porGuardar.current, guardadoEn: Date.now() });
+      }
+    };
+    document.addEventListener("visibilitychange", alOcultar);
+    return () => document.removeEventListener("visibilitychange", alOcultar);
+  }, [claveBorrador]);
 
   // Un censo a medias no se pierde por cerrar la pestaña sin querer.
   useEffect(() => {
@@ -157,6 +224,9 @@ export function FormularioCenso({ definicion, nombreUsuario }: { definicion: Def
   }
 
   function limpiar() {
+    porGuardar.current = null;
+    void borrarBorrador(claveBorrador);
+    setRecuperadoEn(null);
     const ahora = new Date();
     setInicio(ahora);
     setRespuestas(iniciales(definicion, nombreUsuario, ahora, respuestas));
@@ -276,6 +346,21 @@ export function FormularioCenso({ definicion, nombreUsuario }: { definicion: Def
       }}
       noValidate
     >
+      {recuperadoEn && (
+        <Alert>
+          <HistoryIcon />
+          <AlertTitle>Recuperamos el censo que tenías a medias</AlertTitle>
+          <AlertDescription>
+            <p>
+              Revisa las fotos: si alguna no quedó, tómala de nuevo. (Guardado el{" "}
+              {formatDateTime(new Date(recuperadoEn).toISOString())})
+            </p>
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setRecuperadoEn(null)}>
+              Entendido
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {bloques(definicion.children)}
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border">
         {sucio && (

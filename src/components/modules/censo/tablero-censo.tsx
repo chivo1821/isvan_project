@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { API_URL, apiPost, mensajeDeError } from "@/lib/api-client";
 import {
@@ -484,6 +484,72 @@ function ListaPorRegistrar({ t }: { t: TableroCenso }) {
   );
 }
 
+type AvanceDeRuta = TableroCenso["avance"]["porRuta"][number];
+
+/** Avance por ruta de una empresa, con su total. */
+function AvanceDeEmpresa({ empresa, rutas }: { empresa: TableroCenso["avance"]["porEmpresa"][number]; rutas: AvanceDeRuta[] }) {
+  if (!rutas.length) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Avance por ruta · {empresa.empresa}</CardTitle>
+        <CardDescription>
+          {formatNumero(empresa.registrados)} de {formatNumero(empresa.maestra)} clientes registrados (
+          {formatPct(empresa.avance ?? 0)}) · {formatNumero(empresa.porRegistrar)} por registrar
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ruta</TableHead>
+              <TableHead>Vendedor</TableHead>
+              <TableHead className="text-right">Maestra</TableHead>
+              <TableHead className="text-right">Registrados</TableHead>
+              <TableHead className="text-right">Por registrar</TableHead>
+              <TableHead className="w-40">Avance</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rutas.map((r) => (
+              <FilaAvanceRuta key={r.ruta} etiqueta={r.nombre} fila={r} vendedores={r.vendedores} />
+            ))}
+          </TableBody>
+          <TableFooter>
+            <FilaAvanceRuta etiqueta={`Total ${empresa.empresa}`} fila={empresa} />
+          </TableFooter>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FilaAvanceRuta({
+  etiqueta,
+  fila,
+  vendedores,
+}: {
+  etiqueta: string;
+  fila: TableroCenso["avance"]["porEmpresa"][number] | AvanceDeRuta;
+  vendedores?: string[];
+}) {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{etiqueta}</TableCell>
+      <TableCell className="text-muted-foreground">{vendedores ? vendedores.join(", ") || "Sin asignar" : ""}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatNumero(fila.maestra)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatNumero(fila.registrados)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatNumero(fila.porRegistrar)}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <Progress value={(fila.avance ?? 0) * 100} className="h-2" aria-label={`Avance de ${etiqueta}`} />
+          <span className="w-12 text-right text-xs tabular-nums">{formatPct(fila.avance ?? 0, 0)}</span>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
   const a = t.avance;
   const al = t.alertas;
@@ -527,46 +593,9 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
         />
       </div>
 
-      {a.porRuta.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Avance por ruta</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ruta</TableHead>
-                  <TableHead>Vendedor</TableHead>
-                  <TableHead className="text-right">Maestra</TableHead>
-                  <TableHead className="text-right">Registrados</TableHead>
-                  <TableHead className="text-right">Por registrar</TableHead>
-                  <TableHead className="w-40">Avance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {a.porRuta.map((r) => (
-                  <TableRow key={`${r.empresa}-${r.ruta}`}>
-                    <TableCell className="font-medium">
-                      {r.empresa} · Ruta {r.ruta}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{r.vendedores.join(", ") || "Sin asignar"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(r.maestra)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(r.registrados)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumero(r.porRegistrar)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Progress value={(r.avance ?? 0) * 100} className="h-2" aria-label={`Avance de la ruta ${r.ruta}`} />
-                        <span className="w-12 text-right text-xs tabular-nums">{formatPct(r.avance ?? 0, 0)}</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      {a.porEmpresa.map((e) => (
+        <AvanceDeEmpresa key={e.empresa} empresa={e} rutas={a.porRuta.filter((r) => r.empresa === e.empresa)} />
+      ))}
 
       <Card>
         <CardHeader>

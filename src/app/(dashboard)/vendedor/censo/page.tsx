@@ -28,7 +28,7 @@ export default async function CensoVendedorPage() {
 
       <PendientesDelVendedor datos={pendientes} />
 
-      <FormularioCenso definicion={definicion} nombreUsuario={usuario?.nombre ?? ""} />
+      <FormularioCenso definicion={definicion} nombreUsuario={usuario?.nombre ?? ""} usuarioId={usuario?.id ?? ""} />
 
       <Card>
         <CardHeader>
