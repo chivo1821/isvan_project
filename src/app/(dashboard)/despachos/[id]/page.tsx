@@ -12,22 +12,64 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DespachoItemCantidad } from "@/components/modules/despachos/despacho-item-cantidad";
-import { ESTADO_DESPACHO_META, ESTADO_RUTA_META, describirVehiculo, formatDateTime } from "@/lib/constants";
-import { getDespachoConDetalle } from "@/lib/mock-data";
+import { ReversarDialog } from "@/components/modules/rutas/reversar-dialog";
+import { apiGet } from "@/lib/api-client";
+import {
+  ESTADO_DESPACHO_META,
+  ESTADO_RUTA_META,
+  ROL_USUARIO_META,
+  describirVehiculo,
+  formatDateTime,
+  formatHora,
+} from "@/lib/constants";
+import { getDespachoConDetalle, type Despacho, type ReversoDespacho } from "@/lib/mock-data";
+import { getUsuarioActual } from "@/lib/session";
+
+const ALCANCE_REVERSO: Record<ReversoDespacho["alcance"], string> = {
+  RUTA: "Ruta reversada",
+  DESPACHO: "Sacado de la ruta",
+  REPARTIDOR: "No se pudo entregar",
+};
 
 export default async function DespachoDetallePage({ params }: PageProps<"/despachos/[id]">) {
   const { id } = await params;
-  const despacho = await getDespachoConDetalle(id);
+  const [despacho, usuarioActual, detalle] = await Promise.all([
+    getDespachoConDetalle(id),
+    getUsuarioActual(),
+    // El historial de reversos viene solo en el detalle de la API.
+    apiGet<Despacho>(`/despachos/${id}`).catch(() => null),
+  ]);
   if (!despacho) notFound();
+  const reversos = detalle?.reversos ?? [];
 
   const cantidadEditable = despacho.estado === "PENDIENTE_APROBACION" || despacho.estado === "APROBADO";
+  // Mismo criterio que POST /despachos/{id}/reversar.
+  const puedeReversar =
+    (usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS") &&
+    despacho.ruta != null &&
+    (despacho.ruta.estado === "PLANIFICADA" || despacho.ruta.estado === "EN_TRANSITO") &&
+    despacho.estado !== "ENTREGADO";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={despacho.numero}
         subtitle={`Documento ${despacho.numeroDocumento} · creado el ${formatDateTime(despacho.fechaCreacion)} por ${despacho.creadoPor.nombre}`}
-        actions={<StatusBadge {...ESTADO_DESPACHO_META[despacho.estado]} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            {puedeReversar && despacho.ruta && (
+              <ReversarDialog
+                endpoint={`/despachos/${despacho.id}/reversar`}
+                boton="Reversar despacho"
+                titulo={`Sacar ${despacho.numero} de la ruta ${despacho.ruta.numero}`}
+                descripcion="El despacho vuelve a «Aprobado» sin ruta, para armar otro viaje. Si la ruta se queda sin paradas pendientes, se cierra."
+                placeholder="Ej.: el cliente pidió cambiar el día de entrega"
+                exito={{ titulo: `${despacho.numero} salió de la ruta ${despacho.ruta.numero}`, descripcion: "Volvió a «Aprobado»." }}
+              />
+            )}
+            <StatusBadge {...ESTADO_DESPACHO_META[despacho.estado]} />
+          </div>
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -142,6 +184,37 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
           )}
         </CardContent>
       </Card>
+
+      {reversos.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Historial de reversos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {reversos.map((rv) => (
+              <div key={`${rv.fecha}-${rv.rutaId}`} className="rounded-lg border border-border p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge
+                      label={ALCANCE_REVERSO[rv.alcance]}
+                      tone={rv.alcance === "REPARTIDOR" ? "warning" : "neutral"}
+                    />
+                    <Link href={`/rutas/${rv.rutaId}`} className="text-primary hover:underline">
+                      {rv.rutaNumero}
+                    </Link>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{formatDateTime(rv.fecha)}</span>
+                </div>
+                <p className="mt-2 text-foreground">{rv.motivo}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {rv.usuario} ({ROL_USUARIO_META[rv.rol]?.label ?? rv.rol})
+                  {rv.llegadaEn && ` · el repartidor había llegado a las ${formatHora(rv.llegadaEn)}`}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {despacho.aprobaciones.length > 0 && (
         <Card>

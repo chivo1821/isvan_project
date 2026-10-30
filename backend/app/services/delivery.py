@@ -153,7 +153,9 @@ def guardar_distancias_de_ruta(cur, ruta_id: str) -> None:
 
 # Una fila por (ruta, cliente, moto) con entrega marcada en una ruta de
 # moto: en un Morocho (dos motos, ver app/services/morocho.py) cada
-# motorizado cobra la parada completa. La fecha del pago es la de la ultima
+# motorizado cobra la parada completa. Tambien en una ruta cancelada a mitad
+# de camino: lo que alcanzo a entregar se le paga (ver
+# app/services/reversos.py). La fecha del pago es la de la ultima
 # entrega de esa parada, en hora de Venezuela.
 # entregadoEn esta en UTC sin zona (ver app/core/fechas.py): primero se le
 # dice que es UTC y despues se pasa a Caracas. Con un solo AT TIME ZONE se
@@ -185,7 +187,6 @@ _PARADAS = f"""
     LEFT JOIN "LiquidacionDelivery" liq ON liq."id" = lp."liquidacionId"
     WHERE d."entregadoEn" IS NOT NULL
       AND {_FECHA_ENTREGA} BETWEEN %(desde)s AND %(hasta)s
-      AND r."estado" <> 'CANCELADA'
     GROUP BY r."id", r."numero", r."origenId", cl."id", v."id", v."placa", v."conductorNombre",
              dc."km", dc."fuente", lp."id", liq."id"
 """

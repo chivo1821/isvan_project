@@ -18,7 +18,7 @@ from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
-from app.services import cartera
+from app.services import cartera, reversos
 from app.services.ventas_import import ALIAS_COLUMNAS as ALIAS_VENTAS
 from app.services.ventas_import import describir_columnas, reconocer_columnas
 from app.core.numero import siguiente_numero, siguientes_numeros
@@ -32,6 +32,7 @@ from app.schemas import (
     DespachoCreate,
     ImportarExcelConfirmarRequest,
     ImportarExcelPreviewResponse,
+    ReversarRutaRequest,
 )
 
 router = APIRouter(prefix="/despachos", tags=["despachos"])
@@ -189,7 +190,21 @@ def obtener_despacho(despacho_id: str, usuario: dict = Depends(get_current_user)
         vehiculos_de_la_ruta = (row.pop("vehiculoId"), row.pop("vehiculoApoyoId"))
         if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, *vehiculos_de_la_ruta):
             raise HTTPException(404, "Despacho no encontrado")
-        return _con_items(cur, row)
+        return _con_reversos(cur, _con_items(cur, row))
+
+
+def _con_reversos(cur, despacho_row: dict) -> dict:
+    """Las veces que salio de una ruta sin entregarse (ver
+    app/services/reversos.py), de la mas reciente a la mas vieja."""
+    cur.execute(
+        'SELECT rv."fecha", rv."rutaId", r."numero" AS "rutaNumero", u."nombre" AS "usuario", '
+        'u."rol"::text AS "rol", rv."alcance"::text AS "alcance", rv."motivo", rv."llegadaEn" '
+        'FROM "DespachoReverso" rv JOIN "Ruta" r ON r."id" = rv."rutaId" '
+        'JOIN "Usuario" u ON u."id" = rv."usuarioId" '
+        'WHERE rv."despachoId" = %s ORDER BY rv."fecha" DESC',
+        (despacho_row["id"],),
+    )
+    return {**despacho_row, "reversos": cur.fetchall()}
 
 
 @router.post("", response_model=Despacho, status_code=201)
@@ -753,6 +768,39 @@ def aprobar_o_rechazar_despacho(
         despacho_row = cur.fetchone()
         conn.commit()
         return _con_items(cur, despacho_row)
+
+
+@router.post("/{despacho_id}/reversar", response_model=Despacho)
+def reversar_despacho(despacho_id: str, data: ReversarRutaRequest, usuario: dict = Depends(requiere_rol("DESPACHOS"))):
+    """El coordinador saca un despacho sin entregar de su ruta: vuelve a
+    "Aprobado" para otro viaje, con su motivo. Si la ruta se queda vacia se
+    cancela, y si estaba en camino con todo lo demas entregado, se completa
+    (ver app/services/reversos.py)."""
+    motivo = reversos.motivo_valido(data.motivo)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "rutaId" FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        fila = cur.fetchone()
+        if not fila:
+            raise HTTPException(404, "Despacho no encontrado")
+        if not fila["rutaId"]:
+            raise HTTPException(400, "Este despacho no esta en ninguna ruta")
+        ruta = reversos.ruta_activa_bloqueada(cur, fila["rutaId"])
+
+        # Ya con la ruta bloqueada: que siga en ella y sin entregar.
+        cur.execute(
+            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
+            (despacho_id, ruta["id"]),
+        )
+        despacho = cur.fetchone()
+        if not despacho:
+            raise HTTPException(409, "El despacho cambio de ruta mientras tanto: recarga la pagina")
+
+        reversos.liberar(cur, ruta["id"], [despacho], usuario["id"], motivo, "DESPACHO")
+        reversos.cerrar_ruta_si_corresponde(cur, ruta, usuario["id"], motivo, [despacho])
+        conn.commit()
+
+        cur.execute('SELECT * FROM "Despacho" WHERE "id" = %s', (despacho_id,))
+        return _con_reversos(cur, _con_items(cur, cur.fetchone()))
 
 
 @router.patch(

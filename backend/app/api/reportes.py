@@ -227,6 +227,22 @@ def reporte_rutas():
         for fila in cur.fetchall():
             por_ruta.setdefault(fila["rutaId"], []).append(fila)
 
+        # Los despachos que salieron de una ruta sin entregarse (ver
+        # app/services/reversos.py), para analizar los motivos.
+        cur.execute(
+            'SELECT rv."fecha", d."numero", cl."nombre" AS "cliente", r."numero" AS "ruta", v."placa", '
+            f'{_CONDUCTOR} AS "conductor", u."nombre" AS "usuario", u."rol"::text AS "rol", '
+            'rv."alcance"::text AS "alcance", rv."llegadaEn", rv."motivo" '
+            'FROM "DespachoReverso" rv '
+            'JOIN "Despacho" d ON d."id" = rv."despachoId" '
+            'JOIN "Cliente" cl ON cl."id" = d."destinoClienteId" '
+            'JOIN "Ruta" r ON r."id" = rv."rutaId" '
+            'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'JOIN "Usuario" u ON u."id" = rv."usuarioId" '
+            'ORDER BY rv."fecha" DESC'
+        )
+        reversos = cur.fetchall()
+
     filas = []
     for r in rutas:
         paradas = por_ruta.get(r["id"], [])
@@ -263,7 +279,24 @@ def reporte_rutas():
          "Promedio por parada (min)", "Creada por"],
         filas,
     )
+    _escribir_hoja(
+        libro.create_sheet("Reversos"),
+        ["Fecha", "Despacho", "Cliente", "N Ruta", "Vehiculo", "Conductor", "Reversado por", "Rol", "Desde",
+         "Habia llegado", "Motivo"],
+        [
+            [rv["fecha"], rv["numero"], rv["cliente"], rv["ruta"], rv["placa"] or "Sin vehículo", rv["conductor"],
+             rv["usuario"], rv["rol"], _ALCANCE_REVERSO[rv["alcance"]], rv["llegadaEn"], rv["motivo"]]
+            for rv in reversos
+        ],
+    )
     return _como_adjunto(libro, "rutas")
+
+
+_ALCANCE_REVERSO = {
+    "RUTA": "Ruta reversada (oficina)",
+    "DESPACHO": "Despacho reversado (oficina)",
+    "REPARTIDOR": "No se pudo entregar (repartidor)",
+}
 
 
 @router.get("/delivery.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
@@ -374,7 +407,7 @@ def resumen_rendimiento():
         entregas = totales["entregas"]
 
         cur.execute(
-            f'SELECT {_CONDUCTOR} AS "conductor", v."placa", '
+            f'SELECT v."id", {_CONDUCTOR} AS "conductor", v."placa", '
             '       COUNT(DISTINCT r."id") AS "viajes", '
             '       COUNT(d."id") FILTER (WHERE d."entregadoEn" IS NOT NULL) AS "entregas", '
             '       COALESCE(SUM(DISTINCT r."distanciaTotalKm"), 0) AS "km" '
@@ -388,6 +421,28 @@ def resumen_rendimiento():
             (f"{DIAS_DE_RENDIMIENTO} days",),
         )
         por_vehiculo = cur.fetchall()
+
+        # Paradas sacadas de la ruta sin entregar (ver app/services/reversos.py),
+        # en la fila del vehiculo. Las que marco el repartidor van en la de su
+        # propia moto (en un Morocho cada uno tiene lo suyo); las que reverso
+        # la oficina, en la de cada vehiculo de la ruta y aparte, para no
+        # cargarselas al repartidor (un accidente, un cambio de planes).
+        cur.execute(
+            'SELECT CASE WHEN rv."alcance" = \'REPARTIDOR\' AND u."vehiculoAsignadoId" IN (r."vehiculoId", r."vehiculoApoyoId") '
+            '            THEN u."vehiculoAsignadoId" ELSE v."id" END AS "vehiculoId", '
+            '       COUNT(*) FILTER (WHERE rv."alcance" = \'REPARTIDOR\') AS "noEntregados", '
+            '       COUNT(*) FILTER (WHERE rv."alcance" <> \'REPARTIDOR\') AS "reversadosOficina" '
+            'FROM "DespachoReverso" rv '
+            'JOIN "Ruta" r ON r."id" = rv."rutaId" '
+            'JOIN "Usuario" u ON u."id" = rv."usuarioId" '
+            'JOIN "Vehiculo" v ON v."id" IN (r."vehiculoId", r."vehiculoApoyoId") '
+            # La marca del repartidor cuenta una sola vez: en su vehiculo.
+            'WHERE rv."fecha" >= now() - %s::interval '
+            '  AND (rv."alcance" <> \'REPARTIDOR\' OR v."id" = r."vehiculoId") '
+            'GROUP BY 1',
+            (f"{DIAS_DE_RENDIMIENTO} days",),
+        )
+        reversos_por_vehiculo = {f["vehiculoId"]: f for f in cur.fetchall()}
 
     atencion_por_vehiculo: dict[str, list[float]] = {}
     for t in tiempos:
@@ -407,6 +462,8 @@ def resumen_rendimiento():
                 "viajes": v["viajes"],
                 "entregas": v["entregas"],
                 "distanciaKm": round(float(v["km"]), 1),
+                "noEntregados": reversos_por_vehiculo.get(v["id"], {}).get("noEntregados", 0),
+                "reversadosOficina": reversos_por_vehiculo.get(v["id"], {}).get("reversadosOficina", 0),
             }
             for v in por_vehiculo
         ],
