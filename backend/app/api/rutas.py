@@ -36,7 +36,7 @@ from app.services import configuracion as cfg
 from app.services.motorizados import actualizar_capacidad_motos
 from app.services import morocho
 from app.services import planificacion as pl
-from app.services.plan_rutas import sugerir_plan_rutas
+from app.services.plan_rutas import RADIO_MAX_PERMITIDO_KM, sugerir_plan_rutas
 from app.services.delivery import guardar_distancias_de_ruta
 from app.services.route_analysis import MINUTOS_POR_PARADA, LatLng, calcular_mejor_ruta_multi
 from app.services.suggest_vehiculo import sugerir_vehiculos
@@ -348,8 +348,10 @@ def sugerir_rutas(data: PlanRutasRequest):
     vehiculos libres, y estima km, tiempo y costo de cada viaje. No crea
     nada — el usuario elige una sugerencia y la confirma con POST /rutas,
     que es donde se calcula el trazado real."""
-    if data.radioMaxKm is not None and data.radioMaxKm <= 0:
-        raise HTTPException(400, "El radio maximo entre paradas debe ser mayor que 0")
+    if data.radioMaxKm is not None and not 0 < data.radioMaxKm <= RADIO_MAX_PERMITIDO_KM:
+        raise HTTPException(
+            400, f"La distancia maxima entre paradas debe estar entre 0 y {RADIO_MAX_PERMITIDO_KM:g} km"
+        )
     return sugerir_plan_rutas(
         data.despachoIds,
         data.mezclarRutasComerciales,

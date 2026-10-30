@@ -118,7 +118,8 @@ export function NuevaRutaWizard({
   // Qué tan lejos puede estar una parada de las demás del mismo viaje. Es el
   // freno contra viajes absurdos (un cliente en La Guaira y otro en
   // Charallave); bajarlo da viajes más compactos pero usa más vehículos.
-  const [radioMaxKm, setRadioMaxKm] = useState("12");
+  // Hasta 10 km: con más, el planificador armaba viajes muy extraños.
+  const [radioMaxKm, setRadioMaxKm] = useState("10");
   // Cuándo sale del almacén: define qué vehículos están libres y es la hora
   // de recogida que ve el repartidor.
   const [salida, setSalida] = useState(salidaInicial);
@@ -321,11 +322,10 @@ export function NuevaRutaWizard({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="2">2 km</SelectItem>
                     <SelectItem value="5">5 km</SelectItem>
                     <SelectItem value="8">8 km</SelectItem>
-                    <SelectItem value="12">12 km</SelectItem>
-                    <SelectItem value="20">20 km</SelectItem>
-                    <SelectItem value="30">30 km</SelectItem>
+                    <SelectItem value="10">10 km</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
