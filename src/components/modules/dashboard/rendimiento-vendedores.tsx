@@ -204,8 +204,8 @@ export function RendimientoVendedoresCard({ rendimiento: inicial }: { rendimient
             <div className="mt-6 space-y-2">
               <MapasVisitasVendedores rendimiento={r} />
               <p className="text-xs text-muted-foreground">
-                Cada punto es dónde estaba el teléfono al empezar la visita, con el color de su vendedor. Toca un
-                punto para ver el cliente y la hora.
+                Cada punto es dónde estaba el teléfono al empezar la visita, con la marca (color y forma) de su
+                vendedor. Toca un punto para ver el cliente y la hora.
               </p>
             </div>
           </>
