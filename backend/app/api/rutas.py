@@ -603,23 +603,52 @@ def reversar_ruta(
     motivo = reversos.motivo_valido(data.motivo)
     with get_connection() as conn, conn.cursor() as cur:
         ruta = reversos.ruta_activa_bloqueada(cur, ruta_id)
-        cur.execute(
-            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "rutaId" = %s ORDER BY "ordenEnRuta"',
-            (ruta_id,),
-        )
-        despachos = cur.fetchall()
-        pendientes = [d for d in despachos if d["estado"] != "ENTREGADO"]
-        if not pendientes:
-            raise HTTPException(400, f'Todas las paradas de la ruta {ruta["numero"]} ya se entregaron')
-
-        reversos.liberar(cur, ruta_id, pendientes, usuario["id"], motivo, "RUTA")
-        reversos.cancelar_ruta(
-            cur, ruta, usuario["id"], motivo, pendientes, hubo_entregas=len(pendientes) < len(despachos)
-        )
+        _cancelar_con_pendientes(cur, ruta, usuario["id"], motivo, "RUTA")
         conn.commit()
 
         cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
         return _con_detalle(cur, cur.fetchone())
+
+
+def _cancelar_con_pendientes(cur, ruta: dict, usuario_id: str, motivo: str, alcance: str) -> None:
+    """Cancela la ruta (ya bloqueada) y devuelve a "Aprobado" lo que no se
+    entrego; lo entregado se queda en ella."""
+    cur.execute(
+        'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "rutaId" = %s ORDER BY "ordenEnRuta"',
+        (ruta["id"],),
+    )
+    despachos = cur.fetchall()
+    pendientes = [d for d in despachos if d["estado"] != "ENTREGADO"]
+    if not pendientes:
+        raise HTTPException(400, f'Todas las paradas de la ruta {ruta["numero"]} ya se entregaron')
+
+    reversos.liberar(cur, ruta["id"], pendientes, usuario_id, motivo, alcance)
+    reversos.cancelar_ruta(cur, ruta, usuario_id, motivo, pendientes, hubo_entregas=len(pendientes) < len(despachos))
+
+
+@router.post(
+    "/{ruta_id}/no-completada",
+    response_model=Ruta,
+    dependencies=[Depends(requiere_rol("REPARTIDOR"))],
+)
+def marcar_ruta_no_completada(ruta_id: str, data: ReversarRutaRequest, usuario: dict = Depends(get_current_user)):
+    """El repartidor no puede seguir el viaje (se accidento, se dano la
+    moto...), aunque ya haya entregado algo: la ruta se cancela con su
+    motivo, como la reversa la oficina, y lo que no entrego vuelve a
+    "Aprobado" para otro viaje. Lo entregado se queda y se le paga. Cuenta en
+    sus "No entregados" (ver reportes.py), igual que cada parada que no
+    entrega; si lo hace un ADMIN desde esta pantalla, cuenta como de la
+    oficina."""
+    motivo = reversos.motivo_valido(data.motivo)
+    with get_connection() as conn, conn.cursor() as cur:
+        ruta = reversos.ruta_activa_bloqueada(cur, ruta_id)
+        _verificar_ruta_propia(usuario, ruta)
+        if ruta["estado"] != "EN_TRANSITO":
+            raise HTTPException(400, "La ruta no esta en transito")
+        _cancelar_con_pendientes(cur, ruta, usuario["id"], motivo, "REPARTIDOR" if es_repartidor(usuario) else "RUTA")
+        conn.commit()
+
+        return _sin_trazado(cur, ruta_id)
 
 
 @router.post(
