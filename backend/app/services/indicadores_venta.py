@@ -149,6 +149,7 @@ def completar(fila: dict) -> dict:
     r["filas"] = int(fila["filas"])
     r["pctDevolucion"] = _div(r["devoluciones"], r["ventaBruta"])
     r["precioLitro"] = _div(r["ventaNeta"], r["litros"])
+    r["precioUnidad"] = _div(r["ventaNeta"], r["unidades"])
     # Margen tal como lo define el documento: neta - costo, sobre la venta
     # neta TOTAL (incluida la que no tiene costo). Por eso la pantalla lo
     # muestra siempre junto a "venta sin costo".
