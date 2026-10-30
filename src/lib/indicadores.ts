@@ -32,6 +32,7 @@ export type Indicadores = {
   /** Fracción 0..1. */
   pctDevolucion: number | null;
   precioLitro: number | null;
+  precioUnidad: number | null;
   margen: number;
   /** Fracción 0..1. */
   margenPct: number | null;

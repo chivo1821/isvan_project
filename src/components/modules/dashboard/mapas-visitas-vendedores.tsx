@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { estiloMarca, MARCA_OTROS, marcaVendedor } from "@/lib/marcas-vendedor";
 import type { Empresa } from "@/lib/mock-data";
 import type { RendimientoVendedores } from "@/lib/vendedor";
 
@@ -15,20 +16,16 @@ const PuntoVisitaVendedor = dynamic(
   { ssr: false }
 );
 
-// Un color por vendedor, en orden fijo (el de la tabla), el mismo en las dos
-// empresas y con cualquier filtro de fechas. Paleta categórica validada para
-// daltonismo; a partir del noveno vendedor van en gris como «otros».
-const COLORES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
-const COLOR_OTROS = "#8a8a86";
 const EMPRESAS: Empresa[] = ["ISVAN", "TRALOG"];
 
-/** Dónde se hicieron las visitas del período, con un color por vendedor.
- * Una empresa a la vez (se cambia arriba del mapa) para no saturar la
- * vista. Sale de la ubicación del teléfono al empezar cada visita; las que
+/** Dónde se hicieron las visitas del período, con una marca (color y forma)
+ * por vendedor en orden fijo (el de la tabla): la misma en las dos empresas
+ * y con cualquier filtro de fechas. Una empresa a la vez (se cambia arriba
+ * del mapa) para no saturar la vista. Sale de la ubicación del teléfono al empezar cada visita; las que
  * no tomaron GPS no aparecen. */
 export function MapasVisitasVendedores({ rendimiento: r }: { rendimiento: RendimientoVendedores }) {
   const [empresa, setEmpresa] = useState<Empresa>("ISVAN");
-  const colorDe = new Map(r.porVendedor.map((v, i) => [v.vendedorId, COLORES[i] ?? COLOR_OTROS]));
+  const marcaDe = new Map(r.porVendedor.map((v, i) => [v.vendedorId, marcaVendedor(i)]));
   const nombreDe = new Map(r.porVendedor.map((v) => [v.vendedorId, v.nombre]));
 
   const visitas = r.visitas.filter((v) => v.empresa === empresa);
@@ -74,7 +71,7 @@ export function MapasVisitasVendedores({ rendimiento: r }: { rendimiento: Rendim
               key={`${v.vendedorId}-${v.llegadaEn}-${i}`}
               visita={v}
               vendedor={nombreDe.get(v.vendedorId) ?? "Vendedor"}
-              color={colorDe.get(v.vendedorId) ?? COLOR_OTROS}
+              marca={marcaDe.get(v.vendedorId) ?? MARCA_OTROS}
               distanciaMaxM={r.distanciaMaxM}
             />
           ))}
@@ -84,11 +81,7 @@ export function MapasVisitasVendedores({ rendimiento: r }: { rendimiento: Rendim
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {leyenda.map((v) => (
             <li key={v.vendedorId} className="flex items-center gap-1.5">
-              <span
-                className="inline-block size-2.5 rounded-full"
-                style={{ backgroundColor: colorDe.get(v.vendedorId) }}
-                aria-hidden
-              />
+              <span style={estiloMarca(marcaDe.get(v.vendedorId) ?? MARCA_OTROS, 10)} aria-hidden />
               <span className="text-foreground">{v.nombre}</span> ({v.puntos})
             </li>
           ))}

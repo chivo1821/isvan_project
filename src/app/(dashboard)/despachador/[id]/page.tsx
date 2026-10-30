@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ViajeEnCurso } from "@/components/modules/despachador/viaje-en-curso";
-import { IniciarRutaButton } from "@/components/modules/despachador/despachador-actions";
+import { IniciarRutaButton, NoCompletarRutaButton } from "@/components/modules/despachador/despachador-actions";
 import { ESTADO_RUTA_META, describirVehiculo, formatDateTime } from "@/lib/constants";
 import { getRutaConDetalle } from "@/lib/mock-data";
 
@@ -31,6 +31,9 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
           )}
         </div>
         {ruta.estado === "PLANIFICADA" && <IniciarRutaButton rutaId={ruta.id} />}
+        {ruta.estado === "EN_TRANSITO" && ruta.despachos.some((d) => d.estado !== "ENTREGADO") && (
+          <NoCompletarRutaButton rutaId={ruta.id} />
+        )}
       </div>
 
       <ViajeEnCurso

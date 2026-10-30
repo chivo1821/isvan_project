@@ -57,8 +57,10 @@ ALMACEN_BASE_ID = "alm-catia"
 # Salto maximo (km en linea recta) entre una parada y la mas cercana de las
 # que ya estan en el grupo. Es el freno principal contra viajes absurdos:
 # sin esto, la afinidad por ruta comercial terminaba juntando clientes a
-# decenas de km entre si. Se puede ajustar por peticion (radio_max_km).
-RADIO_MAX_ENTRE_PARADAS_KM = 12.0
+# decenas de km entre si. Se puede ajustar por peticion (radio_max_km) hasta
+# el tope: con radios mas largos salian viajes muy extraños (2026-10-30).
+RADIO_MAX_ENTRE_PARADAS_KM = 10.0
+RADIO_MAX_PERMITIDO_KM = 10.0
 
 # Ademas del salto, se limita cuanto puede estirarse el grupo completo:
 # ninguna parada puede quedar a mas de (radio * este factor) de la semilla.

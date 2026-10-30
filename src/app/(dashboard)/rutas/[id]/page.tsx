@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
 import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
 import { RecalcularRutaButton } from "@/components/modules/rutas/recalcular-ruta-button";
-import { ReversarRutaButton } from "@/components/modules/rutas/reversar-ruta-button";
+import { ReversarDialog } from "@/components/modules/rutas/reversar-dialog";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -27,10 +27,13 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
   if (!ruta) notFound();
 
   const rutaActiva = ruta.estado === "PLANIFICADA" || ruta.estado === "EN_TRANSITO";
-  // Mismo criterio que la API (POST /rutas/{id}/reversar): mientras no haya
-  // pasado nada en la calle. Una parada con llegada o entrega ya no se deshace.
-  const sinMarcas = ruta.despachos.every((d) => !d.llegadaEn && !d.entregadoEn && d.estado !== "ENTREGADO");
-  const puedeReversar = usuarioActual?.rol === "ADMIN" && rutaActiva && sinMarcas;
+  // Mismo criterio que la API (backend/app/services/reversos.py): el
+  // coordinador saca de una ruta activa lo que no se entregó; lo entregado
+  // se queda.
+  const pendientes = ruta.despachos.filter((d) => d.estado !== "ENTREGADO");
+  const entregadas = ruta.despachos.length - pendientes.length;
+  const esCoordinador = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
+  const puedeReversar = esCoordinador && rutaActiva && pendientes.length > 0;
   const reversada = ruta.estado === "CANCELADA" && ruta.canceladaEn;
   // Reprogramar y asignar vehículo: solo mientras no salió, y solo quien
   // arma rutas (la API exige DESPACHOS; ADMIN siempre pasa).
@@ -64,7 +67,23 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
             )}
             {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}
             {puedeReversar && (
-              <ReversarRutaButton rutaId={ruta.id} numero={ruta.numero} paradas={ruta.despachos.length} />
+              <ReversarDialog
+                endpoint={`/rutas/${ruta.id}/reversar`}
+                boton="Reversar ruta"
+                titulo={`Reversar la ruta ${ruta.numero}`}
+                descripcion={
+                  <>
+                    La ruta queda cancelada y sus {pendientes.length} despacho(s) sin entregar vuelven a «Aprobado»
+                    sin ruta, para armar otro viaje.
+                    {entregadas > 0 && ` Las ${entregadas} entrega(s) ya hechas se conservan.`} El vehículo queda
+                    libre y el repartidor deja de verla. No se puede deshacer.
+                  </>
+                }
+                exito={{
+                  titulo: `Ruta ${ruta.numero} reversada`,
+                  descripcion: `${pendientes.length} despacho(s) volvieron a «Aprobado», listos para otra ruta.`,
+                }}
+              />
             )}
             {ruta.vehiculoApoyo && <StatusBadge tone="info" label="Morocho" />}
             <StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />
@@ -99,8 +118,13 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
               {ruta.motivoCancelacion && <p className="text-muted-foreground">Motivo: {ruta.motivoCancelacion}</p>}
               {ruta.despachosAlCancelar && ruta.despachosAlCancelar.length > 0 && (
                 <p className="text-muted-foreground">
-                  Llevaba {ruta.despachosAlCancelar.length} despacho(s), que volvieron a «Aprobado» para otra
-                  ruta: {ruta.despachosAlCancelar.join(", ")}.
+                  Llevaba {ruta.despachosAlCancelar.length} despacho(s) sin entregar, que volvieron a «Aprobado»
+                  para otra ruta: {ruta.despachosAlCancelar.join(", ")}.
+                </p>
+              )}
+              {ruta.despachos.length > 0 && (
+                <p className="text-muted-foreground">
+                  Las {ruta.despachos.length} parada(s) que ya se habían entregado se conservan en la ruta.
                 </p>
               )}
             </div>
@@ -129,21 +153,37 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
           </CardHeader>
           <CardContent className="space-y-3">
             {ruta.despachos.map((d, index) => (
-              <Link
+              <div
                 key={d.id}
-                href={`/despachos/${d.id}`}
-                className="flex items-start justify-between gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:border-primary/40"
+                className="space-y-2 rounded-lg border border-border p-3 text-sm transition-colors hover:border-primary/40"
               >
-                <div>
-                  <p className="font-medium text-foreground">
-                    {index + 1}. {d.destinoCliente.nombre}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {d.numero} · {d.destinoCliente.ciudad}
-                  </p>
+                <div className="flex items-start justify-between gap-2">
+                  <Link href={`/despachos/${d.id}`} className="hover:underline">
+                    <p className="font-medium text-foreground">
+                      {index + 1}. {d.destinoCliente.nombre}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {d.numero} · {d.destinoCliente.ciudad}
+                    </p>
+                  </Link>
+                  <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
                 </div>
-                <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
-              </Link>
+                {esCoordinador && rutaActiva && d.estado !== "ENTREGADO" && (
+                  <ReversarDialog
+                    endpoint={`/despachos/${d.id}/reversar`}
+                    boton="Sacar de la ruta"
+                    titulo={`Sacar ${d.numero} de la ruta ${ruta.numero}`}
+                    descripcion={
+                      <>
+                        {d.destinoCliente.nombre}: el despacho vuelve a «Aprobado» sin ruta, para otro viaje.
+                        {pendientes.length === 1 && " Es el último sin entregar, así que la ruta se cierra."}
+                      </>
+                    }
+                    placeholder="Ej.: el cliente pidió cambiar el día de entrega"
+                    exito={{ titulo: `${d.numero} salió de la ruta ${ruta.numero}`, descripcion: "Volvió a «Aprobado»." }}
+                  />
+                )}
+              </div>
             ))}
           </CardContent>
         </Card>

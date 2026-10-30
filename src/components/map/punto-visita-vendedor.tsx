@@ -1,34 +1,50 @@
 "use client";
 
-import { CircleMarker, Popup } from "react-leaflet";
+import L from "leaflet";
+import { Marker, Popup } from "react-leaflet";
 import { formatDateTime, formatHora } from "@/lib/constants";
+import { estiloMarca, estiloMarcaHtml, type MarcaVendedor } from "@/lib/marcas-vendedor";
 import type { VisitaEnMapa } from "@/lib/vendedor";
 
+// Un ícono por marca, compartido por todos los puntos del mismo vendedor.
+const iconos = new Map<string, L.DivIcon>();
+function icono(m: MarcaVendedor) {
+  const clave = `${m.forma}-${m.color}`;
+  let i = iconos.get(clave);
+  if (!i) {
+    i = L.divIcon({
+      className: "",
+      html: `<span style="${estiloMarcaHtml(m, 14)}"></span>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8],
+    });
+    iconos.set(clave, i);
+  }
+  return i;
+}
+
 /** Una visita en el mapa del resumen: dónde estaba el teléfono al
- * empezarla, con el color de su vendedor. El anillo blanco separa los
- * puntos que se pisan. */
+ * empezarla, con la marca (color y forma) de su vendedor. El anillo blanco
+ * separa los puntos que se pisan. */
 export function PuntoVisitaVendedor({
   visita,
   vendedor,
-  color,
+  marca,
   distanciaMaxM,
 }: {
   visita: VisitaEnMapa;
   vendedor: string;
-  color: string;
+  marca: MarcaVendedor;
   distanciaMaxM: number;
 }) {
   const lejos = visita.distanciaClienteM != null && visita.distanciaClienteM > distanciaMaxM;
   return (
-    <CircleMarker
-      center={[visita.lat, visita.lng]}
-      radius={6}
-      pathOptions={{ color: "#ffffff", weight: 2, fillColor: color, fillOpacity: 0.9 }}
-    >
+    <Marker position={[visita.lat, visita.lng]} icon={icono(marca)}>
       <Popup>
         <div className="space-y-1 text-sm">
           <p className="flex items-center gap-1.5 font-medium text-foreground">
-            <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+            <span style={estiloMarca(marca, 10)} aria-hidden />
             {vendedor}
           </p>
           <p className="text-foreground">
@@ -45,6 +61,6 @@ export function PuntoVisitaVendedor({
           )}
         </div>
       </Popup>
-    </CircleMarker>
+    </Marker>
   );
 }
