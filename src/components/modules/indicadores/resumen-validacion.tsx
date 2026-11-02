@@ -224,6 +224,13 @@ export function ResumenValidacion({ resumen: r }: { resumen: Resumen }) {
           )
         )}
 
+        {(r.tiposConservados ?? 0) > 0 && (
+          <Chequeo
+            nivel="info"
+            titulo={`El archivo no trae el tipo de cliente: ${formatNumero(r.tiposConservados ?? 0)} cliente(s) conservan el que ya tenían`}
+          />
+        )}
+
         {r.rutas.primeraCarga ? (
           <Chequeo
             nivel="info"

@@ -670,11 +670,26 @@ def analizar_carga(
         return {"carga": None, "resumen": None, "errores": extracto.errores[:1000], "totalErrores": len(extracto.errores)}
 
     with get_connection() as conn, conn.cursor() as cur:
+        conservados, sin_tipo = _completar_tipos(cur, empresa, extracto)
+        if sin_tipo:
+            raise HTTPException(
+                400,
+                {
+                    "mensaje": (
+                        f"Falta el tipo de cliente de {len(sin_tipo)} cliente(s) que todavia no estan cargados. "
+                        "Agrega la columna al archivo (en cualquier posicion) y vuelve a subirlo."
+                    ),
+                    "columnasFaltantes": ["tipo de cliente"],
+                    "columnasReconocidas": extracto.columnas,
+                    "clientesSinTipo": sin_tipo[:LIMITE_LISTA],
+                },
+            )
         cur.execute(
             'DELETE FROM "VentaCarga" WHERE "estado" = \'PENDIENTE\' AND "subidaEn" < now() - %s::interval',
             (f"{HORAS_CARGA_PENDIENTE} hours",),
         )
         resumen_carga = _validar(cur, empresa, extracto)
+        resumen_carga["tiposConservados"] = conservados
         dimensiones = {
             "clientes": [{"codigo": codigo, **datos} for codigo, datos in extracto.clientes.items()],
             "productos": [{"codigo": str(codigo), **datos} for codigo, datos in extracto.productos.items()],
@@ -705,6 +720,29 @@ def analizar_carga(
         carga = _obtener_carga(cur, carga_id)
 
     return {"carga": carga, "resumen": resumen_carga, "errores": [], "totalErrores": 0}
+
+
+def _completar_tipos(cur, empresa: str, extracto: ExtractoVentas) -> tuple[int, list[dict]]:
+    """El reporte del sistema a veces sale sin la columna de tipo de cliente.
+    Entonces cada cliente conserva el tipo que ya tiene guardado (tambien uno
+    corregido a mano); sin esto, la carga lo borraria. Devuelve cuantos lo
+    conservaron y los clientes nuevos, que no tienen de donde sacarlo: un
+    tipo inventado no se pone nunca."""
+    faltan = [codigo for codigo, cliente in extracto.clientes.items() if not cliente["tipo"]]
+    if not faltan:
+        return 0, []
+    cur.execute(
+        'SELECT "codigo", "tipo" FROM "VentaCliente" WHERE "empresa" = %s AND "codigo" = ANY(%s)',
+        (empresa, faltan),
+    )
+    guardados = {r["codigo"]: r["tipo"] for r in cur.fetchall() if r["tipo"]}
+    sin_tipo = []
+    for codigo in faltan:
+        if codigo in guardados:
+            extracto.clientes[codigo]["tipo"] = guardados[codigo]
+        else:
+            sin_tipo.append({"codigo": codigo, "nombre": extracto.clientes[codigo]["nombre"]})
+    return len(faltan) - len(sin_tipo), sorted(sin_tipo, key=lambda c: c["nombre"])
 
 
 def _carga_para_actualizar(cur, carga_id: str, estado_esperado: str) -> dict:

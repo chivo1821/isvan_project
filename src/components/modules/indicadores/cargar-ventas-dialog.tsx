@@ -162,8 +162,9 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
           <DialogTitle>Cargar ventas</DialogTitle>
           <DialogDescription>
             El extracto del sistema de ventas tal como sale, con o sin encabezado y en cualquier orden de columnas: sin
-            encabezado, cada columna se reconoce por su contenido. Tiene que traer todas las columnas obligatorias,
-            incluido el tipo de cliente; el costo va en la hoja «precio de compras». Primero se valida; las cifras cuentan
+            encabezado, cada columna se reconoce por su contenido. Tiene que traer todas las columnas obligatorias; el
+            tipo de cliente puede faltar si los clientes ya están cargados (conservan el suyo). El costo va en la hoja
+            «precio de compras». Primero se valida; las cifras cuentan
             recién al confirmar. Cada carga reemplaza solo los días que trae: para agregar meses no hace falta volver a subir los que ya están.
           </DialogDescription>
         </DialogHeader>
@@ -241,6 +242,18 @@ export function CargarVentasDialog({ empresa: empresaInicial }: { empresa: Empre
                 {faltantes.columnasFaltantes.includes("tipo de cliente") &&
                   " Valores del tipo de cliente: TRADICIONAL, MODERNO o DISTRIBUIDORES."}
               </p>
+              {faltantes.clientesSinTipo && faltantes.clientesSinTipo.length > 0 && (
+                <p className="text-muted-foreground">
+                  Los clientes que ya están cargados conservan su tipo; faltan solo los nuevos:{" "}
+                  {faltantes.clientesSinTipo
+                    .slice(0, 10)
+                    .map((c) => `${c.nombre} (${c.codigo})`)
+                    .join(", ")}
+                  {faltantes.clientesSinTipo.length > 10 &&
+                    ` y ${formatNumero(faltantes.clientesSinTipo.length - 10)} más`}
+                  .
+                </p>
+              )}
               {faltantes.columnasReconocidas.length > 0 && (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer select-none hover:text-foreground">
