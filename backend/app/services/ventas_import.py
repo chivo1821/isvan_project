@@ -57,10 +57,13 @@ ALIAS_COLUMNAS: dict[str, list[str]] = {
     "proveedor": ["proveedor", "provedor", "codigo_proveedor"],
     "costo_caja": ["pc", "costo_caja_usd"],
 }
+# El tipo de cliente no es obligatorio: el reporte del sistema a veces sale
+# sin esa columna, y entonces cada cliente conserva el tipo que ya tiene
+# guardado (ver _completar_tipos en app/api/indicadores.py).
 CAMPOS_REQUERIDOS = [
     "ruta", "codigo_cliente", "cliente", "codigo_producto", "producto", "grupo",
     "num_doc", "fecha", "cajas", "unidades", "litros", "monto_bs", "monto_usd",
-    "tipo_doc", "tipo_cliente",
+    "tipo_doc",
 ]
 
 # FA (factura) y NE (nota de entrega) son ventas; DV y DN, devoluciones con
@@ -455,9 +458,14 @@ def reconocer_columnas(filas: list[tuple], campos_requeridos: list[str] | None =
                 break
 
     # Codigo + nombre, de producto y de cliente: cada codigo tiene un solo
-    # nombre y casi cada nombre un solo codigo (una cadena repite nombre con
-    # varios codigos de sucursal). El producto es el que tiene presentacion
-    # en el nombre ("18X90ML", "1X3.6L").
+    # nombre y la mayoria de los nombres un solo codigo. Una cadena repite
+    # nombre con varios codigos de sucursal, y en un extracto de un solo dia
+    # pesa mucho: el 02-11 de ISVAN trae 18 sucursales de Farmatodo, 20
+    # nombres para 44 codigos. Por eso la exigencia es floja (un cuarto de
+    # nombres distintos, la mitad con un solo codigo); una categoria como la
+    # zona o el tipo de cliente tiene muy pocos valores, y si alguna se cuela
+    # pierde contra el nombre en la preferencia. El producto es el que tiene
+    # presentacion en el nombre ("18X90ML", "1X3.6L").
     pares = [
         (d, n)
         for d in libres
@@ -465,13 +473,27 @@ def reconocer_columnas(filas: list[tuple], campos_requeridos: list[str] | None =
         for n in libres
         if n is not d
         and n.son_textos
-        and n.distintos >= max(2, 0.5 * d.distintos)
+        and n.distintos >= max(2, 0.25 * d.distintos)
         and _determina(d, n) >= 0.98
-        and _determina(n, d) >= 0.8
+        and _determina(n, d) >= 0.5
+    ]
+    # El numero de documento tambien fija el nombre del cliente (cada
+    # documento es de un solo cliente), pero ademas fija el codigo del
+    # cliente: entre dos codigos para el mismo nombre, el que fija al otro es
+    # el documento, no el codigo.
+    pares = [
+        (d, n)
+        for d, n in pares
+        if not any(
+            n2 is n and d2.distintos < d.distintos and _determina(d, d2) >= 0.98 for d2, n2 in pares
+        )
     ]
     # Entre dos nombres posibles para el mismo codigo gana el que no empieza
-    # con numeros (el nombre limpio, no "codigo + nombre").
-    preferencia = lambda par: (par[0].distintos, -par[1].empieza_con_digito, -par[1].indice)  # noqa: E731
+    # con numeros (el nombre limpio, no "codigo + nombre"), despues el de mas
+    # valores distintos (el nombre, no una categoria del cliente).
+    preferencia = lambda par: (  # noqa: E731
+        par[0].distintos, -par[1].empieza_con_digito, par[1].distintos, -par[1].indice
+    )
     de_producto = [par for par in pares if par[1].es_nombre_de_producto]
     if de_producto:
         codigo, nombre = max(de_producto, key=preferencia)

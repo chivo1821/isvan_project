@@ -272,6 +272,9 @@ export type ColumnasFaltantes = {
   mensaje: string;
   columnasFaltantes: string[];
   columnasReconocidas: ColumnaLeida[];
+  /** Solo si falta el tipo de cliente: los clientes nuevos que no lo tienen
+   * guardado (a los ya cargados se les conserva el suyo). */
+  clientesSinTipo?: { codigo: string; nombre: string }[];
 };
 
 export function esColumnasFaltantes(datos: unknown): datos is ColumnasFaltantes {
@@ -327,6 +330,9 @@ export type ResumenValidacion = {
   productosNuevos: { total: number; muestra: { codigo: string; nombre: string; grupo: string }[] };
   productosSinCosto: { total: number; ventaNeta: number; productos: ProductoAlerta[] };
   rutas: { enArchivo: string[]; noReconocidas: string[]; primeraCarga: boolean };
+  /** Clientes sin tipo en el archivo que conservaron el que ya tenían
+   * (opcional: las cargas anteriores no lo guardaban). */
+  tiposConservados?: number;
   tasa: {
     mediana: number | null;
     filasFueraDeRango: number;
