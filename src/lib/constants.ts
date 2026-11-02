@@ -64,7 +64,26 @@ export const INICIO_POR_ROL: Record<RolUsuario, string> = {
   REPARTIDOR: "/despachador",
   VENDEDOR: "/vendedor",
   COBRANZAS: "/cobranzas",
+  SUPERVISOR: "/supervisor",
 };
+
+// Los roles que solo entran a ciertas pantallas: fuera de ellas,
+// (dashboard)/layout.tsx los devuelve a la primera. El SUPERVISOR tiene dos:
+// el rendimiento de los vendedores y el censo. La API los acota de verdad
+// (ROUTERS_POR_ROL en backend/app/main.py).
+export const MODULOS_POR_ROL: Partial<Record<RolUsuario, string[]>> = {
+  REPARTIDOR: ["/despachador"],
+  VENDEDOR: ["/vendedor"],
+  COBRANZAS: ["/cobranzas"],
+  SUPERVISOR: ["/supervisor", "/censo"],
+};
+
+/** Si `ruta` es la pantalla `modulo` o una de las suyas (sin mirar la
+ * consulta: "/censo?vista=avance" es el censo). */
+export function enModulo(ruta: string, modulo: string) {
+  const camino = ruta.split(/[?#]/)[0];
+  return camino === modulo || camino.startsWith(`${modulo}/`);
+}
 
 /** "0414-1234567" a partir de los 11 dígitos guardados. */
 export function formatTelefono(telefono: string | null | undefined): string {
@@ -85,6 +104,7 @@ export const ROL_USUARIO_META: Record<RolUsuario, StatusMeta> = {
   REPARTIDOR: { label: "Repartidor", tone: "success" },
   VENDEDOR: { label: "Vendedor", tone: "info" },
   COBRANZAS: { label: "Cobranzas", tone: "success" },
+  SUPERVISOR: { label: "Supervisor", tone: "neutral" },
 };
 
 export const TIPO_VEHICULO_META: Record<TipoVehiculo, { label: string }> = {

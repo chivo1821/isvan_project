@@ -6,13 +6,15 @@
   de 4,5 MB y una foto puede pesar hasta 10 MB; despues POST /censo manda las
   respuestas con la clave de cada foto.
 - El ADMIN revisa: la lista con filtros, el detalle con fotos y el Excel.
+  El SUPERVISOR de los vendedores ve lo mismo, sin tocar nada: descartar
+  duplicados (y la maestra, en app/api/maestra.py) sigue siendo del ADMIN.
 
 La definicion sale del XLSForm (ver app/services/xlsform.py y
 scripts/importar_formulario.py). El servidor vuelve a validar cada envio con
 las mismas reglas que el navegador (app/services/formulario.py).
 
-Este router esta abierto al VENDEDOR (ver ROUTERS_POR_ROL en
-app/main.py), asi que cada endpoint de revision lleva su requiere_rol("ADMIN").
+Este router esta abierto al VENDEDOR y al SUPERVISOR (ver ROUTERS_POR_ROL en
+app/main.py), asi que cada endpoint de revision lleva su requiere_rol.
 """
 
 from __future__ import annotations
@@ -31,8 +33,9 @@ from pydantic import BaseModel, Field
 from app.api.reportes import _como_adjunto, _escribir_hoja
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
-from app.core.fechas import a_caracas, ahora_utc
+from app.core.fechas import a_caracas, ahora_utc, hoy_caracas
 from app.schemas import en_utc
+from app.services import activacion_maestra as am
 from app.services import almacen_fotos as af
 from app.services import censo_clientes as cc
 from app.services import censo_tablero as tc
@@ -86,7 +89,7 @@ def _prefijo_de(usuario: dict) -> str:
     return "censo/" + re.sub(r"[^A-Za-z0-9_-]", "_", usuario["id"]) + "/"
 
 
-@router.get("/formulario", dependencies=[Depends(requiere_rol("VENDEDOR"))])
+@router.get("/formulario", dependencies=[Depends(requiere_rol("VENDEDOR", "SUPERVISOR"))])
 def formulario():
     """La definicion del formulario, para mostrarlo."""
     return _definicion()
@@ -282,7 +285,7 @@ def mis_censos(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
     return [{**f, "recibidoEn": en_utc(f["recibidoEn"])} for f in filas]
 
 
-# ---------- Revision (ADMIN) ----------
+# ---------- Revision (ADMIN y SUPERVISOR) ----------
 
 
 def _filtros_sql(
@@ -350,7 +353,7 @@ def _con_zona(fila: dict) -> dict:
     return {k: en_utc(v) if isinstance(v, datetime) else v for k, v in fila.items()}
 
 
-@router.get("", dependencies=[Depends(requiere_rol("ADMIN"))])
+@router.get("", dependencies=[Depends(requiere_rol("SUPERVISOR"))])
 def listar(f: _Filtros = Depends(), pagina: int = Query(1, ge=1)):
     """Los censos con filtros, del mas nuevo al mas viejo, mas los valores
     para los filtros."""
@@ -402,13 +405,13 @@ def _cargar(cur, censo_id: str) -> dict:
 
 
 def _puede_ver(usuario: dict, censo: dict) -> None:
-    if usuario["rol"] != "ADMIN" and censo["usuarioId"] != usuario["id"]:
+    if usuario["rol"] not in ("ADMIN", "SUPERVISOR") and censo["usuarioId"] != usuario["id"]:
         raise HTTPException(403, "No tienes permiso para ver este censo")
 
 
 @router.get("/fotos/{foto_id}")
-def foto(foto_id: str, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
-    """Una foto: la ve el ADMIN o quien envio el censo."""
+def foto(foto_id: str, usuario: dict = Depends(requiere_rol("VENDEDOR", "SUPERVISOR"))):
+    """Una foto: la ven el ADMIN, el SUPERVISOR o quien envio el censo."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             'SELECT f."clave", f."tipo", c."usuarioId" FROM "CensoFoto" f JOIN "Censo" c ON c."id" = f."censoId" '
@@ -459,7 +462,7 @@ def _valor_excel(pregunta: dict, valor: object, etiquetas: dict[str, dict[str, s
     return valor
 
 
-@router.get("/exportar.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
+@router.get("/exportar.xlsx", dependencies=[Depends(requiere_rol("SUPERVISOR"))])
 def excel(f: _Filtros = Depends()):
     """Los censos filtrados, una columna por pregunta, con las etiquetas de
     las opciones (no sus nombres internos)."""
@@ -498,10 +501,10 @@ def excel(f: _Filtros = Depends()):
     return _como_adjunto(libro, "censos")
 
 
-# ---------- Tablero (ADMIN) ----------
+# ---------- Tablero (ADMIN y SUPERVISOR) ----------
 
 
-@router.get("/tablero", dependencies=[Depends(requiere_rol("ADMIN"))])
+@router.get("/tablero", dependencies=[Depends(requiere_rol("SUPERVISOR"))])
 def tablero(f: _Filtros = Depends()):
     """Indicadores (principal y mapa con fotos), avance contra la maestra y
     alertas, con los mismos filtros que la lista."""
@@ -511,7 +514,7 @@ def tablero(f: _Filtros = Depends()):
     return datos
 
 
-@router.get("/tablero.xlsx", dependencies=[Depends(requiere_rol("ADMIN"))])
+@router.get("/tablero.xlsx", dependencies=[Depends(requiere_rol("SUPERVISOR"))])
 def tablero_excel(f: _Filtros = Depends()):
     """Las listas de trabajo del tablero, completas: por registrar, pendientes
     en ventas, codigos a revisar, duplicados, mismo codigo lejos, sin codigo
@@ -593,6 +596,28 @@ class Descarte(BaseModel):
     ids: list[str] | None = None
 
 
+@router.get("/activacion", dependencies=[Depends(requiere_rol("SUPERVISOR"))])
+def activacion(
+    empresa: str,
+    mes: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    ruta: list[str] = Query(default=[]),
+):
+    """Activacion del mes (AAAA-MM; por defecto, el actual) con la maestra
+    como cartera: quien compro y quien fue visitado (ver
+    app/services/activacion_maestra.py)."""
+    if empresa not in ("ISVAN", "TRALOG"):
+        raise HTTPException(400, "Empresa desconocida")
+    if mes:
+        anio, numero = (int(x) for x in mes.split("-"))
+        if not 1 <= numero <= 12:
+            raise HTTPException(400, "Mes invalido")
+        dia = date(anio, numero, 1)
+    else:
+        dia = hoy_caracas()
+    with get_connection() as conn, conn.cursor() as cur:
+        return am.activacion(cur, empresa, dia, ruta)
+
+
 @router.post("/duplicados/descartar", dependencies=[Depends(requiere_rol("ADMIN"))])
 def descartar_duplicados(datos: Descarte):
     """Saca los duplicados de todos lados. Las filas quedan (marcadas) para
@@ -611,7 +636,7 @@ def descartar_duplicados(datos: Descarte):
 # Va al final: /{censo_id} atraparia cualquier ruta de arriba (fotos, mios,
 # exportar.xlsx) si se declarara antes.
 @router.get("/{censo_id}")
-def detalle(censo_id: str, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
+def detalle(censo_id: str, usuario: dict = Depends(requiere_rol("VENDEDOR", "SUPERVISOR"))):
     """Un censo con sus respuestas y sus fotos."""
     with get_connection() as conn, conn.cursor() as cur:
         censo = _cargar(cur, censo_id)

@@ -90,7 +90,7 @@ class Usuario(BaseModel):
 
 # Los valores de los enums de la base (prisma/schema.prisma). Validarlos aca
 # devuelve un 422 claro; si no, un valor raro llegaba hasta Postgres y era un 500.
-RolUsuario = Literal["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR", "COBRANZAS"]
+RolUsuario = Literal["ADMIN", "DESPACHOS", "APROBADOR", "REPARTIDOR", "VENDEDOR", "COBRANZAS", "SUPERVISOR"]
 TipoVehiculo = Literal["CAMION_REFRIGERADO", "CAMIONETA", "MOTO"]
 EstadoVehiculo = Literal["FUNCIONAL", "EN_MANTENIMIENTO", "FUERA_DE_SERVICIO"]
 

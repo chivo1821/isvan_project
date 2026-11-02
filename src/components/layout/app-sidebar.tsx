@@ -69,6 +69,15 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Las dos pantallas del SUPERVISOR (ver MODULOS_POR_ROL en
+    // src/lib/constants.ts); el ADMIN las tiene en "Inicio".
+    label: "Supervisión",
+    items: [
+      { label: "Vendedores", href: "/supervisor", icon: MapPinCheckIcon, roles: ["SUPERVISOR"] },
+      { label: "Censo de clientes", href: "/censo", icon: ClipboardCheckIcon, roles: ["SUPERVISOR"] },
+    ],
+  },
+  {
     // Único módulo de COBRANZAS; el ADMIN también lo ve (ver
     // backend/app/api/cobranzas.py).
     label: "Cobranzas",

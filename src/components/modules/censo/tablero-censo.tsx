@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ActivacionMaestra } from "@/components/modules/censo/activacion-maestra";
 import { API_URL, apiPost, mensajeDeError } from "@/lib/api-client";
 import {
   queryCenso,
@@ -550,7 +551,7 @@ function FilaAvanceRuta({
   );
 }
 
-function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
+function Avance({ t, filtros, esAdmin }: { t: TableroCenso; filtros: FiltrosCenso; esAdmin: boolean }) {
   const a = t.avance;
   const al = t.alertas;
   const maestra = a.porEmpresa.reduce((s, e) => s + e.maestra, 0);
@@ -606,7 +607,7 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
             titulo="Duplicados"
             total={al.duplicadosTotal}
             explicacion="Mismo código y empresa (o mismo RIF si es posible cliente) a 50 m o menos de un censo anterior. No cuentan."
-            accion={<DescartarDuplicados total={al.duplicadosTotal} />}
+            accion={esAdmin ? <DescartarDuplicados total={al.duplicadosTotal} /> : undefined}
           >
             <ul className="divide-y">
               {al.duplicados.map((d) => (
@@ -729,18 +730,22 @@ function Avance({ t, filtros }: { t: TableroCenso; filtros: FiltrosCenso }) {
 // ---------- Contenedor ----------
 
 /** El tablero del censo, con las pestañas que el cliente tenía en Survey123
- * (Principal y Mapa, que une el mapa y el de imágenes) más Avance y Registros. La pestaña
- * va en la URL sin volver a pedir la página: todos los datos ya llegaron. */
+ * (Principal y Mapa, que une el mapa y el de imágenes) más Avance, Activación y Registros. La pestaña
+ * va en la URL sin volver a pedir la página: todos los datos ya llegaron (la
+ * activación se pide al abrirla). El SUPERVISOR ve todo, sin las acciones
+ * del ADMIN (descartar duplicados). */
 export function TableroDelCenso({
   tablero,
   lista,
   filtros,
   definicion,
+  esAdmin,
 }: {
   definicion: DefinicionFormulario;
   tablero: TableroCenso;
   lista: ListaCensos;
   filtros: FiltrosCenso;
+  esAdmin: boolean;
 }) {
   const [vista, setVista] = useState<VistaCenso>(filtros.vista);
   const alertas = tablero.alertas.duplicadosTotal + tablero.alertas.revisarTotal + tablero.alertas.mismoCodigoLejosTotal;
@@ -762,6 +767,7 @@ export function TableroDelCenso({
             <span className="ml-1 rounded-full bg-warning/25 px-1.5 text-xs tabular-nums text-foreground">{formatNumero(alertas)}</span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="activacion">Activación del mes</TabsTrigger>
         <TabsTrigger value="registros">Registros</TabsTrigger>
       </TabsList>
       <TabsContent value="principal" className="mt-4">
@@ -771,7 +777,10 @@ export function TableroDelCenso({
         {vista === "mapa" && <MapaCompetencia t={tablero} definicion={definicion} />}
       </TabsContent>
       <TabsContent value="avance" className="mt-4">
-        <Avance t={tablero} filtros={filtros} />
+        <Avance t={tablero} filtros={filtros} esAdmin={esAdmin} />
+      </TabsContent>
+      <TabsContent value="activacion" className="mt-4">
+        {vista === "activacion" && <ActivacionMaestra empresas={filtros.empresa} rutas={filtros.ruta} />}
       </TabsContent>
       <TabsContent value="registros" className="mt-4">
         <ListaDeCensos datos={lista} filtros={{ ...filtros, vista: "registros" }} />

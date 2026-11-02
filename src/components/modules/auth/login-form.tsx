@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { INICIO_POR_ROL } from "@/lib/constants";
+import { INICIO_POR_ROL, MODULOS_POR_ROL, enModulo } from "@/lib/constants";
 import type { RolUsuario, Usuario } from "@/lib/mock-data";
 
 const loginSchema = z.object({
@@ -29,8 +29,8 @@ type LoginValues = z.infer<typeof loginSchema>;
 function destinoTrasLogin(rol: RolUsuario, from: string | null) {
   const inicio = INICIO_POR_ROL[rol];
   if (!from || from === "/" || !from.startsWith("/")) return inicio;
-  const moduloUnico = rol === "REPARTIDOR" || rol === "VENDEDOR" || rol === "COBRANZAS";
-  return !moduloUnico || from.startsWith(inicio) ? from : inicio;
+  const modulos = MODULOS_POR_ROL[rol];
+  return !modulos || modulos.some((m) => enModulo(from, m)) ? from : inicio;
 }
 
 export function LoginForm() {
