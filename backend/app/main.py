@@ -131,12 +131,15 @@ ROUTERS_PROTEGIDOS = [
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que
 # entran. Un VENDEDOR: el suyo, usuarios (su propia ficha y su clave; lo demas
 # de ese router es de ADMIN) y el censo (lo llena el; la revision es de ADMIN,
-# endpoint por endpoint). COBRANZAS: el suyo y usuarios. El resto de la
+# endpoint por endpoint). COBRANZAS: el suyo y usuarios. SUPERVISOR: usuarios,
+# vendedor (el rendimiento de todos) y censo (la revision, solo lectura; la
+# maestra no se le abre). El resto de la
 # operacion se les cierra aca, de una sola vez (ver solo_su_modulo en
 # app/core/permisos.py).
 ROUTERS_POR_ROL = {
     "VENDEDOR": [usuarios.router, vendedor.router, censo.router],
     "COBRANZAS": [usuarios.router, cobranzas.router],
+    "SUPERVISOR": [usuarios.router, vendedor.router, censo.router],
 }
 
 # En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:

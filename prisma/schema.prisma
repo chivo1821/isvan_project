@@ -23,6 +23,7 @@ enum RolUsuario {
   REPARTIDOR
   VENDEDOR // ve los despachos de sus rutas de venta y registra sus visitas
   COBRANZAS // verifica los pagos que reportan los clientes y ve su cartera
+  SUPERVISOR // supervisa a los vendedores: ve sus visitas y el censo, sin tocar nada
 }
 
 enum Empresa {

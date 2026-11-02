@@ -11,10 +11,13 @@ Hay dos roles de campo, cada uno con su unica puerta de entrada:
   (VendedorRuta) y registra sus visitas, todo desde app/api/vendedor.py.
 - COBRANZAS: verifica los pagos de los clientes y ve su cartera, todo desde
   app/api/cobranzas.py.
+- SUPERVISOR: supervisa a los vendedores; ve el rendimiento y las visitas de
+  todos (app/api/vendedor.py) y el censo (app/api/censo.py), sin tocar nada.
 
-VENDEDOR y COBRANZAS son roles de un solo modulo: entran SOLO a los routers
-que se les abren en app/main.py (ROUTERS_POR_ROL, lista blanca) y el resto de
-la operacion se les cierra a nivel de router con solo_su_modulo. Asi un
+VENDEDOR, COBRANZAS y SUPERVISOR son roles de un solo modulo: entran SOLO a
+los routers que se les abren en app/main.py (ROUTERS_POR_ROL, lista blanca)
+y el resto de la operacion se les cierra a nivel de router con
+solo_su_modulo. Asi un
 endpoint nuevo sin requiere_rol no les queda abierto por descuido.
 
 Se aplica en la API, no solo escondiendo cosas en la interfaz: la UI puede
@@ -32,7 +35,8 @@ from app.core.auth import get_current_user
 ROL_REPARTIDOR = "REPARTIDOR"
 ROL_VENDEDOR = "VENDEDOR"
 ROL_COBRANZAS = "COBRANZAS"
-ROLES_DE_UN_MODULO = frozenset({ROL_VENDEDOR, ROL_COBRANZAS})
+ROL_SUPERVISOR = "SUPERVISOR"
+ROLES_DE_UN_MODULO = frozenset({ROL_VENDEDOR, ROL_COBRANZAS, ROL_SUPERVISOR})
 
 
 def es_repartidor(usuario: dict) -> bool:
@@ -45,8 +49,8 @@ def es_vendedor(usuario: dict) -> bool:
 
 def solo_su_modulo(roles_permitidos: frozenset[str]):
     """Dependencia de router: los roles de un solo modulo (VENDEDOR,
-    COBRANZAS) pasan solo si el router esta abierto para su rol. Los demas
-    roles no se tocan: los acota cada endpoint con requiere_rol."""
+    COBRANZAS, SUPERVISOR) pasan solo si el router esta abierto para su rol.
+    Los demas roles no se tocan: los acota cada endpoint con requiere_rol."""
 
     def _check(usuario: dict = Depends(get_current_user)) -> None:
         if usuario["rol"] in ROLES_DE_UN_MODULO and usuario["rol"] not in roles_permitidos:

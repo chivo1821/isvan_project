@@ -337,7 +337,8 @@ def _venta_de_sus_rutas(cur, rutas: list[tuple[str, str]], meses: dict[str, tupl
 @router.get(
     "/rendimiento",
     response_model=RendimientoVendedores,
-    dependencies=[Depends(requiere_rol("ADMIN"))],
+    # El supervisor de los vendedores tambien (ver ROUTERS_POR_ROL en app/main.py).
+    dependencies=[Depends(requiere_rol("SUPERVISOR"))],
 )
 def rendimiento_vendedores(desde: date | None = None, hasta: date | None = None):
     """Las visitas de cada vendedor entre `desde` y `hasta` (dias de Caracas,

@@ -10,7 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { INICIO_POR_ROL } from "@/lib/constants";
+import { INICIO_POR_ROL, MODULOS_POR_ROL, enModulo } from "@/lib/constants";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserNav } from "@/components/layout/user-nav";
@@ -33,6 +33,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   vendedor: "Mis despachos",
   visitas: "Visitas",
   cobranzas: "Cobranzas",
+  supervisor: "Vendedores",
+  censo: "Censo de clientes",
   pagos: "Pagos",
   cuentas: "Cuentas del portal",
   ajustes: "Ajustes",
@@ -54,13 +56,16 @@ export function Topbar({
   const segments = pathname.split("/").filter(Boolean);
   // Solo ADMIN tiene "Inicio": para los demás roles el enlace a "/" los
   // devolvería a su propio módulo (ver (dashboard)/layout.tsx).
-  // Repartidor y vendedor tienen un solo módulo, que ya es la raíz de la
-  // miga: su primer segmento no se repite.
-  const moduloUnico = user.rol === "REPARTIDOR" || user.rol === "VENDEDOR" || user.rol === "COBRANZAS";
+  // Los roles con pantallas propias (repartidor, vendedor, cobranzas,
+  // supervisor): la pantalla en la que está es la raíz de la miga y su
+  // primer segmento no se repite.
+  const modulos = MODULOS_POR_ROL[user.rol];
+  const moduloUnico = modulos !== undefined;
+  const modulo = modulos?.find((m) => enModulo(pathname, m)) ?? INICIO_POR_ROL[user.rol];
   const raiz =
     user.rol === "ADMIN"
       ? { href: "/", label: "Inicio" }
-      : { href: INICIO_POR_ROL[user.rol], label: SEGMENT_LABELS[INICIO_POR_ROL[user.rol].split("/")[1]] ?? "Inicio" };
+      : { href: modulo, label: SEGMENT_LABELS[modulo.split("/")[1]] ?? "Inicio" };
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4">

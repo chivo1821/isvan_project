@@ -614,7 +614,7 @@ GRUPOS_INACTIVIDAD: list[tuple[str, str, int, int | None]] = [
 _DESDE_SIEMPRE = date(1900, 1, 1)
 
 
-def _grupo_de_inactividad(dias: int) -> str:
+def grupo_de_inactividad(dias: int) -> str:
     return next(
         clave
         for clave, _, minimo, maximo in GRUPOS_INACTIVIDAD
@@ -687,7 +687,7 @@ def activacion(cur, f: Filtros) -> dict:
         elif ultima >= f.desde:
             atendidos.append(cliente)
         else:
-            por_grupo[_grupo_de_inactividad(cliente["diasSinCompra"])].append(cliente)
+            por_grupo[grupo_de_inactividad(cliente["diasSinCompra"])].append(cliente)
 
     atendidos.sort(key=lambda c: (-c["ventaPeriodo"], c["nombre"]))
     listas = [{"clave": "atendidos", "etiqueta": "Atendidos", "clientes": atendidos}]

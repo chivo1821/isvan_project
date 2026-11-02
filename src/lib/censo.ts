@@ -59,7 +59,7 @@ export type FiltrosCenso = {
   vista: VistaCenso;
 };
 
-export const VISTAS_CENSO = ["principal", "mapa", "avance", "registros"] as const;
+export const VISTAS_CENSO = ["principal", "mapa", "avance", "activacion", "registros"] as const;
 export type VistaCenso = (typeof VISTAS_CENSO)[number];
 
 type Params = Record<string, string | string[] | undefined>;
@@ -368,4 +368,48 @@ export type CensosPorCorregir = {
 export type ResultadoCorreccion = Omit<ResultadoEnvioCenso, "id"> & {
   categoria: CategoriaCorreccion | null;
   clientesEliminados: number;
+};
+
+/** Un cliente de la maestra en la activación del mes (GET /censo/activacion). */
+export type ClienteActivacionMaestra = {
+  codigo: string;
+  nombre: string;
+  ruta: string;
+  /** Vendedores activos con esa ruta asignada. */
+  vendedores: string[];
+  ultimaCompra: string | null;
+  diasSinCompra: number | null;
+  ventaPeriodo: number;
+  ventaAnterior: number;
+  /** Visitas del mes, la última y quién la hizo. */
+  visitas: number;
+  ultimaVisita: string | null;
+  visitadoPor: string | null;
+};
+
+/** "atendidos", los grupos por tiempo sin compra ("menos2", "de2a4",
+ * "de4a8", "mas8") y "sinCompras" (no aparecen en las ventas cargadas). */
+export type ListaActivacionMaestra = {
+  clave: string;
+  etiqueta: string;
+  total: number;
+  clientes: ClienteActivacionMaestra[];
+};
+
+/** Activación del mes con la maestra como cartera (ver
+ * backend/app/services/activacion_maestra.py). */
+export type ActivacionMaestra = {
+  empresa: EmpresaMaestra;
+  desde: string;
+  hasta: string;
+  /** Hasta dónde hay ventas cargadas de la empresa. */
+  ultimaVentaCargada: string | null;
+  cartera: number;
+  compraron: number;
+  visitados: number;
+  visitadosSinCompra: number;
+  niCompraNiVisita: number;
+  /** Fracción 0..1; null si la cartera está vacía. */
+  pctActivacion: number | null;
+  listas: ListaActivacionMaestra[];
 };
