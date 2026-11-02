@@ -347,6 +347,29 @@ export type PreviewCarga = {
   totalErrores: number;
 };
 
+// ---------- Lista de precios ----------
+
+type ProductoLista = { codigo: string; nombre: string; grupo: string };
+
+/** Lo que cambiaría al aplicar una lista de precios (costo por caja). */
+export type PreviewListaPrecios = {
+  hoja: string;
+  productos: number;
+  /** Productos ya conocidos cuyo costo cambia; `costoAnterior` null = no tenía. */
+  cambian: (ProductoLista & { costoAnterior: number | null; costoNuevo: number; variacion: number | null })[];
+  /** Productos que todavía no aparecieron en ventas: se dan de alta. */
+  nuevos: (ProductoLista & { costoNuevo: number })[];
+  sinCambio: number;
+  descartadas: { fila: number; codigo: string; motivo: string }[];
+  /** Productos con costo que no vienen en la lista: lo conservan. */
+  fueraDeLista: number;
+  /** Productos vendidos sin costo que la lista tampoco cubre. */
+  siguenSinCosto: ProductoLista[];
+  ultimaLista: { archivo: string; subidaEn: string; subidaPor: string | null } | null;
+};
+
+export type ListaPreciosAplicada = { productos: number; cambiaron: number; nuevos: number; sinCambio: number };
+
 // ---------- Fechas ----------
 //
 // Las fechas de ventas son días sueltos ("2026-08-31"), sin hora. Se

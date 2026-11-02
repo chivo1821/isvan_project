@@ -158,6 +158,7 @@ model Usuario {
   reversosDespacho      DespachoReverso[]     @relation("ReversosDespacho")
   sesiones              Sesion[]
   cargasVenta           VentaCarga[]
+  listasPrecio          ListaPrecioCarga[]    @relation("ListasPrecioSubidasPor")
   tabuladorDelivery     TabuladorDelivery[]   @relation("TabuladorDeliveryActualizadoPor")
   liquidacionesDelivery LiquidacionDelivery[] @relation("LiquidacionesDelivery")
   liquidacionesCreadas  LiquidacionDelivery[] @relation("LiquidacionesDeliveryCreadasPor")
@@ -544,6 +545,23 @@ model VentaProducto {
 
   @@unique([empresa, codigo])
   @@index([empresa, grupo])
+}
+
+// Lista de precios de compra (costo por caja) subida sola, sin un extracto
+// de ventas. Se aplica a VentaProducto al subirla y se guarda entera para
+// volver a aplicarla, en orden con las cargas, cuando se revierte una carga
+// de ventas (ver revertir_carga en backend/app/api/indicadores.py).
+model ListaPrecioCarga {
+  id          String   @id @default(cuid())
+  empresa     Empresa
+  archivo     String
+  // [{codigo, nombre, grupo, costoCajaUsd}]
+  productos   Json
+  subidaEn    DateTime @default(now())
+  subidaPorId String?
+  subidaPor   Usuario? @relation("ListasPrecioSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
+
+  @@index([empresa, subidaEn])
 }
 
 // Meta de venta de una ruta para un mes, en dolares. La carga el cliente

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 type Nivel = "ok" | "aviso" | "info";
 
-function Chequeo({ nivel, titulo, children }: { nivel: Nivel; titulo: ReactNode; children?: ReactNode }) {
+export function Chequeo({ nivel, titulo, children }: { nivel: Nivel; titulo: ReactNode; children?: ReactNode }) {
   const Icono = nivel === "ok" ? CheckCircle2Icon : nivel === "aviso" ? AlertTriangleIcon : InfoIcon;
   return (
     <li

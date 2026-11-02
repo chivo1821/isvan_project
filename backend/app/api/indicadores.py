@@ -34,7 +34,7 @@ from app.schemas import GuardarMetasRequest, en_utc
 from app.services import cartera
 from app.services import censo_clientes
 from app.services import indicadores_venta as iv
-from app.services.ventas_import import ExtractoVentas, leer_extracto
+from app.services.ventas_import import ExtractoVentas, ListaPrecios, leer_extracto, leer_lista_precios
 
 router = APIRouter(
     prefix="/indicadores",
@@ -817,16 +817,164 @@ def revertir_carga(carga_id: str):
         )
         # Los costos, rutas y nombres que habia puesto esta carga tambien se
         # deshacen: se vuelven a aplicar, en orden, los de las cargas que
-        # siguen confirmadas (la ultima manda, como al confirmar).
+        # siguen confirmadas (la ultima manda, como al confirmar). Las listas
+        # de precios entran en el mismo orden: si no, una carga vieja
+        # volveria a pisar el costo de una lista subida despues.
         cur.execute(
-            'SELECT "dimensiones" FROM "VentaCarga" WHERE "empresa" = %s AND "estado" = \'CONFIRMADA\' '
-            'ORDER BY "confirmadaEn"',
-            (carga["empresa"],),
+            'SELECT "dimensiones" AS "datos", FALSE AS "esLista", "confirmadaEn" AS "en" FROM "VentaCarga" '
+            'WHERE "empresa" = %(empresa)s AND "estado" = \'CONFIRMADA\' '
+            'UNION ALL SELECT "productos", TRUE, "subidaEn" FROM "ListaPrecioCarga" WHERE "empresa" = %(empresa)s '
+            'ORDER BY "en"',
+            {"empresa": carga["empresa"]},
         )
-        for confirmada in cur.fetchall():
-            _aplicar_dimensiones(cur, carga["empresa"], confirmada["dimensiones"])
+        for aplicada in cur.fetchall():
+            if aplicada["esLista"]:
+                _aplicar_lista_precios(cur, carga["empresa"], aplicada["datos"])
+            else:
+                _aplicar_dimensiones(cur, carga["empresa"], aplicada["datos"])
         cartera.sincronizar_documentos(cur, carga["empresa"])
         # Los clientes censados que ya aparecen (o dejan de aparecer) en ventas.
         censo_clientes.recalcular_en_ventas(cur, carga["empresa"])
         conn.commit()
         return {**_obtener_carga(cur, carga_id), "filasRestauradas": restauradas}
+
+
+# ---------- Lista de precios ----------
+#
+# El costo por caja tambien puede llegar solo, sin un extracto de ventas: la
+# lista de precios de compra que manda el proveedor. Cubre a todos los
+# productos de la lista, se hayan vendido o no en el ultimo archivo. Como en
+# las cargas, primero se ve que cambia y despues se aplica. El costo no tiene
+# fecha: el margen de todos los meses se recalcula con el nuevo.
+
+
+def _leer_lista_subida(archivo: UploadFile) -> ListaPrecios:
+    contenido = archivo.file.read()
+    if len(contenido) > TAMANO_MAXIMO_BYTES:
+        raise HTTPException(413, f"El archivo pesa {len(contenido) / 1_000_000:.1f} MB y el maximo es 4.5 MB")
+    return leer_lista_precios(contenido)
+
+
+def _comparar_lista(cur, empresa: str, lista: ListaPrecios) -> dict:
+    """Que cambia si se aplica la lista: costos nuevos, productos que todavia
+    no aparecieron en ventas y los vendidos que siguen sin costo."""
+    cur.execute(
+        'SELECT "codigo", "nombre", "grupo", "costoCajaUsd"::float AS "costo" FROM "VentaProducto" '
+        'WHERE "empresa" = %s',
+        (empresa,),
+    )
+    catalogo = {int(r["codigo"]): r for r in cur.fetchall()}
+
+    cambian, nuevos = [], []
+    sin_cambio = 0
+    for codigo, p in lista.productos.items():
+        previo = catalogo.get(codigo)
+        nuevo = p["costoCajaUsd"]
+        if previo is None:
+            nuevos.append({"codigo": str(codigo), "nombre": p["nombre"], "grupo": p["grupo"], "costoNuevo": nuevo})
+        elif previo["costo"] is not None and abs(previo["costo"] - nuevo) < 0.00005:
+            sin_cambio += 1
+        else:
+            anterior = previo["costo"]
+            cambian.append({
+                "codigo": str(codigo),
+                # El nombre de ventas, que es el que se ve en los indicadores.
+                "nombre": previo["nombre"],
+                "grupo": previo["grupo"],
+                "costoAnterior": anterior,
+                "costoNuevo": nuevo,
+                "variacion": round((nuevo - anterior) / anterior, 4) if anterior else None,
+            })
+    # Primero los que no tenian costo, despues los saltos mas grandes.
+    cambian.sort(key=lambda c: (c["variacion"] is not None, -abs(c["variacion"] or 0)))
+    siguen_sin_costo = sorted(
+        (
+            {"codigo": str(c), "nombre": r["nombre"], "grupo": r["grupo"]}
+            for c, r in catalogo.items()
+            if r["costo"] is None and c not in lista.productos
+        ),
+        key=lambda p: p["nombre"],
+    )
+
+    cur.execute(
+        'SELECT l."archivo", l."subidaEn", u."nombre" AS "subidaPor" FROM "ListaPrecioCarga" l '
+        'LEFT JOIN "Usuario" u ON u."id" = l."subidaPorId" WHERE l."empresa" = %s '
+        'ORDER BY l."subidaEn" DESC LIMIT 1',
+        (empresa,),
+    )
+    ultima = cur.fetchone()
+    if ultima:
+        ultima["subidaEn"] = en_utc(ultima["subidaEn"])
+
+    return {
+        "hoja": lista.hoja,
+        "productos": len(lista.productos),
+        "cambian": cambian,
+        "nuevos": nuevos,
+        "sinCambio": sin_cambio,
+        "descartadas": lista.descartadas,
+        # Los que ya tenian costo y no vienen en la lista: lo conservan.
+        "fueraDeLista": sum(1 for c, r in catalogo.items() if r["costo"] is not None and c not in lista.productos),
+        "siguenSinCosto": siguen_sin_costo,
+        "ultimaLista": ultima,
+    }
+
+
+def _aplicar_lista_precios(cur, empresa: str, productos: list[dict]) -> None:
+    """Pone el costo de cada producto de la lista. Los que todavia no
+    aparecieron en ventas se dan de alta con el nombre y el grupo de la
+    lista; la primera carga de ventas que los traiga los reemplaza por los
+    del sistema de ventas y conserva el costo."""
+    cur.executemany(
+        'INSERT INTO "VentaProducto" ("id", "empresa", "codigo", "nombre", "grupo", "costoCajaUsd") '
+        "VALUES (%s, %s, %s, %s, %s, %s) "
+        'ON CONFLICT ("empresa", "codigo") DO UPDATE SET "costoCajaUsd" = EXCLUDED."costoCajaUsd"',
+        [
+            (f"vprod-{uuid.uuid4().hex[:10]}", empresa, int(p["codigo"]), p["nombre"], p["grupo"], p["costoCajaUsd"])
+            for p in productos
+        ],
+    )
+
+
+@router.post("/costos/preview")
+def analizar_lista_precios(empresa: str = Form(...), archivo: UploadFile = File(...)):
+    """Paso 1: lee la lista y muestra que cambiaria. No guarda nada."""
+    _validar_empresa(empresa)
+    lista = _leer_lista_subida(archivo)
+    with get_connection() as conn, conn.cursor() as cur:
+        return _comparar_lista(cur, empresa, lista)
+
+
+@router.post("/costos")
+def aplicar_lista_precios(
+    empresa: str = Form(...),
+    archivo: UploadFile = File(...),
+    usuario: dict = Depends(requiere_rol("ADMIN")),
+):
+    """Paso 2: el mismo archivo otra vez (es chico), y ahora se aplica. La
+    lista queda guardada para reaplicarla en orden si se revierte una carga
+    de ventas."""
+    _validar_empresa(empresa)
+    lista = _leer_lista_subida(archivo)
+    productos = [
+        {"codigo": codigo, "nombre": p["nombre"], "grupo": p["grupo"], "costoCajaUsd": p["costoCajaUsd"]}
+        for codigo, p in lista.productos.items()
+    ]
+    with get_connection() as conn, conn.cursor() as cur:
+        cambios = _comparar_lista(cur, empresa, lista)
+        cur.execute(
+            'INSERT INTO "ListaPrecioCarga" ("id", "empresa", "archivo", "productos", "subidaPorId") '
+            "VALUES (%s, %s, %s, %s, %s)",
+            (
+                f"lprecio-{uuid.uuid4().hex[:10]}", empresa, archivo.filename or "lista de precios.xlsx",
+                Jsonb(productos), usuario["id"],
+            ),
+        )
+        _aplicar_lista_precios(cur, empresa, productos)
+        conn.commit()
+    return {
+        "productos": len(productos),
+        "cambiaron": len(cambios["cambian"]),
+        "nuevos": len(cambios["nuevos"]),
+        "sinCambio": cambios["sinCambio"],
+    }
