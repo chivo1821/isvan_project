@@ -39,6 +39,24 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   return null;
 }
 
+// Leaflet 1.9 termina cada zoom animado (fitBounds, los botones + y -) con
+// un temporizador de 250 ms. Si el mapa se desmonta antes (cambiar de
+// empresa en el mapa de visitas, un filtro que deja el mapa vacio, irse a
+// otra pantalla), map.remove() ya borro el panel y ese temporizador falla con
+// "Cannot read properties of undefined (reading '_leaflet_pos')". Al
+// desmontar se marca la animacion como terminada y el temporizador no hace
+// nada.
+function CortarZoomAlDesmontar() {
+  const map = useMap();
+  useEffect(
+    () => () => {
+      (map as unknown as { _animatingZoom?: boolean })._animatingZoom = false;
+    },
+    [map]
+  );
+  return null;
+}
+
 // Componente base del mapa. Se debe cargar via next/dynamic con ssr:false en
 // las paginas que lo usan, porque Leaflet accede a `window`.
 export function LeafletMap({
@@ -72,6 +90,7 @@ export function LeafletMap({
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      <CortarZoomAlDesmontar />
       {bounds && <FitBounds bounds={bounds} />}
       {children}
     </MapContainer>
