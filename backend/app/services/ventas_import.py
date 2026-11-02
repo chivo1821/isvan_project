@@ -182,20 +182,20 @@ def _hojas_por_prioridad(libro) -> list:
     return sorted(libro.worksheets, key=lambda h: normalizar_encabezado(h.title) != "data")
 
 
+def _es_encabezado_de_costos(fila: tuple) -> bool:
+    nombres = {normalizar_encabezado(v) for v in fila if v is not None}
+    return "pc" in nombres and any(n.startswith("codigo") for n in nombres)
+
+
 def _leer_costos(libro, hoja_ventas) -> dict[int, float]:
     """Costo por CAJA desde la hoja "precio de compras" (columnas codigo y
     "Pc"). Vacio si el libro no la trae."""
-
-    def es_encabezado(fila: tuple) -> bool:
-        nombres = {normalizar_encabezado(v) for v in fila if v is not None}
-        return "pc" in nombres and any(n.startswith("codigo") for n in nombres)
-
     candidatas = sorted(
         (h for h in libro.worksheets if h.title != hoja_ventas.title),
         key=lambda h: not normalizar_encabezado(h.title).startswith("precio_de_compra"),
     )
     for hoja in candidatas:
-        encontrado = _buscar_encabezado(hoja, es_encabezado)
+        encontrado = _buscar_encabezado(hoja, _es_encabezado_de_costos)
         if not encontrado:
             continue
         indice, encabezado = encontrado
@@ -213,6 +213,79 @@ def _leer_costos(libro, hoja_ventas) -> dict[int, float]:
         if costos:
             return costos
     return {}
+
+
+@dataclass
+class ListaPrecios:
+    """La lista de precios de compra subida sola (sin extracto de ventas):
+    la misma hoja "precio de compras", con el nombre y el grupo de cada
+    producto para poder darlo de alta si todavia no aparecio en ventas."""
+
+    hoja: str
+    # codigo -> {nombre, grupo, costoCajaUsd}
+    productos: dict[int, dict]
+    # Filas con codigo que no se pueden usar: {fila, codigo, motivo}.
+    descartadas: list[dict]
+
+
+def leer_lista_precios(contenido: bytes) -> ListaPrecios:
+    try:
+        libro = openpyxl.load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(400, "No se pudo leer el archivo — verifica que sea un Excel (.xlsx) valido")
+    try:
+        for hoja in libro.worksheets:
+            encontrado = _buscar_encabezado(hoja, _es_encabezado_de_costos)
+            if encontrado:
+                return _leer_hoja_de_precios(hoja, *encontrado)
+    finally:
+        libro.close()
+    raise HTTPException(
+        400, 'El archivo no tiene una hoja con las columnas "Codigo" y "Pc" (el costo por caja)'
+    )
+
+
+def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
+    nombres = [normalizar_encabezado(v) for v in encabezado]
+    col_codigo = next(i for i, n in enumerate(nombres) if n.startswith("codigo"))
+    col_costo = nombres.index("pc")
+    col_nombre = next((i for i, n in enumerate(nombres) if n.startswith(("descripcion", "producto", "nombre"))), None)
+    col_grupo = next((i for i, n in enumerate(nombres) if n.startswith("grupo")), None)
+
+    def celda(fila: tuple, col: int | None) -> object:
+        return fila[col] if col is not None and col < len(fila) else None
+
+    productos: dict[int, dict] = {}
+    descartadas: list[dict] = []
+    for numero, fila in enumerate(hoja.iter_rows(values_only=True, min_row=indice + 2), start=indice + 2):
+        texto_codigo = valor_a_texto(celda(fila or (), col_codigo))
+        # Filas vacias, separadores y totales: sin codigo no son un producto.
+        if not texto_codigo:
+            continue
+        codigo = _codigo_producto(texto_codigo)
+        costo = _a_numero(celda(fila, col_costo))
+        if codigo is None:
+            # En ventas el codigo de producto es siempre un numero: uno con
+            # letras no cruzaria con ninguna venta.
+            motivo = "el codigo no es numerico"
+        elif costo is None or costo <= 0:
+            motivo = "no tiene costo"
+        elif codigo in productos and productos[codigo]["costoCajaUsd"] != costo:
+            motivo = f"codigo repetido con otro costo (se usa el de la fila {productos[codigo]['fila']})"
+        else:
+            if codigo not in productos:
+                productos[codigo] = {
+                    "fila": numero,
+                    "nombre": valor_a_texto(celda(fila, col_nombre)) or f"Producto {codigo}",
+                    "grupo": valor_a_texto(celda(fila, col_grupo)) or "SIN GRUPO",
+                    "costoCajaUsd": round(costo, 4),
+                }
+            continue
+        descartadas.append({"fila": numero, "codigo": texto_codigo, "motivo": motivo})
+
+    if not productos:
+        raise HTTPException(400, f'La hoja "{hoja.title}" no tiene productos con codigo y costo')
+    return ListaPrecios(hoja=hoja.title, productos=productos, descartadas=descartadas)
 
 
 # ---------- Archivos sin encabezado ----------

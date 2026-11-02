@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeftIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { CargarListaPreciosDialog } from "@/components/modules/indicadores/cargar-lista-precios-dialog";
 import { CargarVentasDialog } from "@/components/modules/indicadores/cargar-ventas-dialog";
 import { CargasHistorial } from "@/components/modules/indicadores/cargas-historial";
 import { CoberturaVentas } from "@/components/modules/indicadores/cobertura-ventas";
@@ -34,6 +35,7 @@ export default async function CargasVentasPage({ searchParams }: { searchParams:
                 Indicadores
               </Link>
             </Button>
+            <CargarListaPreciosDialog empresa={empresa} />
             <CargarVentasDialog empresa={empresa} />
           </>
         }

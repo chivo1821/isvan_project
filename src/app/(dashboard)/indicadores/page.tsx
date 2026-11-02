@@ -7,6 +7,7 @@ import { ActivacionClientes } from "@/components/modules/indicadores/activacion-
 import { AlertasCalidad } from "@/components/modules/indicadores/alertas-calidad";
 import { BarraFiltros } from "@/components/modules/indicadores/barra-filtros";
 import { BrechasClientes } from "@/components/modules/indicadores/brechas-clientes";
+import { CargarListaPreciosDialog } from "@/components/modules/indicadores/cargar-lista-precios-dialog";
 import { CargarVentasDialog } from "@/components/modules/indicadores/cargar-ventas-dialog";
 import { DesgloseTabla } from "@/components/modules/indicadores/desglose-tabla";
 import { KpiGrid, textoComparacion } from "@/components/modules/indicadores/kpi-grid";
@@ -50,6 +51,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
               </Link>
             </Button>
             <MetasDialog empresa={empresa} />
+            <CargarListaPreciosDialog empresa={empresa} />
             <CargarVentasDialog empresa={empresa} />
           </>
         }
