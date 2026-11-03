@@ -33,12 +33,15 @@ export function SeguimientoDetalleMap({
   ruta,
   paradas = [],
   className = "h-[26rem]",
+  arrastreConUnDedo = true,
 }: {
   ruta: RutaPunto[];
   /** Despachos de la ruta, para poder decir en el globo del mapa a qué
    * cliente corresponde cada punto y cómo va su entrega. */
   paradas?: ParadaConCliente[];
   className?: string;
+  /** Ver LeafletMap: false para que en el teléfono el mapa no atrape el dedo al bajar. */
+  arrastreConUnDedo?: boolean;
 }) {
   const path: [number, number][] = ruta.map((p) => [p.lat, p.lng]);
   const center = path[Math.floor(path.length / 2)] ?? [10.16, -68.0077];
@@ -51,7 +54,13 @@ export function SeguimientoDetalleMap({
   const puntosDestacados = ruta.filter((p, index) => index === 0 || p.paradaDespachoId != null);
 
   return (
-    <LeafletMap center={center} zoom={9} bounds={path.length > 1 ? path : undefined} className={className}>
+    <LeafletMap
+      center={center}
+      zoom={9}
+      bounds={path.length > 1 ? path : undefined}
+      className={className}
+      arrastreConUnDedo={arrastreConUnDedo}
+    >
       {path.length > 1 && <RoutePolyline positions={path} />}
       {puntosDestacados.map((punto) => {
         const despacho = punto.paradaDespachoId ? porDespachoId.get(punto.paradaDespachoId) : undefined;

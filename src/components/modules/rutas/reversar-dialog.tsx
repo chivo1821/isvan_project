@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 /** Igual que la API (MOTIVO_MINIMO en backend/app/services/reversos.py). */
 const MOTIVO_MINIMO = 5;
@@ -36,6 +37,7 @@ export function ReversarDialog({
   placeholder = "Ej.: el camión se accidentó",
   size = "sm",
   onHecho,
+  className,
 }: {
   /** POST con { motivo }. */
   endpoint: string;
@@ -49,6 +51,8 @@ export function ReversarDialog({
   size?: "sm" | "default";
   /** Con la respuesta de la API. Si no se pasa, se recarga la página. */
   onHecho?: (respuesta: unknown) => void;
+  /** Para el botón que abre el diálogo (p. ej. a lo ancho en el teléfono). */
+  className?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -79,7 +83,7 @@ export function ReversarDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size={size} className="text-destructive hover:text-destructive">
+        <Button variant="outline" size={size} className={cn("text-destructive hover:text-destructive", className)}>
           <Undo2Icon />
           {boton}
         </Button>

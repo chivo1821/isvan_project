@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRightIcon, PackageIcon, PackageSearchIcon, WarehouseIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
 import { ESTADO_RUTA_META, describirVehiculo, documentoDespacho, formatHora } from "@/lib/constants";
@@ -9,6 +10,9 @@ import { getRutasActivas, type RutaConDetalle } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
 
 const ZONA = "America/Caracas";
+// Paradas que se muestran por ruta en la lista: con decenas, la pantalla del
+// teléfono se volvía interminable. Todas se ven al abrir la ruta.
+const PARADAS_A_LA_VISTA = 5;
 const diaDe = (iso: string | Date) => new Intl.DateTimeFormat("en-CA", { timeZone: ZONA }).format(new Date(iso));
 const DIA_LARGO = new Intl.DateTimeFormat("es-VE", { weekday: "long", day: "numeric", month: "long", timeZone: ZONA });
 
@@ -96,8 +100,19 @@ export default async function DespachadorPage() {
                     </span>
                   </Link>
                   <AvisosRuta avisos={r.avisos?.filter((a) => a.tipo === "SALIDA_VENCIDA")} />
+                  {/* Antes solo se abría tocando el encabezado, y no se notaba. */}
+                  <Button
+                    asChild
+                    variant={r.estado === "EN_TRANSITO" ? "default" : "outline"}
+                    className="h-11 w-full sm:h-8 sm:w-auto"
+                  >
+                    <Link href={`/despachador/${r.id}`}>
+                      {r.estado === "EN_TRANSITO" ? "Abrir la ruta y marcar entregas" : "Abrir la ruta"}
+                      <ChevronRightIcon />
+                    </Link>
+                  </Button>
                   <ol className="divide-y rounded-md border">
-                    {r.despachos.map((d, i) => (
+                    {r.despachos.slice(0, PARADAS_A_LA_VISTA).map((d, i) => (
                       <li key={d.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2">
                         <span>
                           <span className="mr-2 text-xs text-muted-foreground tabular-nums">{i + 1}.</span>
@@ -113,6 +128,11 @@ export default async function DespachadorPage() {
                         </span>
                       </li>
                     ))}
+                    {r.despachos.length > PARADAS_A_LA_VISTA && (
+                      <li className="px-3 py-2 text-xs text-muted-foreground">
+                        y {r.despachos.length - PARADAS_A_LA_VISTA} parada(s) más
+                      </li>
+                    )}
                   </ol>
                 </CardContent>
               </Card>
