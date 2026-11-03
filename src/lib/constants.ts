@@ -113,6 +113,18 @@ export const TIPO_VEHICULO_META: Record<TipoVehiculo, { label: string }> = {
   MOTO: { label: "Moto" },
 };
 
+export const TIPO_DOCUMENTO_DESPACHO: Record<string, string> = {
+  FA: "Factura",
+  NE: "Nota de entrega",
+};
+
+/** "FA 1237": el tipo va delante porque una factura y una nota de entrega
+ * pueden tener el mismo número. Los despachos de antes no lo tienen y
+ * muestran solo el número. */
+export function documentoDespacho(d: { numeroDocumento: string; tipoDocumento?: string | null }): string {
+  return d.tipoDocumento ? `${d.tipoDocumento} ${d.numeroDocumento}` : `Doc. ${d.numeroDocumento}`;
+}
+
 /** "placa — tipo" de un vehículo, o el aviso de que la ruta todavía no
  * tiene uno (se planifica sin vehículo y se asigna después). */
 export function describirVehiculo(vehiculo: { placa: string; tipo: TipoVehiculo } | null | undefined): string {

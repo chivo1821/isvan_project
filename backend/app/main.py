@@ -10,9 +10,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# INFO para que se vean los logs de app.services.route_analysis al llamar al
-# servicio de SuperMap iServer (URL consultada, cuantos puntos devolvio, o el
-# motivo exacto de por que cayo al fallback mock) en la consola de uvicorn.
+# INFO para que se vean en la consola de uvicorn los logs de la app.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from app.api import (

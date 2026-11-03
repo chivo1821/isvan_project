@@ -6,7 +6,7 @@ dos empresas (**ISVAN** y **TRALOG**) desde un mismo almacén (Almacén
 Catia, Caracas).
 
 Módulos: **Rutas** (agrupación sugerida por ruta comercial, capacidad y
-cercanía; multi-parada, optimizadas contra SuperMap iServer),
+cercanía; multi-parada, optimizadas sobre la red vial de la base),
 **Despachos** (carga por Excel o manual, aprobación, ciclo de vida hasta
 entrega), **Clientes** (por empresa, carga individual o masiva por Excel),
 **Flota**, **Seguimiento** (mapa en vivo) y **Usuarios** (login por sesión,
@@ -19,7 +19,7 @@ permisos por rol).
 | Frontend | [Next.js 16](https://nextjs.org) (App Router, TypeScript), [shadcn/ui](https://ui.shadcn.com), Tailwind CSS v4, React Hook Form + Zod, Leaflet/React-Leaflet para mapas |
 | Backend | [FastAPI](https://fastapi.tiangolo.com) (Python), acceso a datos con `psycopg` + SQL plano (sin ORM en Python) |
 | Base de datos | PostgreSQL — [Prisma](https://www.prisma.io) es la fuente de verdad del esquema y las migraciones (no se usa `prisma-client-py`; ver la nota en `prisma/schema.prisma`) |
-| Rutas / mapas | **PostGIS + pgRouting sobre la red vial guardada en la base** (ver «Red vial» más abajo). Como respaldo, [SuperMap iServer](https://www.supermap.com) y, si tampoco responde, una estimación en línea recta |
+| Rutas / mapas | **PostGIS + pgRouting sobre la red vial guardada en la base** (ver «Red vial» más abajo). Si la red no resuelve un tramo, una estimación en línea recta. No se usa ningún servicio externo de rutas |
 | Hosting | [Vercel](https://vercel.com) (frontend + backend como dos servicios bajo un dominio, ver `vercel.json`) + [Neon](https://neon.tech) (PostgreSQL administrado) |
 
 ## Dependencias principales
@@ -31,7 +31,7 @@ permisos por rol).
 `concurrently` (corre frontend+backend juntos), `eslint`.
 
 **Backend** (`backend/requirements.txt`) — `fastapi`, `uvicorn[standard]`,
-`psycopg[binary]`, `httpx` (llamadas a SuperMap iServer), `pydantic`,
+`psycopg[binary]`, `httpx` (llamadas a R2, Resend y DolarAPI), `pydantic`,
 `python-dotenv`, `bcrypt` (hash de contraseñas), `python-multipart`
 (subida de archivos), `openpyxl` (lectura de Excel).
 
@@ -57,9 +57,6 @@ Copia `.env.example` a `.env` en la raíz del proyecto y completa:
 | `DATABASE_URL` | Cadena de conexión de Postgres (local o Neon) |
 | `NEXT_PUBLIC_API_URL` | URL del backend FastAPI (`http://localhost:8000` en dev) |
 | `ALLOWED_ORIGINS` | Orígenes permitidos por CORS (el dominio del frontend) |
-| `MOTOR_RUTAS` | Qué calcula las rutas: `auto` (por defecto: la red vial de la base y, si no, SuperMap), `bd` o `iserver` |
-| `NETWORK_ANALYST_URL` | Servicio SuperMap iServer, ya solo como respaldo (opcional) |
-| `NETWORK_ANALYST_WEIGHT_FIELD` | Campo de peso/costo del dataset de red (`time` por defecto) |
 | `COOKIE_SECURE` | `false` en dev (HTTP), `true` en producción (HTTPS) — la cookie de sesión lo exige |
 | `CORREO_MODO` | Cómo salen los correos del portal (códigos, avisos de pago): `smtp`, `resend` o `consola` (no envía; los deja en `backend/media/correos-dev.log`). Ver `backend/app/services/correo.py` |
 | `SMTP_SERVIDOR`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE` | Modo `smtp`: la cuenta de correo con la que se envía (puerto 587 con STARTTLS o 465 con SSL) |
@@ -141,8 +138,6 @@ de build/deploy más allá de `git push`.
    - `NEXT_PUBLIC_API_URL`: la URL pública del propio deploy (ej.
      `https://tu-proyecto.vercel.app/api/backend` o el dominio final).
    - `ALLOWED_ORIGINS`: el dominio real del frontend en producción.
-   - `NETWORK_ANALYST_URL` / `NETWORK_ANALYST_WEIGHT_FIELD`: el servicio
-     SuperMap iServer real (si aplica).
    - `COOKIE_SECURE=true` (obligatorio en producción — HTTPS).
    - Correo del portal: `CORREO_MODO` y las variables de SMTP o de Resend
      (ver la tabla de arriba). Para probarlas antes de desplegar:

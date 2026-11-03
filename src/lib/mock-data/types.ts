@@ -113,8 +113,10 @@ export type DespachoAprobacion = {
 export type Despacho = {
   id: string;
   numero: string;
-  /** Numero de factura/nota de entrega del documento origen — unico, llave de idempotencia de la importación. */
+  /** Numero de factura/nota de entrega del documento origen — con el tipo, llave de idempotencia de la importación. */
   numeroDocumento: string;
+  /** "FA" (factura) o "NE" (nota de entrega); null en despachos de antes. */
+  tipoDocumento?: string | null;
   origenId: string;
   destinoClienteId: string;
   creadoPorId: string;

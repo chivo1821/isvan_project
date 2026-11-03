@@ -24,8 +24,8 @@ Criterios:
    (km * costo por km del vehiculo).
 
 Las distancias de esta etapa son estimadas (Haversine * FACTOR_VIALIDAD, el
-mismo factor que usa route_analysis): son decenas de combinaciones y llamar
-al TSP de iServer por cada una seria lentisimo. El trazado y los kilometros
+mismo factor que usa route_analysis): son decenas de combinaciones y
+resolver cada una sobre la red vial seria lentisimo. El trazado y los kilometros
 reales se calculan una sola vez, cuando el usuario crea la ruta a partir de
 la sugerencia (POST /rutas).
 """

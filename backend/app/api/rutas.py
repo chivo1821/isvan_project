@@ -253,12 +253,14 @@ def agenda(desde: date, hasta: date):
         pedidos: dict[str, list[dict]] = {}
         if rutas:
             cur.execute(
-                'SELECT d."rutaId", d."id", d."numero", d."estado", c."nombre" AS "cliente", c."ciudad", '
+                'SELECT d."rutaId", d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado", '
+                'c."codigo" AS "codigoCliente", c."nombre" AS "cliente", c."ciudad", '
                 'COALESCE(SUM(i."cantidad" * i."pesoUnitarioKg"), 0)::float AS "pesoKg" '
                 'FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
                 'LEFT JOIN "DespachoItem" i ON i."despachoId" = d."id" '
                 'WHERE d."rutaId" = ANY(%s) '
-                'GROUP BY d."rutaId", d."id", d."numero", d."estado", c."nombre", c."ciudad", d."ordenEnRuta" '
+                'GROUP BY d."rutaId", d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado", '
+                'c."codigo", c."nombre", c."ciudad", d."ordenEnRuta" '
                 'ORDER BY d."rutaId", d."ordenEnRuta"',
                 ([r["id"] for r in rutas],),
             )
@@ -464,7 +466,7 @@ def _calcular_y_guardar_trazado(cur, ruta_id: str, despachos: list[dict], almace
     for posicion, indice_geometria in enumerate(indices_parada):
         despacho_por_indice_geometria.setdefault(indice_geometria, despachos[orden[posicion]]["id"])
 
-    # Se guarda la geometria completa que devuelve SuperMap (puede ser de
+    # Se guarda la geometria completa que devuelve la red vial (puede ser de
     # cientos a miles de puntos en un trayecto largo) -- reducirla aca
     # cortaria curvas reales de las calles. La cantidad de RutaPunto no es
     # un problema (el mapa ya filtra que puntos marca, ver

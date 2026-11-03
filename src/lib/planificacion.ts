@@ -95,7 +95,10 @@ export type VehiculoOpcion = Pick<Vehiculo, "id" | "placa" | "tipo" | "capacidad
 export type PedidoAgenda = {
   id: string;
   numero: string;
+  numeroDocumento: string;
+  tipoDocumento: string | null;
   estado: string;
+  codigoCliente: string;
   cliente: string;
   ciudad: string | null;
   pesoKg: number;

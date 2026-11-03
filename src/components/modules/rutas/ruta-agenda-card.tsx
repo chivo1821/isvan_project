@@ -3,7 +3,13 @@ import { CalendarClockIcon, PackageIcon, TruckIcon, UserIcon } from "lucide-reac
 import { StatusBadge } from "@/components/shared/status-badge";
 import { AvisosRuta, IndicadorAvisos } from "@/components/modules/rutas/avisos-ruta";
 import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
-import { ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime, formatHora } from "@/lib/constants";
+import {
+  ESTADO_RUTA_META,
+  TIPO_VEHICULO_META,
+  documentoDespacho,
+  formatDateTime,
+  formatHora,
+} from "@/lib/constants";
 import type { RutaAgenda, VehiculoOpcion } from "@/lib/planificacion";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +100,8 @@ export function RutaAgendaCard({
         <ol className="space-y-0.5 border-t pt-2 text-xs text-muted-foreground">
           {ruta.pedidos.map((p, i) => (
             <li key={p.id}>
-              {i + 1}. {p.numero} — <span className="text-foreground">{p.cliente}</span>
+              {i + 1}. <span className="font-medium text-foreground">{documentoDespacho(p)}</span> · cód.{" "}
+              {p.codigoCliente} — <span className="text-foreground">{p.cliente}</span>
               {p.ciudad ? ` · ${p.ciudad}` : ""}
             </li>
           ))}

@@ -13,6 +13,7 @@ import {
   ESTADO_DESPACHO_META,
   ESTADO_RUTA_META,
   describirVehiculo,
+  documentoDespacho,
   formatDate,
   formatDateTime,
 } from "@/lib/constants";
@@ -163,8 +164,10 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
                       {index + 1}. {d.destinoCliente.nombre}
                     </p>
                     <p className="text-muted-foreground">
-                      {d.numero} · {d.destinoCliente.ciudad}
+                      <span className="font-medium text-foreground">{documentoDespacho(d)}</span> · cód.{" "}
+                      {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
                     </p>
+                    <p className="text-xs text-muted-foreground">Despacho {d.numero}</p>
                   </Link>
                   <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
                 </div>

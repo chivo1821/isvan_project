@@ -2,9 +2,10 @@
 (las lineas del extracto de ventas), su despacho y la ruta en que se entrego,
 y los pagos que la abonaron.
 
-El despacho se encuentra por el numero de documento (Despacho.numeroDocumento)
-y el cliente de destino (empresa + codigo sin ceros), el mismo cruce que usa
-el bloqueo de despachos (cartera.estado_de_despachos).
+El despacho se encuentra por el numero y el tipo de documento
+(Despacho.numeroDocumento y tipoDocumento: una factura y una nota de entrega
+pueden compartir numero) y el cliente de destino (empresa + codigo sin
+ceros). Un despacho sin tipo, de los de antes, se acepta si no hay otro.
 """
 
 from __future__ import annotations
@@ -60,8 +61,9 @@ def detalle(cur, documento_id: str) -> dict | None:
         'FROM "Despacho" d JOIN "Cliente" cl ON cl."id" = d."destinoClienteId" '
         'LEFT JOIN "Ruta" r ON r."id" = d."rutaId" LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
         "WHERE d.\"numeroDocumento\" = %s AND cl.\"empresa\" = %s AND ltrim(cl.\"codigo\", '0') = %s "
-        'ORDER BY d."fechaCreacion" DESC LIMIT 1',
-        (doc["numero"], doc["empresa"], doc["codigoCliente"]),
+        'AND (d."tipoDocumento" = %s OR d."tipoDocumento" IS NULL) '
+        'ORDER BY d."tipoDocumento" IS NULL, d."fechaCreacion" DESC LIMIT 1',
+        (doc["numero"], doc["empresa"], doc["codigoCliente"], doc["tipoDoc"]),
     )
     despacho = cur.fetchone()
     if despacho:

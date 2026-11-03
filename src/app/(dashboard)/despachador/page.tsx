@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
-import { ESTADO_RUTA_META, describirVehiculo, formatHora } from "@/lib/constants";
+import { ESTADO_RUTA_META, describirVehiculo, documentoDespacho, formatHora } from "@/lib/constants";
 import { getRutasActivas, type RutaConDetalle } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
 
@@ -108,7 +108,7 @@ export default async function DespachadorPage() {
                         </span>
                         <span className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground">
                           <PackageIcon className="size-3.5" aria-hidden />
-                          Pedido {d.numero}
+                          {documentoDespacho(d)} · cód. {d.destinoCliente.codigo}
                           {d.items?.length ? ` · ${d.items.length} producto(s)` : ""}
                         </span>
                       </li>

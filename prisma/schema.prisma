@@ -272,9 +272,17 @@ model Despacho {
   id                   String         @id @default(cuid())
   numero               String         @unique // ej. "D-0001"
   // Numero de factura/nota de entrega del documento origen (Excel o carga
-  // manual). Llave real de agrupacion e idempotencia de la importacion: cada
-  // documento subido debe ser nuevo, nunca repetir uno ya cargado.
-  numeroDocumento      String         @unique
+  // manual). Junto con el tipo es la llave real de agrupacion e idempotencia
+  // de la importacion: cada documento subido debe ser nuevo, nunca repetir
+  // uno ya cargado.
+  numeroDocumento      String
+  // "FA" (factura) o "NE" (nota de entrega): el sistema de ventas repite el
+  // mismo numero en los dos tipos, asi que sin el tipo no se sabe que papel
+  // se entrega. Sale del extracto al importar; opcional porque hay despachos
+  // anteriores y archivos que no traen la columna. Un numero sin tipo choca
+  // con cualquier tipo de ese numero (lo revisa app/api/despachos.py): la
+  // base no lo puede impedir porque trata los vacios como distintos.
+  tipoDocumento        String?
   origenId             String
   origen               Almacen        @relation("DespachoOrigen", fields: [origenId], references: [id])
   destinoClienteId     String
@@ -304,6 +312,8 @@ model Despacho {
   // Si se aprobo aunque el cliente tenia deuda vencida.
   excepcion     ExcepcionDespacho?
   reversos      DespachoReverso[]
+
+  @@unique([numeroDocumento, tipoDocumento])
 }
 
 model DespachoItem {
