@@ -83,14 +83,16 @@ def _con_items_lote(cur, despachos: list[dict]) -> list[dict]:
     return [{**d, "items": items_por_despacho.get(d["id"], [])} for d in despachos]
 
 
-def _crear_despacho_interno(cur, *, destino_cliente_id: str, numero_documento: str, creado_por_id: str, items) -> dict:
+def _crear_despacho_interno(
+    cur, *, destino_cliente_id: str, numero_documento: str, tipo_documento: str | None, creado_por_id: str, items
+) -> dict:
     numero = siguiente_numero(cur, "Despacho", "D", 4)
     despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
     cur.execute(
         'INSERT INTO "Despacho" '
-        '("id", "numero", "numeroDocumento", "origenId", "destinoClienteId", "creadoPorId", "estado") '
-        "VALUES (%s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION') RETURNING *",
-        (despacho_id, numero, numero_documento, ALMACEN_BASE_ID, destino_cliente_id, creado_por_id),
+        '("id", "numero", "numeroDocumento", "tipoDocumento", "origenId", "destinoClienteId", "creadoPorId", "estado") '
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION') RETURNING *",
+        (despacho_id, numero, numero_documento, tipo_documento, ALMACEN_BASE_ID, destino_cliente_id, creado_por_id),
     )
     despacho_row = cur.fetchone()
 
@@ -231,6 +233,7 @@ def crear_despacho(data: DespachoCreate, usuario: dict = Depends(requiere_rol("D
             cur,
             destino_cliente_id=data.destinoClienteId,
             numero_documento=data.numeroDocumento,
+            tipo_documento=data.tipoDocumento,
             creado_por_id=usuario["id"],
             items=data.items,
         )
@@ -262,6 +265,10 @@ def crear_despacho(data: DespachoCreate, usuario: dict = Depends(requiere_rol("D
 #   de verdad de ese dato, asi que al confirmar la importacion se guarda en
 #   el Cliente (ver mas abajo); de ahi lo toma el motor de sugerencia de
 #   rutas para agrupar juntos a los clientes de una misma ruta comercial.
+# - Columna opcional de tipo de documento (FA factura, NE nota de entrega):
+#   el sistema de ventas repite numeros entre los dos tipos, y el despachador
+#   necesita saber que papel lleva. Otros codigos (DV, DN) son devoluciones,
+#   que ya se descartan por las unidades.
 
 ALIAS_COLUMNAS: dict[str, list[str]] = {
     "codigo_cliente": ["codigo_cliente", "codigo_de_cliente", "cod_cliente", "codigo"],
@@ -271,7 +278,9 @@ ALIAS_COLUMNAS: dict[str, list[str]] = {
     "peso_unitario_kg": ["peso_unitario_kg", "peso_unitario", "peso_kg", "peso"],
     "litros": ["litros"],
     "ruta": ["ruta", "ruta_comercial", "cod_ruta", "codigo_ruta", "nro_ruta", "zona"],
+    "tipo_documento": ["tipo_documento", "tipo_doc", "tp_doc", "tipo_de_documento", "cod_tipo_doc"],
 }
+TIPOS_DOCUMENTO = ("FA", "NE")
 CAMPOS_REQUERIDOS = ["codigo_cliente", "numero_documento", "descripcion_item", "cantidad"]
 
 # El negocio confirma que para su catalogo la equivalencia es 1 a 1: un pote
@@ -330,6 +339,7 @@ CAMPOS_SIN_ENCABEZADO = {
     "unidades": "cantidad",
     "litros": "litros",
     "ruta": "ruta",
+    "tipo_doc": "tipo_documento",
 }
 REQUERIDOS_SIN_ENCABEZADO = ["codigo_cliente", "num_doc", "producto", "unidades", "litros"]
 
@@ -379,9 +389,9 @@ def descargar_plantilla_despachos():
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja.title = "Despachos"
-    hoja.append(["ruta", "codigo cliente", "cliente", "num docum", "producto", "unidades", "litros"])
-    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "1237", "TIO RICO MANTECADO 1X3.6L", 2, 7.2])
-    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "1237", "MAGNUM ALMENDRAS 18X90ML", 18, 1.62])
+    hoja.append(["ruta", "codigo cliente", "cliente", "tipo doc", "num docum", "producto", "unidades", "litros"])
+    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "FA", "1237", "TIO RICO MANTECADO 1X3.6L", 2, 7.2])
+    hoja.append(["R3", "2118", "Distribuidora Don Pepe", "FA", "1237", "MAGNUM ALMENDRAS 18X90ML", 18, 1.62])
     for columna in hoja.columns:
         letra = columna[0].column_letter
         ancho = max(len(str(c.value)) for c in columna if c.value is not None)
@@ -395,6 +405,7 @@ def descargar_plantilla_despachos():
         ["«codigo cliente» tiene que existir en Clientes, en la empresa que elijas al importar."],
         ["«litros» es el total de la fila y se toma como kilos (1 litro = 1 kg)."],
         ["«ruta» es opcional: la ruta comercial del cliente. «cliente» es solo de referencia."],
+        ["«tipo doc» es opcional: FA (factura) o NE (nota de entrega). Se muestra en las rutas."],
         ["Las filas con unidades en 0 o negativas (devoluciones) se ignoran."],
     ]:
         notas.append(linea)
@@ -454,6 +465,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
             descripcion = str(val("descripcion_item") or "").strip()
             cantidad_raw = val("cantidad")
             ruta_comercial = valor_a_texto(val("ruta")) or None
+            tipo_documento = valor_a_texto(val("tipo_documento")).upper()
 
             # Filas con cantidad <= 0 son devoluciones/notas de credito del
             # extracto de ventas -- se ignoran en silencio, no es un error.
@@ -529,6 +541,7 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
                 "clienteCodigo": cliente["codigo"], "clienteNombre": cliente["nombre"],
                 "descripcion": descripcion, "cantidad": cantidad, "pesoUnitarioKg": peso,
                 "requiereFrio": True, "rutaComercial": ruta_comercial,
+                "tipoDocumento": tipo_documento if tipo_documento in TIPOS_DOCUMENTO else None,
             })
 
     # Agrupa por numero de documento (llave real del despacho, no el codigo
@@ -552,7 +565,9 @@ def importar_excel_preview(empresa: str = Form(...), archivo: UploadFile = File(
         # que traiga el documento (todas sus filas son del mismo cliente).
         ruta_comercial_doc = next((f["rutaComercial"] for f in filas_doc if f["rutaComercial"]), None)
         grupos.append({
-            "numeroDocumento": doc, "clienteId": primero["clienteId"],
+            "numeroDocumento": doc,
+            "tipoDocumento": next((f["tipoDocumento"] for f in filas_doc if f["tipoDocumento"]), None),
+            "clienteId": primero["clienteId"],
             "clienteCodigo": primero["clienteCodigo"], "clienteNombre": primero["clienteNombre"],
             "rutaComercial": ruta_comercial_doc,
             "items": [{
@@ -602,7 +617,8 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest, usuario: dict 
         for grupo, numero in zip(data.grupos, numeros):
             despacho_id = f"despacho-{uuid.uuid4().hex[:10]}"
             filas_despacho.append(
-                (despacho_id, numero, grupo.numeroDocumento, ALMACEN_BASE_ID, grupo.clienteId, usuario["id"], ahora)
+                (despacho_id, numero, grupo.numeroDocumento, grupo.tipoDocumento, ALMACEN_BASE_ID, grupo.clienteId,
+                 usuario["id"], ahora)
             )
             items_creados = []
             for item in grupo.items:
@@ -618,7 +634,7 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest, usuario: dict 
                 })
             creados.append({
                 "id": despacho_id, "numero": numero, "numeroDocumento": grupo.numeroDocumento,
-                "origenId": ALMACEN_BASE_ID, "destinoClienteId": grupo.clienteId,
+                "tipoDocumento": grupo.tipoDocumento, "origenId": ALMACEN_BASE_ID, "destinoClienteId": grupo.clienteId,
                 "creadoPorId": usuario["id"], "estado": "PENDIENTE_APROBACION",
                 "fechaCreacion": ahora, "fechaEstimadaEntrega": None,
                 "rutaId": None, "ordenEnRuta": None, "items": items_creados,
@@ -626,8 +642,9 @@ def importar_excel_confirmar(data: ImportarExcelConfirmarRequest, usuario: dict 
 
         cur.executemany(
             'INSERT INTO "Despacho" '
-            '("id", "numero", "numeroDocumento", "origenId", "destinoClienteId", "creadoPorId", "fechaCreacion", "estado") '
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION')",
+            '("id", "numero", "numeroDocumento", "tipoDocumento", "origenId", "destinoClienteId", "creadoPorId", '
+            '"fechaCreacion", "estado") '
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PENDIENTE_APROBACION')",
             filas_despacho,
         )
         cur.executemany(

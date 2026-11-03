@@ -4,6 +4,7 @@ import { useState } from "react";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { ParadaAcciones, type MarcasParada } from "@/components/modules/despachador/parada-acciones";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { documentoDespacho } from "@/lib/constants";
 import type { Cliente, Despacho, EstadoRuta, RutaPunto } from "@/lib/mock-data";
 
 type Parada = Despacho & { destinoCliente: Cliente };
@@ -67,7 +68,8 @@ export function ViajeEnCurso({
                   {index + 1}. {d.destinoCliente.nombre}
                 </p>
                 <p className="text-muted-foreground">
-                  {d.numero} · {d.destinoCliente.direccion}, {d.destinoCliente.ciudad}
+                  <span className="font-medium text-foreground">{documentoDespacho(d)}</span> · cód.{" "}
+                  {d.destinoCliente.codigo} · {d.destinoCliente.direccion}, {d.destinoCliente.ciudad}
                 </p>
                 <ul className="mt-1 text-xs text-muted-foreground">
                   {d.items.map((item) => (

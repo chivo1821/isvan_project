@@ -445,10 +445,15 @@ class ReversoDespacho(BaseModel):
     llegadaEn: Optional[Instante] = None
 
 
+TipoDocumentoDespacho = Literal["FA", "NE"]
+
+
 class Despacho(BaseModel):
     id: str
     numero: str
     numeroDocumento: str
+    # FA o NE; None en despachos de antes o de archivos sin esa columna.
+    tipoDocumento: Optional[str] = None
     origenId: str
     destinoClienteId: str
     creadoPorId: str
@@ -470,6 +475,7 @@ class DespachoCreate(BaseModel):
     # Quien lo crea sale de la sesion, no del cuerpo (ver crear_despacho).
     destinoClienteId: str
     numeroDocumento: str
+    tipoDocumento: Optional[TipoDocumentoDespacho] = None
     items: list[DespachoItemCreate]
 
 
@@ -536,6 +542,7 @@ class ImportarExcelItemPreview(BaseModel):
 
 class ImportarExcelGrupoPreview(BaseModel):
     numeroDocumento: str
+    tipoDocumento: Optional[TipoDocumentoDespacho] = None
     clienteId: str
     clienteCodigo: str
     clienteNombre: str

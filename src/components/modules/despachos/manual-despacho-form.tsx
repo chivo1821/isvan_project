@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TIPO_DOCUMENTO_DESPACHO } from "@/lib/constants";
 import type { Almacen, Cliente, Despacho } from "@/lib/mock-data";
 
 type ItemForm = { descripcion: string; cantidad: string; pesoUnitarioKg: string; requiereFrio: boolean };
@@ -30,6 +31,7 @@ export function ManualDespachoForm({
   const router = useRouter();
   const [clienteId, setClienteId] = useState("");
   const [numeroDocumento, setNumeroDocumento] = useState("");
+  const [tipoDocumento, setTipoDocumento] = useState("");
   const [items, setItems] = useState<ItemForm[]>([itemVacio()]);
   const [enviando, setEnviando] = useState(false);
 
@@ -48,7 +50,8 @@ export function ManualDespachoForm({
   const itemsValidos = items.filter(
     (it) => it.descripcion.trim() && Number(it.cantidad) > 0 && Number(it.pesoUnitarioKg) >= 0
   );
-  const puedeEnviar = Boolean(clienteId) && numeroDocumento.trim().length > 0 && itemsValidos.length > 0;
+  const puedeEnviar =
+    Boolean(clienteId) && Boolean(tipoDocumento) && numeroDocumento.trim().length > 0 && itemsValidos.length > 0;
 
   function pesoTotalItem(item: ItemForm) {
     const cantidad = Number(item.cantidad);
@@ -64,6 +67,7 @@ export function ManualDespachoForm({
       const despacho = await apiPost<Despacho>("/despachos", {
         destinoClienteId: clienteId,
         numeroDocumento: numeroDocumento.trim(),
+        tipoDocumento,
         items: itemsValidos.map((it) => ({
           descripcion: it.descripcion.trim(),
           cantidad: Number(it.cantidad),
@@ -91,7 +95,7 @@ export function ManualDespachoForm({
       helpText="Útil para un pedido suelto sin planilla — elige el cliente y agrega los ítems a mano."
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr_1fr]">
           <div className="space-y-1.5">
             <Label htmlFor="cliente">Cliente</Label>
             <Select value={clienteId} onValueChange={setClienteId}>
@@ -102,6 +106,21 @@ export function ManualDespachoForm({
                 {clientes.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     [{c.empresa}] {c.codigo} — {c.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tipoDocumento">Tipo de documento</Label>
+            <Select value={tipoDocumento} onValueChange={setTipoDocumento}>
+              <SelectTrigger id="tipoDocumento" className="w-full">
+                <SelectValue placeholder="Elige el tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(TIPO_DOCUMENTO_DESPACHO).map(([codigo, nombre]) => (
+                  <SelectItem key={codigo} value={codigo}>
+                    {nombre} ({codigo})
                   </SelectItem>
                 ))}
               </SelectContent>

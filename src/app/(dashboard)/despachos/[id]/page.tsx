@@ -19,6 +19,7 @@ import {
   ESTADO_RUTA_META,
   ROL_USUARIO_META,
   describirVehiculo,
+  documentoDespacho,
   formatDateTime,
   formatHora,
 } from "@/lib/constants";
@@ -54,7 +55,7 @@ export default async function DespachoDetallePage({ params }: PageProps<"/despac
     <div className="space-y-6">
       <PageHeader
         title={despacho.numero}
-        subtitle={`Documento ${despacho.numeroDocumento} · creado el ${formatDateTime(despacho.fechaCreacion)} por ${despacho.creadoPor.nombre}`}
+        subtitle={`${documentoDespacho(despacho)} · creado el ${formatDateTime(despacho.fechaCreacion)} por ${despacho.creadoPor.nombre}`}
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {puedeReversar && despacho.ruta && (

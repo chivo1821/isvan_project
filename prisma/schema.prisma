@@ -275,6 +275,11 @@ model Despacho {
   // manual). Llave real de agrupacion e idempotencia de la importacion: cada
   // documento subido debe ser nuevo, nunca repetir uno ya cargado.
   numeroDocumento      String         @unique
+  // "FA" (factura) o "NE" (nota de entrega): el sistema de ventas repite el
+  // mismo numero en los dos tipos, asi que sin el tipo no se sabe que papel
+  // se entrega. Sale del extracto al importar; opcional porque hay despachos
+  // anteriores y archivos que no traen la columna.
+  tipoDocumento        String?
   origenId             String
   origen               Almacen        @relation("DespachoOrigen", fields: [origenId], references: [id])
   destinoClienteId     String

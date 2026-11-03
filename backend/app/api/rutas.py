@@ -253,12 +253,14 @@ def agenda(desde: date, hasta: date):
         pedidos: dict[str, list[dict]] = {}
         if rutas:
             cur.execute(
-                'SELECT d."rutaId", d."id", d."numero", d."estado", c."nombre" AS "cliente", c."ciudad", '
+                'SELECT d."rutaId", d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado", '
+                'c."codigo" AS "codigoCliente", c."nombre" AS "cliente", c."ciudad", '
                 'COALESCE(SUM(i."cantidad" * i."pesoUnitarioKg"), 0)::float AS "pesoKg" '
                 'FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
                 'LEFT JOIN "DespachoItem" i ON i."despachoId" = d."id" '
                 'WHERE d."rutaId" = ANY(%s) '
-                'GROUP BY d."rutaId", d."id", d."numero", d."estado", c."nombre", c."ciudad", d."ordenEnRuta" '
+                'GROUP BY d."rutaId", d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado", '
+                'c."codigo", c."nombre", c."ciudad", d."ordenEnRuta" '
                 'ORDER BY d."rutaId", d."ordenEnRuta"',
                 ([r["id"] for r in rutas],),
             )

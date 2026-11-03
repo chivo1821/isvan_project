@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { documentoDespacho } from "@/lib/constants";
 import { esColumnasFaltantes, type ColumnasFaltantes } from "@/lib/indicadores";
 import type { Almacen, Despacho, Empresa } from "@/lib/mock-data";
 
 type ItemPreview = { descripcion: string; cantidad: number; pesoUnitarioKg: number; requiereFrio: boolean };
 type GrupoPreview = {
   numeroDocumento: string;
+  tipoDocumento?: string | null;
   clienteId: string;
   clienteCodigo: string;
   clienteNombre: string;
@@ -239,7 +241,7 @@ export function ExcelImportPanel({ origen }: { origen: Almacen }) {
                   <TableBody>
                     {resultado.grupos.map((g) => (
                       <TableRow key={g.numeroDocumento} className="hover:bg-transparent">
-                        <TableCell className="font-medium">{g.numeroDocumento}</TableCell>
+                        <TableCell className="font-medium">{documentoDespacho(g)}</TableCell>
                         <TableCell>
                           {g.clienteCodigo} — {g.clienteNombre}
                         </TableCell>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { ESTADO_DESPACHO_META, formatDate } from "@/lib/constants";
+import { ESTADO_DESPACHO_META, documentoDespacho, formatDate } from "@/lib/constants";
 import type { DespachoConDetalle } from "@/lib/mock-data";
 
 export function DespachosTable({ despachos }: { despachos: DespachoConDetalle[] }) {
@@ -21,7 +21,7 @@ export function DespachosTable({ despachos }: { despachos: DespachoConDetalle[] 
         </Link>
       ),
     },
-    { accessorKey: "numeroDocumento", header: "Documento" },
+    { id: "numeroDocumento", header: "Documento", accessorFn: (row) => documentoDespacho(row) },
     { id: "origen", header: "Origen", accessorFn: (row) => row.origen.nombre },
     {
       id: "rutaComercial",

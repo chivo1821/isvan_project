@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { TIPO_VEHICULO_META, documentoDespacho, formatDateTime } from "@/lib/constants";
 import type { Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
 import { salidaIso } from "@/lib/planificacion";
 
@@ -417,7 +417,8 @@ export function NuevaRutaWizard({
                           <ul className="text-xs text-muted-foreground">
                             {paradas.slice(0, 5).map((d) => (
                               <li key={d.id}>
-                                · {d.numero} — {d.destinoCliente.nombre}
+                                · {documentoDespacho(d)} — {d.destinoCliente.nombre} (cód.{" "}
+                                {d.destinoCliente.codigo})
                               </li>
                             ))}
                             {paradas.length > 5 && <li>· y {paradas.length - 5} más</li>}
@@ -466,7 +467,7 @@ export function NuevaRutaWizard({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10" />
-                    <TableHead>Despacho</TableHead>
+                    <TableHead>Documento</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Ruta cliente</TableHead>
                     <TableHead className="text-right">Peso est.</TableHead>
@@ -482,10 +483,15 @@ export function NuevaRutaWizard({
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={seleccionados.has(d.id)} onCheckedChange={() => alternar(d.id)} />
                       </TableCell>
-                      <TableCell className="font-medium">{d.numero}</TableCell>
+                      <TableCell>
+                        <span className="font-medium">{documentoDespacho(d)}</span>
+                        <span className="block text-xs text-muted-foreground">{d.numero}</span>
+                      </TableCell>
                       <TableCell>
                         {d.destinoCliente.nombre}
-                        <span className="ml-1 text-xs text-muted-foreground">({d.destinoCliente.ciudad})</span>
+                        <span className="block text-xs text-muted-foreground">
+                          cód. {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
+                        </span>
                       </TableCell>
                       <TableCell>
                         {d.destinoCliente.rutaComercial ? (
@@ -599,7 +605,7 @@ export function NuevaRutaWizard({
               <ul className="space-y-0.5 text-xs text-muted-foreground">
                 {despachosSeleccionados.map((d) => (
                   <li key={d.id}>
-                    {d.numero} — {d.destinoCliente.nombre}
+                    {documentoDespacho(d)} — {d.destinoCliente.nombre} (cód. {d.destinoCliente.codigo})
                     {d.destinoCliente.rutaComercial && ` · ${d.destinoCliente.rutaComercial}`}
                   </li>
                 ))}
