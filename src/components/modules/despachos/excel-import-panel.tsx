@@ -240,7 +240,7 @@ export function ExcelImportPanel({ origen }: { origen: Almacen }) {
                   </TableHeader>
                   <TableBody>
                     {resultado.grupos.map((g) => (
-                      <TableRow key={g.numeroDocumento} className="hover:bg-transparent">
+                      <TableRow key={documentoDespacho(g)} className="hover:bg-transparent">
                         <TableCell className="font-medium">{documentoDespacho(g)}</TableCell>
                         <TableCell>
                           {g.clienteCodigo} — {g.clienteNombre}
