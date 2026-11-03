@@ -65,6 +65,7 @@ export function LeafletMap({
   bounds,
   className,
   scrollWheelZoom = true,
+  arrastreConUnDedo = true,
   children,
 }: {
   center: [number, number];
@@ -73,8 +74,14 @@ export function LeafletMap({
   bounds?: LatLngBoundsExpression;
   className?: string;
   scrollWheelZoom?: boolean;
+  /** false: en pantallas táctiles el mapa se mueve con dos dedos y un dedo
+   * sigue bajando la página (si no, al bajar se termina moviendo el mapa).
+   * Con el mouse se arrastra igual. */
+  arrastreConUnDedo?: boolean;
   children?: ReactNode;
 }) {
+  // Este componente solo corre en el navegador (next/dynamic con ssr:false).
+  const tactil = window.matchMedia("(pointer: coarse)").matches;
   return (
     <MapContainer
       center={center}
@@ -84,6 +91,9 @@ export function LeafletMap({
       // Un paso mas fino evita ese redondeo visible sin perder nitidez de tiles.
       zoomSnap={0.25}
       scrollWheelZoom={scrollWheelZoom}
+      // Sin arrastre con un dedo, el pellizco de dos dedos acerca, aleja y
+      // mueve el mapa (Leaflet sigue el punto medio de los dedos).
+      dragging={arrastreConUnDedo || !tactil}
       className={cn("z-0 h-64 w-full rounded-lg", className)}
     >
       <TileLayer

@@ -68,8 +68,10 @@ export function ParadaAcciones({
 
   const puedeMarcar = rutaEnTransito && marcas.estado === "EN_TRANSITO";
 
+  // En el teléfono los botones van a lo ancho y con alto de dedo (44 px);
+  // en pantallas grandes vuelven a su tamaño, al costado de la parada.
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1.5">
+    <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end sm:gap-1.5">
       {(marcas.llegadaEn || marcas.entregadoEn) && (
         <p className="text-xs text-muted-foreground">
           {marcas.llegadaEn && `Llegada ${formatHora(marcas.llegadaEn)}`}
@@ -77,16 +79,27 @@ export function ParadaAcciones({
           {marcas.entregadoEn && `Entrega ${formatHora(marcas.entregadoEn)}`}
         </p>
       )}
-      <div className="flex items-center gap-2">
-        <StatusBadge {...estadoDeParada(marcas)} />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <StatusBadge {...estadoDeParada(marcas)} className="self-start sm:self-auto" />
         {puedeMarcar &&
           (marcas.llegadaEn ? (
-            <Button size="sm" disabled={enviando} onClick={() => marcar("entregar")}>
+            <Button
+              size="sm"
+              className="h-11 w-full text-base sm:h-7 sm:w-auto sm:text-[0.8rem]"
+              disabled={enviando}
+              onClick={() => marcar("entregar")}
+            >
               <CheckCircle2Icon />
               {enviando ? "Marcando..." : "Marcar entregado"}
             </Button>
           ) : (
-            <Button size="sm" variant="outline" disabled={enviando} onClick={() => marcar("llegada")}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-11 w-full text-base sm:h-7 sm:w-auto sm:text-[0.8rem]"
+              disabled={enviando}
+              onClick={() => marcar("llegada")}
+            >
               <MapPinCheckIcon />
               {enviando ? "Marcando..." : "Llegué"}
             </Button>
@@ -102,6 +115,7 @@ export function ParadaAcciones({
           placeholder="Ej.: el local estaba cerrado"
           exito={{ titulo: "Parada marcada como no entregada" }}
           onHecho={onNoEntregado}
+          className="h-10 w-full sm:h-7 sm:w-auto"
         />
       )}
     </div>
