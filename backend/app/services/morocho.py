@@ -9,6 +9,8 @@ y la API al crear o reprogramar una ruta.
 - Se sugiere solo para un pedido que no cabe en ninguna moto libre, dentro
   de la distancia maxima para motos y, si el pedido necesita frio, con las
   dos motos refrigeradas.
+- Llevan un solo cliente (pedido del cliente, 2026-11-03): las dos motos van
+  juntas a ese cliente y no salen con otras paradas.
 """
 
 from __future__ import annotations
@@ -51,6 +53,16 @@ def elegir_par(
     if peso_kg > tope:
         return None
     return Par(principal, apoyo, tope, principal["tieneRefrigeracion"] and apoyo["tieneRefrigeracion"])
+
+
+def validar_un_cliente(apoyo_id: str | None, clientes: set[str]) -> None:
+    """Para crear o reprogramar: un Morocho lleva un solo cliente."""
+    if apoyo_id is not None and len(clientes) > 1:
+        raise HTTPException(
+            400,
+            f"Un Morocho lleva un solo cliente y esta ruta tiene {len(clientes)}: "
+            "quita la segunda moto o deja en la ruta solo los despachos de un cliente",
+        )
 
 
 def validar_apoyo(cur, vehiculo_id: str | None, apoyo_id: str | None) -> None:

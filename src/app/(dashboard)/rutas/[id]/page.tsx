@@ -64,6 +64,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
                 vehiculos={agenda.vehiculos}
                 libres={enAgenda?.vehiculosLibres}
                 pesoKg={enAgenda?.pesoKg}
+                clientes={new Set(ruta.despachos.map((d) => d.destinoClienteId)).size}
               />
             )}
             {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}

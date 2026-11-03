@@ -203,7 +203,6 @@ def _armar_grupo(
     mezclar_rutas_comerciales: bool,
     radio_max_km: float,
     max_km_almacen: float | None = None,
-    semilla: _Parada | None = None,
 ) -> list[_Parada]:
     """Arma un viaje: siembra con la parada mas lejana del almacen y va
     agregando la mas cercana al grupo, sin salirse del radio permitido y
@@ -213,9 +212,7 @@ def _armar_grupo(
     dificiles de encajar, y dejarlas para el final produce un ultimo viaje
     disperso con clientes en puntas opuestas de la ciudad. Con el radio
     activo, ademas, el grupo de la semilla queda contenido en su zona (ej.
-    todo Charallave junto) en vez de arrastrar clientes del otro extremo.
-
-    semilla: para un Morocho, el pedido grande que lo justifica."""
+    todo Charallave junto) en vez de arrastrar clientes del otro extremo."""
     candidatas = [
         p for p in pendientes
         if p.peso_kg <= capacidad_kg
@@ -226,8 +223,7 @@ def _armar_grupo(
     if not candidatas:
         return []
 
-    if semilla is None or semilla not in candidatas:
-        semilla = max(candidatas, key=lambda p: haversine_km(origen, p.ubicacion))
+    semilla = max(candidatas, key=lambda p: haversine_km(origen, p.ubicacion))
     grupo = [semilla]
     en_grupo = {semilla.cliente_id}
     peso = semilla.peso_kg
@@ -347,18 +343,38 @@ def _motivos(
     return motivos
 
 
+def _alternativas(
+    libres: list[dict], grupo: list[_Parada], limite_moto: float, morocho: bool
+) -> list[dict]:
+    """Los vehiculos libres a esa hora que podrian llevar el viaje en lugar
+    del sugerido, para cambiarlo desde la sugerencia sin pasar por la
+    planificacion (el chofer va con su vehiculo: cambiar uno es cambiar el
+    otro). Incluye los que usan otras sugerencias: la pantalla descarta los
+    que ya estan tomados. En un Morocho, las motos que sirven para cualquiera
+    de los dos puestos; que el par alcance lo revisa la pantalla con
+    limiteMorochoKg."""
+    peso_kg = sum(p.peso_kg for p in grupo)
+    necesita_frio = any(p.requiere_frio for p in grupo)
+    mas_lejos_km = max(p.km_almacen for p in grupo)
+    return [
+        {**v, "costoKmEstimado": _costo_por_km(v)}
+        for v in libres
+        if (not necesita_frio or v["tieneRefrigeracion"])
+        and (v["tipo"] != "MOTO" or mas_lejos_km <= limite_moto)
+        and (v["tipo"] == "MOTO" if morocho else v["capacidadKg"] >= peso_kg)
+    ]
+
+
 def _sugerir_morocho(
     origen: LatLng,
     pendientes: list[_Parada],
     libres: list[dict],
     limite_moto: float,
     limite_morocho: float,
-    mezclar_rutas_comerciales: bool,
-    radio: float,
 ) -> tuple[dict, list[_Parada], set[str]] | None:
     """El viaje en Morocho para el pedido mas pesado que no cabe en una moto
-    libre pero si en dos (ver app/services/morocho.py). Si sobra espacio,
-    suma paradas cercanas hasta el tope del Morocho."""
+    libre pero si en dos (ver app/services/morocho.py). Lleva solo a ese
+    cliente: aunque sobre espacio, no suma otras paradas."""
     motos_libres = [v for v in libres if v["tipo"] == "MOTO"]
     if len(motos_libres) < 2:
         return None
@@ -373,11 +389,8 @@ def _sugerir_morocho(
     else:
         return None
 
-    grupo = _armar_grupo(
-        origen, pendientes, par.capacidad_kg, par.con_refrigeracion, mezclar_rutas_comerciales, radio,
-        limite_moto, semilla=pesada,
-    )
-    peso_kg = sum(p.peso_kg for p in grupo)
+    grupo = [pesada]
+    peso_kg = pesada.peso_kg
     distancia_km, tiempo_min = _estimar_recorrido(origen, grupo)
     costos = [_costo_por_km(par.principal), _costo_por_km(par.apoyo)]
     costo = round(distancia_km * sum(costos), 2) if None not in costos else None
@@ -484,11 +497,10 @@ def sugerir_plan_rutas(
         # (Morocho): sale en un viaje propio con las dos, antes que lo demas
         # consuma las motos (pedido del cliente, 2026-10-16).
         if priorizar_motos:
-            morocho = _sugerir_morocho(
-                origen, pendientes, libres, limite_moto, limite_morocho, mezclar_rutas_comerciales, radio
-            )
+            morocho = _sugerir_morocho(origen, pendientes, libres, limite_moto, limite_morocho)
             if morocho:
                 sugerencia, grupo, usadas = morocho
+                sugerencia["alternativas"] = _alternativas(libres_a_esa_hora, grupo, limite_moto, morocho=True)
                 sugerencias.append(sugerencia)
                 libres = [v for v in libres if v["id"] not in usadas]
                 en_grupo = {p.cliente_id for p in grupo}
@@ -574,6 +586,7 @@ def sugerir_plan_rutas(
             "costoEstimado": costo,
             "rutasComerciales": _rutas_comerciales(grupo),
             "motivos": motivos,
+            "alternativas": _alternativas(libres_a_esa_hora, grupo, limite_moto, morocho=False),
         })
 
         if not con_vehiculo or asignado["tipo"] != "MOTO":
@@ -618,6 +631,7 @@ def sugerir_plan_rutas(
         "sugerencias": sugerencias,
         "sinAsignar": sin_asignar,
         "advertencias": _advertencias_morocho(sugerencias, fuera_de_moto + pendientes, flota, limite_moto),
+        "limiteMorochoKg": limite_morocho,
     }
 
 

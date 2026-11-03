@@ -47,6 +47,7 @@ export function ProgramarRutaDialog({
   vehiculos,
   libres,
   pesoKg,
+  clientes,
   boton,
 }: {
   ruta: {
@@ -60,6 +61,8 @@ export function ProgramarRutaDialog({
   /** Los vehículos libres en el horario actual de la ruta, si se conocen. */
   libres?: string[] | null;
   pesoKg?: number;
+  /** Cuántos clientes distintos lleva la ruta: un Morocho lleva uno solo. */
+  clientes?: number;
   /** El botón que abre el diálogo. Se pasa como datos y no como un
    * <Button> armado: desde un componente de servidor (la agenda), un
    * elemento llega al cliente como referencia diferida y el DialogTrigger
@@ -81,8 +84,15 @@ export function ProgramarRutaDialog({
   const salidaCambio = fecha !== inicial.fecha || hora !== inicial.hora;
   const vehiculoNuevo = vehiculoId === SIN_VEHICULO ? null : vehiculoId;
   const principal = vehiculos.find((v) => v.id === vehiculoNuevo);
-  const puedeMorocho = principal?.tipo === "MOTO";
-  const apoyoNuevo = puedeMorocho && apoyoId !== SIN_VEHICULO && apoyoId !== vehiculoNuevo ? apoyoId : null;
+  // Un Morocho lleva un solo cliente (ver backend/app/services/morocho.py).
+  const variosClientes = (clientes ?? 0) > 1;
+  const puedeMorocho = principal?.tipo === "MOTO" && !variosClientes;
+  // Una ruta de varios clientes que ya era Morocho (de antes de la regla) la
+  // conserva mientras no le cambien la moto principal: cambiar solo la hora
+  // no le quita la segunda.
+  const conservaApoyo = variosClientes && vehiculoNuevo === ruta.vehiculoId ? (ruta.vehiculoApoyoId ?? null) : null;
+  const apoyoNuevo =
+    puedeMorocho && apoyoId !== SIN_VEHICULO && apoyoId !== vehiculoNuevo ? apoyoId : conservaApoyo;
   const apoyo = vehiculos.find((v) => v.id === apoyoNuevo);
   const vehiculoCambio = vehiculoNuevo !== ruta.vehiculoId || apoyoNuevo !== (ruta.vehiculoApoyoId ?? null);
   // Los libres se calcularon para el horario actual: con otro horario ya no
@@ -182,7 +192,7 @@ export function ProgramarRutaDialog({
           <div className="space-y-1.5">
             <Label htmlFor={`vehiculo-${ruta.id}`}>Vehículo</Label>
             <Select value={vehiculoId} onValueChange={setVehiculoId}>
-              <SelectTrigger id={`vehiculo-${ruta.id}`} className="w-full">
+              <SelectTrigger id={`vehiculo-${ruta.id}`} className="w-full min-w-0 *:data-[slot=select-value]:block! *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -220,11 +230,19 @@ export function ProgramarRutaDialog({
             )}
           </div>
 
+          {principal?.tipo === "MOTO" && variosClientes && (
+            <p className="text-xs text-muted-foreground">
+              Un Morocho (dos motos) lleva un solo cliente y esta ruta tiene {clientes}: no se le puede poner una
+              segunda moto.
+              {ruta.vehiculoApoyoId && " Si le cambias la moto principal, se le quita la segunda que tiene."}
+            </p>
+          )}
+
           {puedeMorocho && (
             <div className="space-y-1.5">
               <Label htmlFor={`apoyo-${ruta.id}`}>Segunda moto (Morocho)</Label>
               <Select value={apoyoNuevo ?? SIN_VEHICULO} onValueChange={setApoyoId}>
-                <SelectTrigger id={`apoyo-${ruta.id}`} className="w-full">
+                <SelectTrigger id={`apoyo-${ruta.id}`} className="w-full min-w-0 *:data-[slot=select-value]:block! *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -116,6 +116,7 @@ export function RutaAgendaCard({
           vehiculos={vehiculos}
           libres={ruta.vehiculosLibres}
           pesoKg={ruta.pesoKg}
+          clientes={new Set(ruta.pedidos.map((p) => p.codigoCliente)).size}
           boton={{ texto: vehiculo ? "Reprogramar" : "Asignar vehículo", destacado: !vehiculo, anchoCompleto: true }}
         />
       )}
