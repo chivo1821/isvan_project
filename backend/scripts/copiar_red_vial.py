@@ -442,7 +442,7 @@ def medir_seleccion(orig: psycopg.Connection, filtros: dict[str, str], simplific
 
         if filtros.get("RedVialTramo"):
             # Los clientes que quedan fuera no pierden la app: sus rutas caen
-            # al respaldo (iServer o linea recta), pero conviene saber cuantos.
+            # a la estimacion en linea recta, pero conviene saber cuantos.
             cur.execute(
                 "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dentro) AS dentro FROM ("
                 '  SELECT EXISTS (SELECT 1 FROM red_vial_zona z '
@@ -592,7 +592,7 @@ def main() -> None:
             for i in faltan:
                 print(f"    {i['definicion']};")
             print("Sin ellos la red esta cargada pero las consultas van por barrido completo:")
-            print("mejor dejar MOTOR_RUTAS=iserver hasta que esten.")
+            print("las rutas van a ser lentas hasta que esten.")
 
         with dest.cursor() as cur:
             cur.execute('ANALYZE "RedVialTramo"')

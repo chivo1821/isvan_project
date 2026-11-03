@@ -464,7 +464,7 @@ def _calcular_y_guardar_trazado(cur, ruta_id: str, despachos: list[dict], almace
     for posicion, indice_geometria in enumerate(indices_parada):
         despacho_por_indice_geometria.setdefault(indice_geometria, despachos[orden[posicion]]["id"])
 
-    # Se guarda la geometria completa que devuelve SuperMap (puede ser de
+    # Se guarda la geometria completa que devuelve la red vial (puede ser de
     # cientos a miles de puntos en un trayecto largo) -- reducirla aca
     # cortaria curvas reales de las calles. La cantidad de RutaPunto no es
     # un problema (el mapa ya filtra que puntos marca, ver

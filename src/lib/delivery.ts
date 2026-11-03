@@ -30,7 +30,7 @@ export type ParadaDelivery = {
   despachos: number;
   numeros: string;
   km: number | null;
-  /** "iserver" (red vial) o "estimada" (línea recta por un factor). */
+  /** "red_vial" (pgRouting en la base) o "estimada" (línea recta por un factor). */
   fuenteKm: string | null;
   montoUsd: number | null;
   rango: string | null;

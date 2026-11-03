@@ -26,7 +26,7 @@ backend/
       excel_utils.py       # helpers compartidos para parsear los Excel de importacion
       numero.py            # siguiente numero secuencial (D-0001, R-0001)
     services/
-      route_analysis.py    # ruta real (FindPath) y multi-parada (TSP) via SuperMap iServer, con fallback sintetico
+      route_analysis.py    # ruta de un tramo y multi-parada sobre la red vial (red_vial.py), con estimacion en linea recta de respaldo
       suggest_vehiculo.py  # sugerencia de vehiculo por capacidad/refrigeracion
       plan_rutas.py        # sugerencia de como agrupar despachos en viajes (ruta comercial + capacidad + cercania + costo)
     api/
@@ -45,7 +45,7 @@ backend/
 | `usuarios.py` | Listar/crear usuarios (solo ADMIN), autoservicio de cambio de contraseña, reseteo por ADMIN, asignación del vehículo de un repartidor (`PATCH /{id}/vehiculo`) |
 | `clientes.py` | CRUD de clientes por empresa (ISVAN/TRALOG), carga individual y masiva por Excel (`/importar/preview`, `/importar/confirmar`, `/importar/plantilla`) |
 | `despachos.py` | Creación manual o por Excel (`/importar/preview`, `/importar/confirmar`), aprobación, ajuste de cantidades por ítem |
-| `rutas.py` | Sugiere cómo agrupar los despachos aprobados en viajes (`POST /rutas/sugerencias`), arma la ruta multi-parada elegida (TSP contra SuperMap iServer), la recalcula, inicia el viaje y marca entregas por parada |
+| `rutas.py` | Sugiere cómo agrupar los despachos aprobados en viajes (`POST /rutas/sugerencias`), arma la ruta multi-parada elegida (orden por la red vial de la base), la recalcula, inicia el viaje y marca entregas por parada |
 | `vehiculos.py` | CRUD de flota |
 | `almacenes.py` | Listado (hoy un único almacén, Catia) |
 | `reportes.py` | Descargas en Excel (`/reportes/clientes.xlsx`, `/despachos.xlsx`, `/rutas.xlsx`) para gestión — no accesibles a un REPARTIDOR |
@@ -72,23 +72,21 @@ principal). Para cerrar todo: `npm run stop` (cierra por puerto 3000/8000,
 con respaldo por si `uvicorn --reload` deja un proceso hijo huérfano en
 Windows — ver [`scripts/stop-dev.ps1`](../scripts/stop-dev.ps1)).
 
-## Análisis de rutas (SuperMap iServer)
+## Análisis de rutas (red vial en la base)
 
-`services/route_analysis.py` calcula la ruta real contra el servicio de
-Transportation Analyst de SuperMap iServer si `NETWORK_ANALYST_URL` está
-configurado (ver `.env.example`):
+`services/route_analysis.py` calcula las rutas sobre la red vial guardada en
+la base (PostGIS + pgRouting, ver `services/red_vial.py`):
 
-- **Tramo simple** (`FindPath`, `.../path.json`) para origen→destino.
-- **Multi-parada** (`FindTSPPaths`, `.../tsppath.json`) para una Ruta con
-  varios despachos: el orden de visita real lo decide el servicio
-  (`stopIndexes` en la respuesta), no una heurística local.
+- **Tramo simple** para origen→destino (`pgr_dijkstra`, con caché en
+  `RutaCalculada`).
+- **Multi-parada** para una Ruta con varios despachos: la red decide el
+  orden de visita por tiempo real y se encadenan los tramos.
 
-El proxy de ambos servicios solo acepta `GET`, así que los parámetros
-(`nodes`, `parameter`) van serializados como JSON en la query string en vez
-de un body `POST`. Si el servicio no está configurado, no responde, o no
-encuentra un camino entre los puntos, cada uno cae automáticamente a un
-fallback (ruta sintética / heurística de vecino más cercano encadenando
-tramos) para que la app nunca se rompa por esto.
+Si la red no resuelve un tramo (cliente lejos de la red o sin camino), se
+estima en línea recta por un factor y queda marcado como `estimada`.
+
+**No se usa ningún servicio externo de rutas.** El SuperMap iServer quedó
+fuera a propósito: el código ya no lo llama y no debe volver a configurarse.
 
 ## Sugerencia de agrupación de rutas
 
