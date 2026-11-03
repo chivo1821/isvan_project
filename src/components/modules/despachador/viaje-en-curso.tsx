@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { ArrowDownIcon, MapIcon, PhoneIcon } from "lucide-react";
+import { ArrowDownIcon, MapIcon, NavigationIcon, PhoneIcon } from "lucide-react";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { ParadaAcciones, type MarcasParada } from "@/components/modules/despachador/parada-acciones";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -163,7 +163,8 @@ export function ViajeEnCurso({
             {paradas.map((d, index) => {
               const esSiguiente = d.id === siguiente?.id;
               const entregada = d.estado === "ENTREGADO";
-              const { telefono } = d.destinoCliente;
+              const { lat, lng, telefono } = d.destinoCliente;
+              const conUbicacion = lat != null && lng != null;
               return (
                 <div
                   key={d.id}
@@ -203,16 +204,29 @@ export function ViajeEnCurso({
                       recorre más rápido. */}
                   {!entregada && (
                     <div className="min-w-0 space-y-2 sm:col-start-1">
-                      {/* Sin enlaces a Google Maps ni Waze: el recorrido se sigue
-                          en la aplicación (decisión del cliente). */}
-                      {telefono && (
+                      {/* Google Maps sí, Waze no (decisión del cliente). */}
+                      {(conUbicacion || telefono) && (
                         <div className="flex flex-wrap gap-2">
-                          <Button asChild variant="outline" size="sm" className="h-10 sm:h-7">
-                            <a href={`tel:${telefono.replace(/[^\d+]/g, "")}`}>
-                              <PhoneIcon />
-                              Llamar
-                            </a>
-                          </Button>
+                          {conUbicacion && (
+                            <Button asChild variant="outline" size="sm" className="h-10 sm:h-7">
+                              <a
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <NavigationIcon />
+                                Google Maps
+                              </a>
+                            </Button>
+                          )}
+                          {telefono && (
+                            <Button asChild variant="outline" size="sm" className="h-10 sm:h-7">
+                              <a href={`tel:${telefono.replace(/[^\d+]/g, "")}`}>
+                                <PhoneIcon />
+                                Llamar
+                              </a>
+                            </Button>
+                          )}
                         </div>
                       )}
                       <ul className="text-xs text-muted-foreground">
