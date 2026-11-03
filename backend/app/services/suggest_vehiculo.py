@@ -64,7 +64,7 @@ def sugerir_vehiculos(
         cur.execute('SELECT "lat", "lng" FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
         almacen = cur.fetchone()
         cur.execute(
-            'SELECT c."lat", c."lng" FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
+            'SELECT c."id", c."lat", c."lng" FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
             'WHERE d."id" = ANY(%s)',
             (despacho_ids,),
         )
@@ -98,7 +98,12 @@ def sugerir_vehiculos(
 
     sugerencias.sort(key=lambda s: s["holguraKg"])
     sugerencias = sugerencias[:3]
-    par = mo.elegir_par(libres, peso_estimado_kg, requiere_cadena_frio, mas_lejos_km, limite_moto, limite_morocho)
+    # Un Morocho lleva un solo cliente (ver app/services/morocho.py).
+    par = (
+        mo.elegir_par(libres, peso_estimado_kg, requiere_cadena_frio, mas_lejos_km, limite_moto, limite_morocho)
+        if len({c["id"] for c in clientes}) == 1
+        else None
+    )
     if par:
         sugerencias.insert(0, {
             "vehiculo": par.principal,

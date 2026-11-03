@@ -409,8 +409,9 @@ def crear_ruta(data: RutaCreate, usuario: dict = Depends(requiere_rol("DESPACHOS
             cur.execute('SELECT 1 FROM "Vehiculo" WHERE "id" = %s', (data.vehiculoId,))
             if not cur.fetchone():
                 raise HTTPException(400, "El vehiculo no existe")
-        # Morocho: dos motos distintas (ver app/services/morocho.py).
+        # Morocho: dos motos distintas y un solo cliente (ver app/services/morocho.py).
         morocho.validar_apoyo(cur, data.vehiculoId, data.vehiculoApoyoId)
+        morocho.validar_un_cliente(data.vehiculoApoyoId, {d["destinoClienteId"] for d in despachos})
 
         numero = siguiente_numero(cur, "Ruta", "R", 4)
         ruta_id = f"ruta-{uuid.uuid4().hex[:10]}"
@@ -577,6 +578,9 @@ def programar_ruta(ruta_id: str, data: RutaProgramacion):
                 if not cur.fetchone():
                     raise HTTPException(400, "El vehiculo no existe")
             morocho.validar_apoyo(cur, principal, apoyo)
+            if apoyo is not None:
+                cur.execute('SELECT DISTINCT "destinoClienteId" FROM "Despacho" WHERE "rutaId" = %s', (ruta_id,))
+                morocho.validar_un_cliente(apoyo, {r["destinoClienteId"] for r in cur.fetchall()})
             cur.execute(
                 'UPDATE "Ruta" SET "vehiculoId" = %s, "vehiculoApoyoId" = %s WHERE "id" = %s',
                 (principal, apoyo, ruta_id),

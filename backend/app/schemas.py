@@ -664,6 +664,12 @@ class RutaProgramacion(BaseModel):
 # ---------- Sugerencia de agrupacion de rutas ----------
 
 
+class VehiculoAlternativo(Vehiculo):
+    # Costo por km con el que se estima el viaje (el del vehiculo o el de su
+    # tipo), para recalcular el costo al cambiarlo en la pantalla.
+    costoKmEstimado: Optional[float] = None
+
+
 class SugerenciaRuta(BaseModel):
     """Un viaje propuesto: que despachos agrupar y en que vehiculo. Las
     metricas son estimadas (distancia en linea recta corregida por un factor
@@ -685,6 +691,10 @@ class SugerenciaRuta(BaseModel):
     costoEstimado: Optional[float] = None
     rutasComerciales: list[str]
     motivos: list[str]
+    # Los vehiculos libres a esa hora que tambien sirven para este viaje,
+    # para cambiar vehiculo y chofer desde la sugerencia (ver
+    # plan_rutas._alternativas).
+    alternativas: list[VehiculoAlternativo] = []
 
 
 class DespachosSinAsignar(BaseModel):
@@ -698,6 +708,8 @@ class PlanRutasResponse(BaseModel):
     # Lo que conviene saber del plan sin que lo cambie (p. ej. los Morochos
     # dejaron paradas livianas fuera de las motos).
     advertencias: list[str] = []
+    # Tope de un Morocho (morochoMaxKg), para revisar el par al cambiar una moto.
+    limiteMorochoKg: Optional[float] = None
 
 
 class PlanRutasRequest(BaseModel):
