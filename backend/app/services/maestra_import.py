@@ -26,7 +26,7 @@ import openpyxl
 from fastapi import HTTPException
 
 from app.core.excel_utils import mapear_columnas, normalizar_encabezado, valor_a_texto
-from app.services.indicadores_venta import ruta_comparable
+from app.services.indicadores_venta import RUTA_DE_BAJA, es_de_baja, ruta_comparable  # noqa: F401
 
 # campo -> encabezados que lo pueden nombrar (ya normalizados: minusculas,
 # sin acentos y con "_" en vez de espacios, ver normalizar_encabezado).
@@ -56,8 +56,8 @@ CAMPOS_DE_ACTIVO = ("activoCodigo", "activoTipo", "activoMarca")
 FILAS_ANTES_DEL_ENCABEZADO = 20
 # Mas alla no hay datos; hay archivos con miles de columnas vacias.
 COLUMNAS_UTILES = 40
-# La ruta de los dados de baja: no se cuenta como "por censar".
-RUTA_DE_BAJA = "77"
+# RUTA_DE_BAJA y es_de_baja viven en indicadores_venta (las metas tambien la
+# dejan fuera); se importan de alla para no tener dos definiciones.
 
 EMPRESAS = ("ISVAN", "TRALOG")
 
@@ -340,10 +340,6 @@ def leer_maestra(contenido: bytes, nombre_archivo: str, empresa: str) -> Maestra
         repetidos_distintos=dict(distintos),
         avisos=avisos,
     )
-
-
-def es_de_baja(ruta: str | None) -> bool:
-    return ruta_comparable(ruta) == RUTA_DE_BAJA
 
 
 def _orden_ruta(ruta: str) -> tuple:

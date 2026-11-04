@@ -164,6 +164,7 @@ model Usuario {
   liquidacionesCreadas  LiquidacionDelivery[] @relation("LiquidacionesDeliveryCreadasPor")
   redesViales           RedVialCarga[]        @relation("RedVialCargadaPor")
   metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
+  metasLitros           MetaLitros[]          @relation("MetasLitrosActualizadasPor")
   censos                Censo[]               @relation("CensosLlenados")
   maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
   censosCorregidos      Censo[]               @relation("CensosCorregidos")
@@ -596,6 +597,33 @@ model MetaVenta {
 
   @@unique([empresa, ruta, mes])
   @@index([empresa, mes])
+}
+
+// Meta de litros vendidos por ruta y mes, para el cuadro de metas (ver
+// app/services/cuadro_metas.py). Aparte de MetaVenta (USD): el cliente
+// maneja las dos y no siempre las carga juntas.
+model MetaLitros {
+  id      String   @id @default(cuid())
+  empresa Empresa
+  ruta    String
+  // Primer dia del mes, como MetaVenta.
+  mes     DateTime @db.Date
+  litros  Decimal  @db.Decimal(14, 2)
+
+  actualizadoEn    DateTime @default(now()) @updatedAt
+  actualizadoPorId String?
+  actualizadoPor   Usuario? @relation("MetasLitrosActualizadasPor", fields: [actualizadoPorId], references: [id], onDelete: SetNull)
+
+  @@unique([empresa, ruta, mes])
+  @@index([empresa, mes])
+}
+
+// Feriados nacionales: no cuentan como dias de venta en el cuadro de metas
+// (dias de venta = lunes a viernes menos feriados). Los de Carnaval y Semana
+// Santa cambian cada ano: se cargan a mano.
+model DiaFeriado {
+  fecha  DateTime @id @db.Date
+  nombre String
 }
 
 // Una fila del extracto: un producto dentro de un documento.

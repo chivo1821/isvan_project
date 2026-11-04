@@ -786,13 +786,27 @@ class MetaVentaItem(BaseModel):
     ruta: str
     # Cualquier dia del mes; el backend lo lleva al primero.
     mes: date
-    # 0 o negativo borra la meta de esa ruta y ese mes.
-    montoUsd: float
+    # En la unidad de la solicitud (USD o litros). 0 o negativo borra la meta
+    # de esa ruta y ese mes.
+    monto: float
 
 
 class GuardarMetasRequest(BaseModel):
     empresa: Empresa
+    # "usd": metas de venta (MetaVenta); "litros": litros vendidos (MetaLitros).
+    unidad: Literal["usd", "litros"] = "usd"
     metas: list[MetaVentaItem]
+
+
+class DiaFeriadoItem(BaseModel):
+    fecha: date
+    nombre: str
+
+
+class GuardarFeriadosRequest(BaseModel):
+    # Reemplaza los feriados de ese ano por esta lista.
+    anio: int
+    feriados: list[DiaFeriadoItem]
 
 
 # ---------- Cobranzas ----------

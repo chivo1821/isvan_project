@@ -21,8 +21,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TIPO_VEHICULO_META, documentoDespacho, formatDateTime } from "@/lib/constants";
-import type { Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
+import type { Almacen, Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
 import { salidaIso } from "@/lib/planificacion";
+import { MapaPrevioRuta } from "./mapa-previo-ruta";
 
 type DespachoConCliente = Despacho & { destinoCliente: Cliente };
 type SugerenciaVehiculo = {
@@ -172,8 +173,11 @@ function ChoferDelVehiculo({ conductor }: { conductor?: string | null }) {
 export function NuevaRutaWizard({
   despachos,
   salidaInicial,
+  almacen,
 }: {
   despachos: DespachoConCliente[];
+  /** El almacén de salida, para ubicarlo en el mapa de vista previa. */
+  almacen?: Almacen | null;
   /** La salida por defecto (la próxima hora en punto). La calcula el
    * servidor: si la calcularan el servidor y el navegador por separado y la
    * página cargara justo al cambiar la hora, no coincidirían (error de
@@ -225,6 +229,20 @@ export function NuevaRutaWizard({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+    setSugerencias(null);
+    setEleccion(null);
+  }
+
+  /** Desde el mapa: suma o quita todos los documentos de un cliente. */
+  function fijarSeleccion(ids: string[], incluir: boolean) {
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (incluir) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
     setSugerencias(null);
@@ -355,7 +373,7 @@ export function NuevaRutaWizard({
         salidaProgramada,
       });
       toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {
-        description: `${ruta.despachos.length} parada(s) · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
+        description: `${new Set(ruta.despachos.map((d) => d.destinoClienteId)).size} parada(s) · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
       });
       // Lo pendiente (sin vehículo, horarios que se pisan...) no frena la
       // creación, pero se avisa de entrada; queda también en la ruta.
@@ -374,6 +392,9 @@ export function NuevaRutaWizard({
 
   const despachosSeleccionados = despachos.filter((d) => seleccionados.has(d.id));
   const pesoSeleccionado = despachosSeleccionados.reduce((sum, d) => sum + pesoTotal(d), 0);
+  // Una parada = un cliente, aunque lleve varios documentos (igual que el
+  // planificador, ver _Parada en backend/app/services/plan_rutas.py).
+  const paradasSeleccionadas = new Set(despachosSeleccionados.map((d) => d.destinoClienteId)).size;
   const porId = new Map(despachos.map((d) => [d.id, d]));
   const elegida = sugerencias?.find((s) => s.vehiculo.id === vehiculoId && (s.vehiculoApoyo?.id ?? null) === apoyoId);
   const vehiculoElegido = elegida?.vehiculo;
@@ -758,7 +779,8 @@ export function NuevaRutaWizard({
         </NumberedCard>
       </div>
 
-      <div className="lg:sticky lg:top-6 lg:self-start">
+      {/* Fija al bajar; en pantallas bajas (confirmar + mapa no caben) hace scroll propio. */}
+      <div className="space-y-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto lg:[scrollbar-width:thin]">
         <NumberedCard number={5} title="Confirmar ruta" helpText="Se calcula el orden de paradas y el trazado desde Almacén Catia.">
           {despachosSeleccionados.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-6 text-center">
@@ -768,7 +790,11 @@ export function NuevaRutaWizard({
           ) : (
             <div className="space-y-1 text-sm">
               <p className="font-medium text-foreground">
-                {despachosSeleccionados.length} parada(s) · {formatKg(pesoSeleccionado)}
+                {paradasSeleccionadas} parada(s)
+                {despachosSeleccionados.length !== paradasSeleccionadas &&
+                  ` · ${despachosSeleccionados.length} documentos`}
+                {" · "}
+                {formatKg(pesoSeleccionado)}
               </p>
               <p className="text-muted-foreground">
                 {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Falta la fecha y hora de salida"}
@@ -783,7 +809,8 @@ export function NuevaRutaWizard({
                   <span className="text-warning">sin vehículo (se asigna después)</span>
                 )}
               </p>
-              <ul className="space-y-0.5 text-xs text-muted-foreground">
+              {/* Con tope de alto: el mapa de abajo tiene que seguir a la vista. */}
+              <ul className="max-h-40 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
                 {despachosSeleccionados.map((d) => (
                   <li key={d.id}>
                     {documentoDespacho(d)} — {d.destinoCliente.nombre} (cód. {d.destinoCliente.codigo})
@@ -802,6 +829,15 @@ export function NuevaRutaWizard({
             {creando ? "Creando ruta..." : vehiculoElegido ? "Crear ruta" : "Planificar sin vehículo"}
           </Button>
         </NumberedCard>
+
+        {despachos.length > 0 && (
+          <MapaPrevioRuta
+            despachos={despachos}
+            seleccionados={seleccionados}
+            almacen={almacen}
+            onCambiar={fijarSeleccion}
+          />
+        )}
       </div>
     </div>
   );

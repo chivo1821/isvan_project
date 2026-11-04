@@ -30,9 +30,10 @@ from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
-from app.schemas import GuardarMetasRequest, en_utc
+from app.schemas import GuardarFeriadosRequest, GuardarMetasRequest, en_utc
 from app.services import cartera
 from app.services import censo_clientes
+from app.services import cuadro_metas
 from app.services import indicadores_venta as iv
 from app.services.ventas_import import ExtractoVentas, ListaPrecios, leer_extracto, leer_lista_precios
 
@@ -349,33 +350,68 @@ def cobertura(empresa: str):
 # ---------- Metas de venta ----------
 
 
+# Donde vive cada unidad de meta: (tabla, columna del monto, prefijo del id).
+# Las dos tablas tienen la misma forma (empresa, ruta, mes).
+TABLA_DE_META = {"usd": ("MetaVenta", "montoUsd", "meta"), "litros": ("MetaLitros", "litros", "mlit")}
+
+
+def _tabla_de_meta(unidad: str) -> tuple[str, str, str]:
+    if unidad not in TABLA_DE_META:
+        raise HTTPException(400, f"Unidad desconocida: usa {' o '.join(TABLA_DE_META)}")
+    return TABLA_DE_META[unidad]
+
+
 @router.get("/metas")
-def listar_metas(empresa: str, anio: int):
+def listar_metas(empresa: str, anio: int, unidad: str = "usd"):
     """Las metas de ese ano, una fila por ruta y mes, mas las rutas que el
     cliente tiene en su cartera (para que la tabla las muestre todas aunque
-    todavia no tengan meta)."""
+    todavia no tengan meta). unidad: "usd" o "litros" (vendidos)."""
     _validar_empresa(empresa)
+    tabla, columna, _ = _tabla_de_meta(unidad)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT "ruta", "mes", "montoUsd"::float AS "montoUsd", "actualizadoEn" '
-            'FROM "MetaVenta" WHERE "empresa" = %s AND "mes" >= %s AND "mes" < %s ORDER BY "mes"',
+            f'SELECT "ruta", "mes", "{columna}"::float AS "monto", "actualizadoEn" '
+            f'FROM "{tabla}" WHERE "empresa" = %s AND "mes" >= %s AND "mes" < %s ORDER BY "mes"',
             (empresa, date(anio, 1, 1), date(anio + 1, 1, 1)),
         )
-        metas = [{**fila, "actualizadoEn": en_utc(fila["actualizadoEn"])} for fila in cur.fetchall()]
+        # La ruta de baja (77) no lleva meta: ni aparece en la tabla.
+        metas = [
+            {**fila, "actualizadoEn": en_utc(fila["actualizadoEn"])}
+            for fila in cur.fetchall()
+            if not iv.es_de_baja(fila["ruta"])
+        ]
         cur.execute('SELECT DISTINCT "ruta" FROM "VentaCliente" WHERE "empresa" = %s', (empresa,))
-        rutas = sorted({fila["ruta"] for fila in cur.fetchall()} | {m["ruta"] for m in metas}, key=_orden_ruta)
-        return {"anio": anio, "rutas": rutas, "metas": metas}
+        rutas = sorted(
+            {fila["ruta"] for fila in cur.fetchall() if fila["ruta"] and not iv.es_de_baja(fila["ruta"])}
+            | {m["ruta"] for m in metas},
+            key=_orden_ruta,
+        )
+        return {"anio": anio, "unidad": unidad, "rutas": rutas, "metas": metas}
 
 
 @router.get("/metas/sugerencia")
-def sugerencia_metas(empresa: str, anio: int, base: str = "media"):
+def sugerencia_metas(
+    empresa: str,
+    anio: int,
+    base: str = "media",
+    unidad: str = "usd",
+    crecimiento: float = 0.0,
+    excluir: list[date] = Query(default=[]),
+):
     """Metas propuestas por ruta para cada mes del ano, a partir del
-    historico, para que el cliente arranque con algo y lo ajuste a mano."""
+    historico, para que el cliente arranque con algo y lo ajuste a mano.
+
+    crecimiento: % que se suma a la media (meta = media x (1 + %/100)).
+    excluir: meses (cualquier dia) que no entran en la media, como los de
+    promociones."""
     _validar_empresa(empresa)
+    _tabla_de_meta(unidad)
     if base not in iv.BASES_SUGERENCIA:
         raise HTTPException(400, f"Base desconocida: usa {' o '.join(iv.BASES_SUGERENCIA)}")
+    if not -100 < crecimiento <= 1000:
+        raise HTTPException(400, "El crecimiento tiene que estar entre -100 % y 1000 %")
     with get_connection() as conn, conn.cursor() as cur:
-        return iv.sugerir_metas(cur, empresa, anio, base)
+        return iv.sugerir_metas(cur, empresa, anio, base, unidad, crecimiento, excluir)
 
 
 @router.put("/metas")
@@ -383,6 +419,7 @@ def guardar_metas(data: GuardarMetasRequest, usuario: dict = Depends(requiere_ro
     """Guarda las metas que se tocaron en la tabla. Un monto en 0 (o menos)
     borra la meta: es como se deja un mes sin objetivo."""
     _validar_empresa(data.empresa)
+    tabla, columna, prefijo = _tabla_de_meta(data.unidad)
     guardadas, borradas = 0, 0
     with get_connection() as conn, conn.cursor() as cur:
         for meta in data.metas:
@@ -390,25 +427,67 @@ def guardar_metas(data: GuardarMetasRequest, usuario: dict = Depends(requiere_ro
             if not ruta:
                 raise HTTPException(400, "Hay una meta sin ruta")
             mes = meta.mes.replace(day=1)
-            if meta.montoUsd > 0:
+            if iv.es_de_baja(ruta) and meta.monto > 0:
+                raise HTTPException(400, f"La ruta {ruta} es la de clientes dados de baja: no lleva meta")
+            if meta.monto > 0:
                 cur.execute(
-                    'INSERT INTO "MetaVenta" ("id", "empresa", "ruta", "mes", "montoUsd", '
+                    f'INSERT INTO "{tabla}" ("id", "empresa", "ruta", "mes", "{columna}", '
                     '"actualizadoEn", "actualizadoPorId") VALUES (%s, %s, %s, %s, %s, %s, %s) '
                     'ON CONFLICT ("empresa", "ruta", "mes") DO UPDATE SET '
-                    '"montoUsd" = EXCLUDED."montoUsd", "actualizadoEn" = EXCLUDED."actualizadoEn", '
+                    f'"{columna}" = EXCLUDED."{columna}", "actualizadoEn" = EXCLUDED."actualizadoEn", '
                     '"actualizadoPorId" = EXCLUDED."actualizadoPorId"',
-                    (f"meta-{uuid.uuid4().hex[:10]}", data.empresa, ruta, mes,
-                     round(meta.montoUsd, 2), ahora_utc(), usuario["id"]),
+                    (f"{prefijo}-{uuid.uuid4().hex[:10]}", data.empresa, ruta, mes,
+                     round(meta.monto, 2), ahora_utc(), usuario["id"]),
                 )
                 guardadas += 1
             else:
                 cur.execute(
-                    'DELETE FROM "MetaVenta" WHERE "empresa" = %s AND "ruta" = %s AND "mes" = %s',
+                    f'DELETE FROM "{tabla}" WHERE "empresa" = %s AND "ruta" = %s AND "mes" = %s',
                     (data.empresa, ruta, mes),
                 )
                 borradas += cur.rowcount
         conn.commit()
     return {"guardadas": guardadas, "borradas": borradas}
+
+
+# ---------- Cuadro de metas en litros ----------
+
+
+@router.get("/cuadro-metas")
+def cuadro_de_metas(empresa: str, mes: date):
+    """El cuadro de metas en litros vendidos de ese mes (cualquier dia del
+    mes), ruta por ruta. Ver app/services/cuadro_metas.py."""
+    _validar_empresa(empresa)
+    with get_connection() as conn, conn.cursor() as cur:
+        return cuadro_metas.cuadro(cur, empresa, mes)
+
+
+@router.get("/feriados")
+def listar_feriados(anio: int):
+    with get_connection() as conn, conn.cursor() as cur:
+        return {"anio": anio, "feriados": cuadro_metas.feriados_entre(cur, date(anio, 1, 1), date(anio, 12, 31))}
+
+
+@router.put("/feriados")
+def guardar_feriados(data: GuardarFeriadosRequest):
+    """Reemplaza los feriados de ese ano por la lista que llega."""
+    fuera = [f.fecha.isoformat() for f in data.feriados if f.fecha.year != data.anio]
+    if fuera:
+        raise HTTPException(400, f"Estas fechas no son de {data.anio}: {', '.join(fuera)}")
+    if any(not f.nombre.strip() for f in data.feriados):
+        raise HTTPException(400, "Cada feriado necesita un nombre")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'DELETE FROM "DiaFeriado" WHERE "fecha" BETWEEN %s AND %s', (date(data.anio, 1, 1), date(data.anio, 12, 31))
+        )
+        if data.feriados:
+            cur.executemany(
+                'INSERT INTO "DiaFeriado" ("fecha", "nombre") VALUES (%s, %s) '
+                'ON CONFLICT ("fecha") DO UPDATE SET "nombre" = EXCLUDED."nombre"',
+                [(f.fecha, f.nombre.strip()) for f in data.feriados],
+            )
+        conn.commit()
+        return {"anio": data.anio, "feriados": cuadro_metas.feriados_entre(cur, date(data.anio, 1, 1), date(data.anio, 12, 31))}
 
 
 # ---------- Cargas ----------

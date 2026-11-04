@@ -25,6 +25,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   flota: "Flota",
   seguimiento: "Seguimiento",
   despachador: "Despachador",
+  cuenta: "Mi estado de cuenta",
   usuarios: "Usuarios",
   indicadores: "Indicadores de venta",
   delivery: "Delivery en moto",

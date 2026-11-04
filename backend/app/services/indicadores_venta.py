@@ -382,6 +382,7 @@ def proyeccion(cur, f: Filtros, serie_mes: list[dict], venta_periodo: float | No
     }
 
 
+UNIDADES_META = ("usd", "litros")
 BASES_SUGERENCIA = ("media", "ultimo")
 # Cuantos meses cerrados entran en la media de cada mes propuesto.
 VENTANA_SUGERENCIA = 3
@@ -396,7 +397,15 @@ def _ventana_de(mes: date, cerrados: list[date]) -> list[date]:
     return previos[-VENTANA_SUGERENCIA:]
 
 
-def sugerir_metas(cur, empresa: str, anio: int, base: str = "media") -> dict:
+def sugerir_metas(
+    cur,
+    empresa: str,
+    anio: int,
+    base: str = "media",
+    unidad: str = "usd",
+    crecimiento_pct: float = 0.0,
+    excluir: list[date] | None = None,
+) -> dict:
     """Metas propuestas por ruta para cada mes del ano, a partir de lo que ya
     vendio cada ruta.
 
@@ -405,14 +414,25 @@ def sugerir_metas(cur, empresa: str, anio: int, base: str = "media") -> dict:
     anteriores (o solo el ultimo, con base="ultimo") — asi que los meses no
     salen todos iguales y un mes pico no se convierte en la meta de todo el
     ano. Un mes a medias (el mes en curso) no entra en ninguna ventana.
+
+    unidad: "usd" (venta neta) o "litros" (todo lo vendido, pizzas incluidas:
+      el sistema de ventas usa la misma columna para sus kilos).
+    crecimiento_pct: lo que la empresa pide crecer sobre esa media
+      (meta = media x (1 + %/100)).
+    excluir: meses que no entran en ninguna ventana (los de promociones, que
+      inflarian la meta de los meses siguientes); la ventana toma los
+      anteriores a ellos.
     """
+    excluidos = {m.replace(day=1) for m in excluir or []}
+    factor = 1 + crecimiento_pct / 100
     fecha_max = fecha_max_vigente(cur, empresa)
     if not fecha_max:
-        return {"base": base, "ventana": VENTANA_SUGERENCIA, "meses": []}
+        return {"base": base, "unidad": unidad, "ventana": VENTANA_SUGERENCIA, "meses": []}
     ultimo_cerrado = fecha_max if fecha_max == _fin_de_mes(fecha_max) else _primero_del_mes(fecha_max, -1)
+    medida = 'SUM(v."litros")' if unidad == "litros" else 'SUM(v."montoUsd")'
     cur.execute(
         f"""
-        SELECT date_trunc('month', v."fecha")::date AS "mes", vc."ruta", SUM(v."montoUsd")::float AS "usd"
+        SELECT date_trunc('month', v."fecha")::date AS "mes", vc."ruta", {medida}::float AS "valor"
         {FUENTE}
         WHERE v."empresa" = %(empresa)s AND v."reemplazadaPorCargaId" IS NULL
           AND v."fecha" <= %(hasta)s AND vc."ruta" IS NOT NULL
@@ -423,10 +443,13 @@ def sugerir_metas(cur, empresa: str, anio: int, base: str = "media") -> dict:
     ventas: dict[date, dict[str, float]] = {}
     rutas: set[str] = set()
     for fila in cur.fetchall():
-        ventas.setdefault(fila["mes"], {})[fila["ruta"]] = fila["usd"]
+        # La ruta de baja no lleva meta.
+        if es_de_baja(fila["ruta"]):
+            continue
+        ventas.setdefault(fila["mes"], {})[fila["ruta"]] = fila["valor"]
         rutas.add(fila["ruta"])
 
-    cerrados = sorted(ventas)
+    cerrados = sorted(m for m in ventas if m not in excluidos)
     meses = []
     for numero in range(1, 13):
         objetivo = date(anio, numero, 1)
@@ -440,11 +463,18 @@ def sugerir_metas(cur, empresa: str, anio: int, base: str = "media") -> dict:
             # Se divide entre los meses de la ventana, no entre los que esa
             # ruta vendio: una ruta parada un mes no debe quedar igual que
             # una que vendio los tres.
-            monto = sum(ventas[m].get(ruta, 0.0) for m in ventana) / len(ventana)
+            monto = sum(ventas[m].get(ruta, 0.0) for m in ventana) / len(ventana) * factor
             if monto > 0:
                 propuestas.append({"ruta": ruta, "sugerido": round(monto, 2)})
         meses.append({"mes": objetivo, "ventana": ventana, "rutas": propuestas})
-    return {"base": base, "ventana": VENTANA_SUGERENCIA, "meses": meses}
+    return {
+        "base": base,
+        "unidad": unidad,
+        "ventana": VENTANA_SUGERENCIA,
+        "crecimientoPct": crecimiento_pct,
+        "excluidos": sorted(excluidos),
+        "meses": meses,
+    }
 
 
 # ---------- Desgloses ----------
@@ -727,3 +757,12 @@ def ruta_comparable(ruta: str | None) -> str:
     limpia = re.sub(r"[^A-Z0-9]", "", (ruta or "").upper())
     sin_prefijo = re.sub(r"^(RUTA|R)(?=[0-9])", "", limpia)
     return sin_prefijo.lstrip("0") or sin_prefijo
+
+
+# La ruta de los clientes dados de baja: no cuenta como "por censar" en la
+# maestra, ni lleva meta ni entra en el cuadro de metas (pedido del cliente).
+RUTA_DE_BAJA = "77"
+
+
+def es_de_baja(ruta: str | None) -> bool:
+    return ruta_comparable(ruta) == RUTA_DE_BAJA

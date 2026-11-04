@@ -9,6 +9,7 @@ import { BarraFiltros } from "@/components/modules/indicadores/barra-filtros";
 import { BrechasClientes } from "@/components/modules/indicadores/brechas-clientes";
 import { CargarListaPreciosDialog } from "@/components/modules/indicadores/cargar-lista-precios-dialog";
 import { CargarVentasDialog } from "@/components/modules/indicadores/cargar-ventas-dialog";
+import { CuadroMetasLitros } from "@/components/modules/indicadores/cuadro-metas";
 import { DesgloseTabla } from "@/components/modules/indicadores/desglose-tabla";
 import { KpiGrid, textoComparacion } from "@/components/modules/indicadores/kpi-grid";
 import { MapaVentas } from "@/components/modules/indicadores/mapa-ventas";
@@ -20,6 +21,7 @@ import {
   hoyCaracas,
   leerFiltros,
   queryApi,
+  type CuadroMetas,
   type OpcionesIndicadores,
   type SearchParams,
   type TableroIndicadores,
@@ -31,10 +33,16 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   const empresa = empresaDeParams(params);
   const opciones = await apiGet<OpcionesIndicadores>(`/indicadores/opciones?empresa=${empresa}`);
   const filtros = leerFiltros(params, opciones, hoyCaracas());
-  const tablero =
+  // El cuadro de metas en litros va por el mes de la fecha «hasta» del período.
+  const [tablero, cuadro] =
     opciones.cargasConfirmadas > 0
-      ? await apiGet<TableroIndicadores>(`/indicadores/tablero?${queryApi(filtros)}`)
-      : null;
+      ? await Promise.all([
+          apiGet<TableroIndicadores>(`/indicadores/tablero?${queryApi(filtros)}`),
+          apiGet<CuadroMetas>(`/indicadores/cuadro-metas?empresa=${empresa}&mes=${filtros.hasta.slice(0, 7)}-01`).catch(
+            () => null
+          ),
+        ])
+      : [null, null];
   const actual = tablero?.resumen.actual ?? null;
 
   return (
@@ -87,6 +95,8 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
               </CardContent>
             </Card>
           )}
+
+          {cuadro && <CuadroMetasLitros cuadro={cuadro} />}
 
           <GraficosVenta serie={tablero.serie} proyeccion={tablero.proyeccion} filtros={filtros} />
           <DesgloseTabla desgloses={tablero.desgloses} total={actual?.ventaNeta ?? 0} />

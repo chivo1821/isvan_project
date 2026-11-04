@@ -18,7 +18,14 @@ function paraBuscar(texto: string) {
 
 /** Una fila por entrega pagable: el respaldo del pago, para revisarlo con el
  * motorizado. Se paga una vez por parada, aunque lleve varios documentos. */
-export function DetalleParadas({ paradas }: { paradas: ParadaDelivery[] }) {
+export function DetalleParadas({
+  paradas,
+  conMotorizado = true,
+}: {
+  paradas: ParadaDelivery[];
+  /** false en el estado de cuenta del propio repartidor: todas son suyas. */
+  conMotorizado?: boolean;
+}) {
   const [busqueda, setBusqueda] = useState("");
   const [visibles, setVisibles] = useState(TRAMO);
 
@@ -57,7 +64,7 @@ export function DetalleParadas({ paradas }: { paradas: ParadaDelivery[] }) {
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead>Fecha</TableHead>
-                  <TableHead>Motorizado</TableHead>
+                  {conMotorizado && <TableHead>Motorizado</TableHead>}
                   <TableHead>Ruta</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead className="text-right">Documentos</TableHead>
@@ -71,7 +78,9 @@ export function DetalleParadas({ paradas }: { paradas: ParadaDelivery[] }) {
                 {filtradas.slice(0, visibles).map((p) => (
                   <TableRow key={`${p.rutaId}-${p.clienteId}-${p.vehiculoId}`}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(p.fecha)}</TableCell>
-                    <TableCell>{p.conductor ?? <span className="text-muted-foreground">{p.placa}</span>}</TableCell>
+                    {conMotorizado && (
+                      <TableCell>{p.conductor ?? <span className="text-muted-foreground">{p.placa}</span>}</TableCell>
+                    )}
                     <TableCell className="text-muted-foreground">{p.rutaNumero}</TableCell>
                     <TableCell>
                       <span className="font-medium">{p.clienteNombre}</span>

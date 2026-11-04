@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRightIcon, PackageIcon, PackageSearchIcon, WarehouseIcon } from "lucide-react";
+import { ChevronRightIcon, PackageIcon, PackageSearchIcon, WalletIcon, WarehouseIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,16 @@ export default async function DespachadorPage() {
           rutas.length
             ? `${pedidos} pedido(s) en ${rutas.length} ruta(s), con la hora de recogida en el almacén`
             : "Tus rutas y la hora en que tienes que recoger cada pedido en el almacén"
+        }
+        actions={
+          usuarioActual?.rol === "REPARTIDOR" && (
+            <Button asChild variant="outline">
+              <Link href="/despachador/cuenta">
+                <WalletIcon />
+                Mi estado de cuenta
+              </Link>
+            </Button>
+          )
         }
       />
 

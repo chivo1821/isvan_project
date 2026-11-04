@@ -48,13 +48,18 @@ function atajos(hoy: string) {
 }
 
 /** Período y motorizado. Viven en la URL: la página se vuelve a calcular en
- * el servidor con cada cambio y el enlace se puede compartir. */
+ * el servidor con cada cambio y el enlace se puede compartir. Sin
+ * `motorizados` (el estado de cuenta del propio repartidor) queda solo el
+ * período. */
 export function FiltrosDeliveryBarra({
   filtros,
   motorizados,
+  ruta = "/delivery",
 }: {
   filtros: FiltrosDelivery;
-  motorizados: ResumenDelivery["motorizados"];
+  motorizados?: ResumenDelivery["motorizados"];
+  /** La página que se recarga con los filtros. */
+  ruta?: string;
 }) {
   const router = useRouter();
   const [actualizando, startTransition] = useTransition();
@@ -62,7 +67,7 @@ export function FiltrosDeliveryBarra({
   const [rango, setRango] = useState<DateRange | undefined>();
 
   function aplicar(cambios: Partial<FiltrosDelivery>) {
-    startTransition(() => router.replace(`/delivery?${queryDelivery({ ...filtros, ...cambios })}`, { scroll: false }));
+    startTransition(() => router.replace(`${ruta}?${queryDelivery({ ...filtros, ...cambios })}`, { scroll: false }));
   }
 
   function elegirPeriodo(desde: string, hasta: string) {
@@ -113,19 +118,21 @@ export function FiltrosDeliveryBarra({
         </PopoverContent>
       </Popover>
 
-      <Select value={filtros.repartidor || "todos"} onValueChange={(v) => aplicar({ repartidor: v === "todos" ? "" : v })}>
-        <SelectTrigger size="sm" className={cn("w-56", filtros.repartidor && "border-primary/60 text-primary")}>
-          <SelectValue placeholder="Todos los motorizados" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="todos">Todos los motorizados</SelectItem>
-          {motorizados.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
-              {m.nombre} · {m.placa}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {motorizados && (
+        <Select value={filtros.repartidor || "todos"} onValueChange={(v) => aplicar({ repartidor: v === "todos" ? "" : v })}>
+          <SelectTrigger size="sm" className={cn("w-56", filtros.repartidor && "border-primary/60 text-primary")}>
+            <SelectValue placeholder="Todos los motorizados" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos los motorizados</SelectItem>
+            {motorizados.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.nombre} · {m.placa}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {actualizando && (
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
