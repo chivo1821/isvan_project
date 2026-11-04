@@ -1,6 +1,7 @@
 import { BanknoteIcon, BikeIcon, CircleCheckIcon, ClockIcon, MapPinnedIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/shared/stat-card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DetalleParadas } from "@/components/modules/delivery/detalle-paradas";
@@ -113,14 +114,28 @@ export default async function MiCuentaPage({ searchParams }: { searchParams: Pro
                       </TableHeader>
                       <TableBody>
                         {cuenta.pagos.map((p) => (
-                          <TableRow key={p.id}>
+                          <TableRow key={p.id} className={p.anuladaEn ? "text-muted-foreground" : undefined}>
                             <TableCell className="whitespace-nowrap">{formatDate(p.creadoEn)}</TableCell>
                             <TableCell className="whitespace-nowrap text-muted-foreground">
                               {formatDate(p.desde)} – {formatDate(p.hasta)}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{formatNumero(p.entregas)}</TableCell>
-                            <TableCell className="text-right font-medium tabular-nums">{formatUsd(p.totalUsd, 2)}</TableCell>
-                            <TableCell className="text-muted-foreground">{p.nota ?? "—"}</TableCell>
+                            <TableCell
+                              className={`text-right font-medium tabular-nums ${p.anuladaEn ? "line-through" : ""}`}
+                            >
+                              {formatUsd(p.totalUsd, 2)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {/* Anulado: se dio por no hecho y esas entregas volvieron a pendientes. */}
+                              {p.anuladaEn ? (
+                                <>
+                                  <StatusBadge label="Anulado" tone="neutral" />
+                                  <span className="mt-0.5 block text-xs">{p.motivoAnulacion}</span>
+                                </>
+                              ) : (
+                                (p.nota ?? "—")
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

@@ -176,7 +176,9 @@ _PARADAS = f"""
            STRING_AGG(d."numero", ', ' ORDER BY d."numero") AS "numeros",
            dc."km", dc."fuente",
            lp."id" AS "paradaLiquidadaId", lp."montoUsd" AS "montoLiquidado", lp."km" AS "kmLiquidado",
-           lp."rango" AS "rangoLiquidado", liq."id" AS "liquidacionId", liq."creadoEn" AS "liquidadaEn"
+           lp."rango" AS "rangoLiquidado", liq."id" AS "liquidacionId", liq."creadoEn" AS "liquidadaEn",
+           ex."id" AS "excluidaId", ex."motivo" AS "motivoExclusion", ex."creadoEn" AS "excluidaEn",
+           ux."nombre" AS "excluidaPor"
     FROM "Despacho" d
     JOIN "Ruta" r ON r."id" = d."rutaId"
     JOIN "Vehiculo" v ON v."id" IN (r."vehiculoId", r."vehiculoApoyoId") AND v."tipo" = 'MOTO'
@@ -185,16 +187,21 @@ _PARADAS = f"""
     LEFT JOIN "LiquidacionDeliveryParada" lp ON lp."rutaId" = r."id" AND lp."clienteId" = cl."id"
          AND lp."vehiculoId" = v."id"
     LEFT JOIN "LiquidacionDelivery" liq ON liq."id" = lp."liquidacionId"
+    LEFT JOIN "ParadaDeliveryExcluida" ex ON ex."rutaId" = r."id" AND ex."clienteId" = cl."id"
+         AND ex."vehiculoId" = v."id"
+    LEFT JOIN "Usuario" ux ON ux."id" = ex."creadoPorId"
     WHERE d."entregadoEn" IS NOT NULL
       AND {_FECHA_ENTREGA} BETWEEN %(desde)s AND %(hasta)s
     GROUP BY r."id", r."numero", r."origenId", cl."id", v."id", v."placa", v."conductorNombre",
-             dc."km", dc."fuente", lp."id", liq."id"
+             dc."km", dc."fuente", lp."id", liq."id", ex."id", ux."id"
 """
 
 
 def paradas_pagables(cur, desde: date, hasta: date, repartidor_id: str | None = None) -> list[dict]:
     """Las paradas del periodo con lo que se le paga a cada una. Las ya
-    liquidadas conservan el km y el monto con los que se pagaron."""
+    liquidadas conservan el km y el monto con los que se pagaron. Las
+    marcadas como «no se paga» (ParadaDeliveryExcluida) vienen con
+    `excluida`: se muestran, pero no suman a lo que hay que pagar."""
     condicion = 'AND p."repartidorId" = %(repartidor)s' if repartidor_id else ""
     cur.execute(
         f'SELECT * FROM ({_PARADAS}) p WHERE true {condicion} '
@@ -237,6 +244,12 @@ def paradas_pagables(cur, desde: date, hasta: date, repartidor_id: str | None = 
                 "liquidada": liquidada,
                 "liquidacionId": fila["liquidacionId"],
                 "liquidadaEn": fila["liquidadaEn"],
+                # Una parada pagada no se puede excluir (la API lo impide);
+                # si por algo tuviera las dos marcas, manda el pago.
+                "excluida": fila["excluidaId"] is not None and not liquidada,
+                "motivoExclusion": fila["motivoExclusion"],
+                "excluidaEn": fila["excluidaEn"],
+                "excluidaPor": fila["excluidaPor"],
             }
         )
     return paradas
@@ -262,9 +275,14 @@ def resumen_por_motorizado(paradas: list[dict]) -> list[dict]:
                 "pendienteUsd": 0.0,
                 "liquidadoUsd": 0.0,
                 "sinDistancia": 0,
+                "excluidas": 0,
             },
         )
         fila["placas"].add(parada["placa"])
+        # «No se paga»: queda fuera de las entregas y de los montos.
+        if parada["excluida"]:
+            fila["excluidas"] += 1
+            continue
         fila["entregas"] += 1
         fila["despachos"] += parada["despachos"]
         fila["km"] += parada["km"] or 0
@@ -294,6 +312,8 @@ def resumen_por_motorizado(paradas: list[dict]) -> list[dict]:
 
 
 def totales(paradas: list[dict]) -> dict:
+    excluidas = [p for p in paradas if p["excluida"]]
+    paradas = [p for p in paradas if not p["excluida"]]
     con_monto = [p for p in paradas if p["montoUsd"] is not None]
     total = sum(p["montoUsd"] for p in con_monto)
     return {
@@ -305,4 +325,6 @@ def totales(paradas: list[dict]) -> dict:
         "liquidadoUsd": round(sum(p["montoUsd"] for p in con_monto if p["liquidada"]), 2),
         "promedioUsd": round(total / len(con_monto), 2) if con_monto else None,
         "sinDistancia": sum(1 for p in paradas if p["montoUsd"] is None),
+        "excluidas": len(excluidas),
+        "excluidoUsd": round(sum(p["montoUsd"] or 0 for p in excluidas), 2),
     }

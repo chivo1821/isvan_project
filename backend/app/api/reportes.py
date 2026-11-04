@@ -314,7 +314,8 @@ def reporte_delivery(desde: date, hasta: date):
     libro.active.title = "Por motorizado"
     _escribir_hoja(
         libro.active,
-        ["Motorizado", "Moto(s)", "Entregas", "Documentos", "Km", "Total USD", "Pendiente USD", "Pagado USD"],
+        ["Motorizado", "Moto(s)", "Entregas", "Documentos", "Km", "Total USD", "Pendiente USD", "Pagado USD",
+         "No se pagan"],
         [
             [
                 m["conductor"] or "Sin chofer asignado",
@@ -325,6 +326,7 @@ def reporte_delivery(desde: date, hasta: date):
                 m["totalUsd"],
                 m["pendienteUsd"],
                 m["liquidadoUsd"],
+                m["excluidas"],
             ]
             for m in por_motorizado
         ],
@@ -332,7 +334,7 @@ def reporte_delivery(desde: date, hasta: date):
     _escribir_hoja(
         libro.create_sheet("Detalle"),
         ["Fecha", "Motorizado", "Moto", "Ruta", "Cod. cliente", "Cliente", "Ciudad", "Documentos",
-         "Km", "Rango", "Monto USD", "Estado"],
+         "Km", "Rango", "Monto USD", "Estado", "Motivo (no se paga)"],
         [
             [
                 p["fecha"],
@@ -346,7 +348,8 @@ def reporte_delivery(desde: date, hasta: date):
                 p["km"],
                 p["rango"],
                 p["montoUsd"],
-                "Pagado" if p["liquidada"] else "Pendiente",
+                "Pagado" if p["liquidada"] else "No se paga" if p["excluida"] else "Pendiente",
+                p["motivoExclusion"] if p["excluida"] else None,
             ]
             for p in paradas
         ],
