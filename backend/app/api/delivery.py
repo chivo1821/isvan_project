@@ -93,8 +93,9 @@ def guardar_tabulador(data: TabuladorDeliveryUpdate, usuario: dict = Depends(req
 @router.post("/liquidaciones")
 def crear_liquidacion(data: LiquidacionDeliveryCreate, usuario: dict = Depends(requiere_rol("ADMIN"))):
     """Cierra el pago de un motorizado en el periodo: congela los km y los
-    montos de sus paradas pendientes. Las que ya estaban liquidadas no se
-    tocan, asi que repetir la operacion no paga dos veces."""
+    montos de sus paradas pendientes (todas, o las elegidas en `paradas`
+    para un corte parcial). Las que ya estaban liquidadas no se tocan, asi
+    que repetir la operacion no paga dos veces."""
     _validar_periodo(data.desde, data.hasta)
     with get_connection() as conn, conn.cursor() as cur:
         paradas = [
@@ -102,6 +103,20 @@ def crear_liquidacion(data: LiquidacionDeliveryCreate, usuario: dict = Depends(r
             for p in dl.paradas_pagables(cur, data.desde, data.hasta, data.repartidorId)
             if not p["liquidada"] and p["montoUsd"] is not None
         ]
+        if data.paradas is not None:
+            elegidas = {(r.rutaId, r.clienteId, r.vehiculoId) for r in data.paradas}
+            if not elegidas:
+                raise HTTPException(400, "Elige al menos una entrega para registrar el pago")
+            paradas = [p for p in paradas if (p["rutaId"], p["clienteId"], p["vehiculoId"]) in elegidas]
+            # Todas o ninguna: si alguna ya se pagó (otra pestaña, otra
+            # persona) o no es de este motorizado y período, el total que vio
+            # quien registra ya no es el real.
+            if len(paradas) != len(elegidas):
+                raise HTTPException(
+                    409,
+                    f"{len(elegidas) - len(paradas)} de las entregas elegidas ya no están pendientes de pago "
+                    "para este motorizado en el período. Recarga la página y vuelve a elegir.",
+                )
         if not paradas:
             raise HTTPException(400, "No hay entregas pendientes de pago para ese motorizado en el período")
 
