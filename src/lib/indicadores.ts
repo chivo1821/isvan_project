@@ -197,8 +197,12 @@ export type Proyeccion = {
   } | null;
 };
 
-export type MetaVenta = { ruta: string; mes: string; montoUsd: number; actualizadoEn: string };
-export type MetasAnio = { anio: number; rutas: string[]; metas: MetaVenta[] };
+/** Una meta se pone en dólares (venta) o en litros vendidos (el cuadro de
+ * metas). Cada unidad se guarda aparte. */
+export type UnidadMeta = "usd" | "litros";
+/** `monto` va en la unidad de la meta. */
+export type MetaVenta = { ruta: string; mes: string; monto: number; actualizadoEn: string };
+export type MetasAnio = { anio: number; unidad: UnidadMeta; rutas: string[]; metas: MetaVenta[] };
 
 /** Metas propuestas a partir del histórico (no es un pronóstico: son ventas
  * reales). Cada mes trae su propia propuesta, calculada con los meses
@@ -210,7 +214,60 @@ export type MesSugerido = {
   ventana: string[];
   rutas: { ruta: string; sugerido: number }[];
 };
-export type SugerenciaMetas = { base: BaseSugerencia; ventana: number; meses: MesSugerido[] };
+export type SugerenciaMetas = {
+  base: BaseSugerencia;
+  unidad: UnidadMeta;
+  ventana: number;
+  /** El % que se le sumó a la media (meta = media × (1 + %/100)). */
+  crecimientoPct?: number;
+  /** Meses que no entraron en la media (los de promociones). */
+  excluidos?: string[];
+  meses: MesSugerido[];
+};
+
+/** Cómo va una ruta contra el ritmo del mes (la tendencia contra el phasing). */
+export type Semaforo = "verde" | "amarillo" | "rojo";
+
+export type FilaCuadroMetas = {
+  ruta: string;
+  litros: number;
+  meta: number | null;
+  /** Vendido ÷ meta (fracción). */
+  tendencia: number | null;
+  /** Meta − vendido: lo que falta (negativo si ya la pasó). */
+  faltante: number | null;
+  /** Lo que falta ÷ días de venta restantes: litros por día. */
+  necesidad: number | null;
+  /** Vendido ÷ días transcurridos × días de venta del mes. */
+  proyeccion: number | null;
+  /** Proyección ÷ meta (fracción). */
+  variacion: number | null;
+  semaforo: Semaforo | null;
+  /** Solo en el total: litros de rutas sin meta, que no cuentan en la tendencia. */
+  litrosSinMeta?: number;
+};
+
+/** GET /indicadores/cuadro-metas: el cuadro de metas en litros vendidos del
+ * mes (ver backend/app/services/cuadro_metas.py). */
+export type CuadroMetas = {
+  empresa: Empresa;
+  mes: string;
+  diasVenta: number;
+  diasTranscurridos: number;
+  diasRestantes: number;
+  /** Días transcurridos ÷ días de venta: lo que ya debería estar vendido. */
+  phasing: number | null;
+  /** Último día del mes con ventas cargadas (hasta ahí cuentan los días). */
+  ventasHasta: string | null;
+  ultimaVenta: string | null;
+  /** Con pocos días, la proyección se infla o se hunde con un solo día. */
+  proyeccionConfiable: boolean;
+  feriados: DiaFeriado[];
+  filas: FilaCuadroMetas[];
+  total: FilaCuadroMetas;
+};
+
+export type DiaFeriado = { fecha: string; nombre: string };
 
 export type TableroIndicadores = {
   resumen: ResumenIndicadores;
@@ -391,8 +448,15 @@ const FECHA_CORTA = new Intl.DateTimeFormat("es-VE", {
 const MES_LARGO = new Intl.DateTimeFormat("es-VE", { month: "long", year: "numeric", timeZone: "UTC" });
 const MES_CORTO = new Intl.DateTimeFormat("es-VE", { month: "short", year: "2-digit", timeZone: "UTC" });
 
+const DIA_CORTO = new Intl.DateTimeFormat("es-VE", { day: "numeric", month: "short", timeZone: "UTC" });
+
 function comoUtc(fecha: string) {
   return new Date(`${fecha.slice(0, 10)}T00:00:00Z`);
+}
+
+/** "2 oct." para "2026-10-02". */
+export function formatDiaCorto(fecha: string) {
+  return DIA_CORTO.format(comoUtc(fecha));
 }
 
 export function formatFecha(fecha: string) {

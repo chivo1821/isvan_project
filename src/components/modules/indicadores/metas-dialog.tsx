@@ -18,14 +18,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatUsd } from "@/lib/constants";
+import { formatNumero, formatUsd } from "@/lib/constants";
 import { formatMes } from "@/lib/indicadores";
-import { hoyCaracas, type BaseSugerencia, type Empresa, type MetasAnio, type SugerenciaMetas } from "@/lib/indicadores";
+import {
+  hoyCaracas,
+  type BaseSugerencia,
+  type Empresa,
+  type MetasAnio,
+  type SugerenciaMetas,
+  type UnidadMeta,
+} from "@/lib/indicadores";
+import { cn } from "@/lib/utils";
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
+
+const UNIDADES: Record<UnidadMeta, { boton: string; columna: string; paso: number }> = {
+  usd: { boton: "Dólares", columna: "Meta del mes (USD)", paso: 100 },
+  litros: { boton: "Litros vendidos", columna: "Meta del mes (litros)", paso: 50 },
+};
+
+/** Las metas en litros van redondeadas a 50, como las hace el cliente. */
+function redondear(valor: number, unidad: UnidadMeta) {
+  return unidad === "litros" ? Math.round(valor / 50) * 50 : Math.round(valor);
+}
 
 /** "2026-08-01" para el mes 8 de 2026. */
 function claveMes(anio: number, mes: number) {
@@ -45,24 +63,30 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
   const [montos, setMontos] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
   const [base, setBase] = useState<BaseSugerencia>("ultimo");
+  const [unidad, setUnidad] = useState<UnidadMeta>("usd");
+  // Lo que la empresa pide crecer sobre la media, en %.
+  const [crecimiento, setCrecimiento] = useState("0");
+  // Meses que no entran en la propuesta (los de promociones, que inflarían
+  // la meta de los meses siguientes). Claves "YYYY-MM-01".
+  const [excluidos, setExcluidos] = useState<Set<string>>(new Set());
   // Derivado, no un estado aparte: mientras lo que hay en memoria no sea del
-  // año elegido, se está cargando.
-  const cargando = !datos || datos.anio !== anio;
+  // año y la unidad elegidos, se está cargando.
+  const cargando = !datos || datos.anio !== anio || datos.unidad !== unidad;
 
   // Se pide el año entero de una vez: son pocas filas y permite moverse
   // entre meses (y copiar el anterior) sin volver a la red.
   useEffect(() => {
     if (!open) return;
     let vigente = true;
-    apiGet<MetasAnio>(`/indicadores/metas?empresa=${empresa}&anio=${anio}`)
+    apiGet<MetasAnio>(`/indicadores/metas?empresa=${empresa}&anio=${anio}&unidad=${unidad}`)
       .then((r) => {
         if (!vigente) return;
         setDatos(r);
         // Se mezcla, no se reemplaza: así no se pierde lo que se haya escrito
-        // en otro mes y todavía no se guarde.
+        // en otro mes (o en la otra unidad) y todavía no se guarde.
         setMontos((previo) => ({
           ...previo,
-          ...Object.fromEntries(r.metas.map((m) => [`${m.ruta}|${m.mes.slice(0, 10)}`, String(m.montoUsd)])),
+          ...Object.fromEntries(r.metas.map((m) => [`${r.unidad}|${m.ruta}|${m.mes.slice(0, 10)}`, String(m.monto)])),
         }));
       })
       .catch((e) =>
@@ -71,15 +95,24 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
     return () => {
       vigente = false;
     };
-  }, [open, empresa, anio]);
+  }, [open, empresa, anio, unidad]);
 
   const clave = claveMes(anio, mes);
   const rutas = datos?.rutas ?? [];
-  const valorDe = (ruta: string, mesClave = clave) => montos[`${ruta}|${mesClave}`] ?? "";
+  const valorDe = (ruta: string, mesClave = clave) => montos[`${unidad}|${ruta}|${mesClave}`] ?? "";
   const total = rutas.reduce((suma, r) => suma + (Number(valorDe(r)) || 0), 0);
 
   function escribir(ruta: string, valor: string) {
-    setMontos((previo) => ({ ...previo, [`${ruta}|${clave}`]: valor }));
+    setMontos((previo) => ({ ...previo, [`${unidad}|${ruta}|${clave}`]: valor }));
+  }
+
+  function alternarExcluido(mesClave: string) {
+    setExcluidos((previos) => {
+      const siguientes = new Set(previos);
+      if (siguientes.has(mesClave)) siguientes.delete(mesClave);
+      else siguientes.add(mesClave);
+      return siguientes;
+    });
   }
 
   function copiarDelMesAnterior() {
@@ -90,7 +123,7 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
       toast.info("El mes anterior es de otro año", { description: "Cambia de año para verlo y vuelve a intentarlo." });
       return;
     }
-    const copiados = Object.fromEntries(rutas.map((r) => [`${r}|${clave}`, valorDe(r, anterior)]));
+    const copiados = Object.fromEntries(rutas.map((r) => [`${unidad}|${r}|${clave}`, valorDe(r, anterior)]));
     setMontos((previo) => ({ ...previo, ...copiados }));
     toast.success(`Copiado de ${MESES[mes - 1]}`);
   }
@@ -103,10 +136,17 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
    * año. Los meses que aún no tienen nada cerrado por delante repiten la
    * última ventana disponible. */
   async function sugerir(alcance: "mes" | "anio") {
+    const porcentaje = Number(crecimiento.replace(",", ".")) || 0;
     try {
-      const s = await apiGet<SugerenciaMetas>(
-        `/indicadores/metas/sugerencia?empresa=${empresa}&anio=${anio}&base=${base}`
-      );
+      const consulta = new URLSearchParams({
+        empresa,
+        anio: String(anio),
+        base,
+        unidad,
+        crecimiento: String(porcentaje),
+      });
+      for (const m of excluidos) consulta.append("excluir", m);
+      const s = await apiGet<SugerenciaMetas>(`/indicadores/metas/sugerencia?${consulta}`);
       const aplicables = alcance === "mes" ? s.meses.filter((m) => m.mes.slice(0, 10) === clave) : s.meses;
       if (!aplicables.length) {
         toast.info(
@@ -120,15 +160,17 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
         ...previo,
         ...Object.fromEntries(
           aplicables.flatMap((m) =>
-            m.rutas.map((r) => [`${r.ruta}|${m.mes.slice(0, 10)}`, String(Math.round(r.sugerido))])
+            m.rutas.map((r) => [`${unidad}|${r.ruta}|${m.mes.slice(0, 10)}`, String(redondear(r.sugerido, unidad))])
           )
         ),
       }));
       const ventana = aplicables[aplicables.length - 1].ventana.map((v) => formatMes(v));
       const comoSale =
-        base === "ultimo"
+        (base === "ultimo"
           ? `cada mes toma la venta del mes cerrado anterior`
-          : `cada mes toma la media de los ${s.ventana} meses cerrados anteriores`;
+          : `cada mes toma la media de los ${s.ventana} meses cerrados anteriores`) +
+        (porcentaje ? ` + ${formatNumero(porcentaje, 1)} %` : "") +
+        (excluidos.size ? `, sin ${[...excluidos].sort().map((m) => formatMes(m)).join(", ")}` : "");
       toast.success(
         alcance === "mes" ? `Propuesta cargada en ${MESES[mes]}` : `Propuesta cargada en ${aplicables.length} meses`,
         { description: `${comoSale} (el último, de ${ventana.join(", ")}). Ajusta lo que haga falta y guarda.` }
@@ -148,11 +190,11 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
         rutas.map((ruta) => ({
           ruta,
           mes: claveMes(anio, numero),
-          montoUsd: Number(valorDe(ruta, claveMes(anio, numero))) || 0,
+          monto: Number(valorDe(ruta, claveMes(anio, numero))) || 0,
         }))
       );
-      const r = await apiPut<{ guardadas: number; borradas: number }>("/indicadores/metas", { empresa, metas });
-      toast.success(`Metas de ${anio} guardadas`, {
+      const r = await apiPut<{ guardadas: number; borradas: number }>("/indicadores/metas", { empresa, unidad, metas });
+      toast.success(`Metas de ${anio} en ${unidad === "usd" ? "dólares" : "litros"} guardadas`, {
         description: `${r.guardadas} meta(s) por ruta y mes${r.borradas ? `, ${r.borradas} borrada(s)` : ""}.`,
       });
       router.refresh();
@@ -175,11 +217,27 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
         <DialogHeader>
           <DialogTitle>Metas de venta</DialogTitle>
           <DialogDescription>
-            La meta de cada ruta para un mes, en USD; el total de la empresa es la suma de sus rutas. Se guarda el
-            año completo, así que puedes ir mes por mes y guardar una sola vez. Dejar una ruta vacía o en 0 es no
-            ponerle meta ese mes.
+            La meta de cada ruta para un mes, en dólares o en litros vendidos (las dos se guardan aparte; los litros
+            son los del cuadro de metas). El total de la empresa es la suma de sus rutas. Se guarda el año completo,
+            así que puedes ir mes por mes y guardar una sola vez. Dejar una ruta vacía o en 0 es no ponerle meta ese
+            mes.
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex gap-1 rounded-lg border p-0.5" role="group" aria-label="Unidad de la meta">
+          {(Object.keys(UNIDADES) as UnidadMeta[]).map((u) => (
+            <Button
+              key={u}
+              size="sm"
+              variant={unidad === u ? "secondary" : "ghost"}
+              className="flex-1"
+              aria-pressed={unidad === u}
+              onClick={() => setUnidad(u)}
+            >
+              {UNIDADES[u].boton}
+            </Button>
+          ))}
+        </div>
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
@@ -222,7 +280,7 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Ruta</TableHead>
-                  <TableHead className="text-right">Meta del mes (USD)</TableHead>
+                  <TableHead className="text-right">{UNIDADES[unidad].columna}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -233,7 +291,7 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
                       <Input
                         type="number"
                         min={0}
-                        step={100}
+                        step={UNIDADES[unidad].paso}
                         inputMode="decimal"
                         className="ml-auto w-40 text-right tabular-nums"
                         value={valorDe(ruta)}
@@ -245,7 +303,9 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
                 ))}
                 <TableRow>
                   <TableCell className="font-medium">Total</TableCell>
-                  <TableCell className="pr-3 text-right font-medium tabular-nums">{formatUsd(total)}</TableCell>
+                  <TableCell className="pr-3 text-right font-medium tabular-nums">
+                    {unidad === "usd" ? formatUsd(total) : `${formatNumero(total)} L`}
+                  </TableCell>
                 </TableRow>
               </TableBody>
             </Table>
@@ -263,6 +323,45 @@ export function MetasDialog({ empresa }: { empresa: Empresa }) {
             <option value="media">Media de 3 meses</option>
             <option value="ultimo">Mes anterior</option>
           </select>
+          <Label htmlFor="crecimiento-meta" className="text-muted-foreground">
+            + crecimiento
+          </Label>
+          <Input
+            id="crecimiento-meta"
+            type="number"
+            inputMode="decimal"
+            step={1}
+            className="h-9 w-20 text-right tabular-nums"
+            value={crecimiento}
+            onChange={(e) => setCrecimiento(e.target.value)}
+            aria-describedby="crecimiento-ayuda"
+          />
+          <span id="crecimiento-ayuda" className="text-muted-foreground">
+            %
+          </span>
+          <div className="w-full space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Meses que no entran en la media (por ejemplo, los de promociones):
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {MESES.map((nombre, numero) => {
+                const mesClave = claveMes(anio, numero);
+                const excluido = excluidos.has(mesClave);
+                return (
+                  <Button
+                    key={mesClave}
+                    size="xs"
+                    variant="outline"
+                    aria-pressed={excluido}
+                    className={cn(excluido && "border-warning bg-warning/10 text-foreground line-through")}
+                    onClick={() => alternarExcluido(mesClave)}
+                  >
+                    {nombre.slice(0, 3)}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
           <Button variant="outline" size="sm" onClick={() => sugerir("mes")} disabled={cargando || guardando || !rutas.length}>
             <SparklesIcon />
             {MESES[mes]}
