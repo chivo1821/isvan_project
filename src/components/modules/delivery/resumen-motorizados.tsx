@@ -15,11 +15,12 @@ export function ResumenMotorizados({
   resumen: ResumenDelivery;
   paradas: ParadaDelivery[];
 }) {
-  const pendientesPorMotorizado = new Map<string, number>();
+  // Las que el diálogo de pago ofrece para elegir: pendientes y con monto.
+  const pendientesPorMotorizado = new Map<string, ParadaDelivery[]>();
   for (const p of paradas) {
     if (p.liquidada || p.montoUsd == null) continue;
     const clave = p.repartidorId ?? `placa:${p.placa}`;
-    pendientesPorMotorizado.set(clave, (pendientesPorMotorizado.get(clave) ?? 0) + 1);
+    pendientesPorMotorizado.set(clave, [...(pendientesPorMotorizado.get(clave) ?? []), p]);
   }
 
   return (
@@ -90,7 +91,7 @@ export function ResumenMotorizados({
                           motorizado={m}
                           desde={resumen.desde}
                           hasta={resumen.hasta}
-                          entregasPendientes={pendientesPorMotorizado.get(clave) ?? 0}
+                          pendientes={pendientesPorMotorizado.get(clave) ?? []}
                         />
                       </TableCell>
                     </TableRow>

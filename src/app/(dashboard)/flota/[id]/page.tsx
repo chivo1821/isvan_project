@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ESTADO_RUTA_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, formatDate } from "@/lib/constants";
+import { ESTADO_RUTA_META, ESTADO_VEHICULO_META, TIPO_VEHICULO_META, contarParadas, formatDate } from "@/lib/constants";
 import { getAlmacenById, getRutasByVehiculoId, getVehiculoById } from "@/lib/mock-data";
 
 export default async function VehiculoDetallePage({ params }: PageProps<"/flota/[id]">) {
@@ -75,7 +75,7 @@ export default async function VehiculoDetallePage({ params }: PageProps<"/flota/
                           {r.numero}
                         </Link>
                       </TableCell>
-                      <TableCell>{r.despachos.length}</TableCell>
+                      <TableCell>{contarParadas(r.despachos)}</TableCell>
                       <TableCell>{formatDate(r.fechaCreacion)}</TableCell>
                       <TableCell>
                         <StatusBadge {...ESTADO_RUTA_META[r.estado]} />

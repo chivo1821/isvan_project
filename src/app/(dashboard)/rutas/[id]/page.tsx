@@ -14,8 +14,10 @@ import {
   ESTADO_RUTA_META,
   describirVehiculo,
   documentoDespacho,
+  contarParadas,
   formatDate,
   formatDateTime,
+  textoParadas,
 } from "@/lib/constants";
 import { apiGet } from "@/lib/api-client";
 import { getRutaConDetalle } from "@/lib/mock-data";
@@ -126,7 +128,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
               )}
               {ruta.despachos.length > 0 && (
                 <p className="text-muted-foreground">
-                  Las {ruta.despachos.length} parada(s) que ya se habían entregado se conservan en la ruta.
+                  Las entregas ya hechas ({textoParadas(ruta.despachos)}) se conservan en la ruta.
                 </p>
               )}
             </div>
@@ -151,7 +153,14 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
 
         <Card>
           <CardHeader>
-            <CardTitle>Paradas ({ruta.despachos.length})</CardTitle>
+            <CardTitle>
+              Paradas ({contarParadas(ruta.despachos)})
+              {contarParadas(ruta.despachos) !== ruta.despachos.length && (
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                  · {ruta.despachos.length} documentos
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {ruta.despachos.map((d, index) => (

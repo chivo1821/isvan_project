@@ -6,7 +6,7 @@ import { AutoRefresco } from "@/components/shared/auto-refresco";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ESTADO_RUTA_META, formatDateTime } from "@/lib/constants";
+import { ESTADO_RUTA_META, formatDateTime, textoParadas } from "@/lib/constants";
 import { getRutaConDetalle } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +34,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
       <AutoRefresco versionPath={`/rutas/seguimiento/version?ruta=${encodeURIComponent(ruta.id)}`} />
       <PageHeader
         title={`Seguimiento — ${ruta.numero}`}
-        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo?.placa ?? "sin vehículo asignado"} · ${ruta.despachos.length} parada(s)`}
+        subtitle={`${ruta.origen.nombre} · ${ruta.vehiculo?.placa ?? "sin vehículo asignado"} · ${textoParadas(ruta.despachos)}`}
         actions={<StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />}
       />
 

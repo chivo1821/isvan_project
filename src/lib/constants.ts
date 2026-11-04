@@ -125,6 +125,21 @@ export function documentoDespacho(d: { numeroDocumento: string; tipoDocumento?: 
   return d.tipoDocumento ? `${d.tipoDocumento} ${d.numeroDocumento}` : `Doc. ${d.numeroDocumento}`;
 }
 
+/** Una parada = un cliente, aunque lleve varios documentos (una factura y
+ * una nota de entrega). Mismo criterio que el planificador (_Parada en
+ * backend/app/services/plan_rutas.py) y que el trazado de la ruta. */
+export function contarParadas(despachos: { destinoClienteId: string }[]): number {
+  return new Set(despachos.map((d) => d.destinoClienteId)).size;
+}
+
+/** "4 parada(s)", o "4 parada(s) · 6 documentos" si algún cliente lleva más de uno. */
+export function textoParadas(despachos: { destinoClienteId: string }[]): string {
+  const paradas = contarParadas(despachos);
+  return paradas === despachos.length
+    ? `${paradas} parada(s)`
+    : `${paradas} parada(s) · ${despachos.length} documentos`;
+}
+
 /** "placa — tipo" de un vehículo, o el aviso de que la ruta todavía no
  * tiene uno (se planifica sin vehículo y se asigna después). */
 export function describirVehiculo(vehiculo: { placa: string; tipo: TipoVehiculo } | null | undefined): string {

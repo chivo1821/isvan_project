@@ -5,7 +5,7 @@ import {
   SeguimientoOverview,
   type RutaSeguimientoItem,
 } from "@/components/modules/seguimiento/seguimiento-overview";
-import { ESTADO_RUTA_META } from "@/lib/constants";
+import { ESTADO_RUTA_META, contarParadas } from "@/lib/constants";
 import { getRutasActivas } from "@/lib/mock-data";
 
 export default async function SeguimientoPage() {
@@ -17,7 +17,7 @@ export default async function SeguimientoPage() {
       id: r.id,
       numero: r.numero,
       vehiculoPlaca: r.vehiculo?.placa ?? "Sin vehículo",
-      paradas: r.despachos.length,
+      paradas: contarParadas(r.despachos),
       estado: r.estado,
       position: ultimoPunto ? [ultimoPunto.lat, ultimoPunto.lng] : [r.origen.lat, r.origen.lng],
     };

@@ -759,11 +759,22 @@ class TabuladorDeliveryUpdate(BaseModel):
     rangos: list[RangoTabuladorDelivery]
 
 
+class ParadaDeliveryRef(BaseModel):
+    """Una entrega pagable: la misma llave que LiquidacionDeliveryParada."""
+
+    rutaId: str
+    clienteId: str
+    vehiculoId: str
+
+
 class LiquidacionDeliveryCreate(BaseModel):
     repartidorId: str
     desde: date
     hasta: date
     nota: Optional[str] = None
+    # Las entregas que entran en este pago (cortes parciales). Sin la lista
+    # se pagan todas las pendientes del periodo, como antes.
+    paradas: Optional[list[ParadaDeliveryRef]] = Field(default=None, max_length=2000)
 
 
 class ResumenRendimiento(BaseModel):
