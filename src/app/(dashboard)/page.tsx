@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ESTADO_DESPACHO_META, formatDate } from "@/lib/constants";
+import { ESTADO_DESPACHO_META, formatDate, textoParadas } from "@/lib/constants";
 import {
   getClientesRaw,
   getDespachosConDetalle,
@@ -86,7 +86,7 @@ export default async function DashboardPage() {
     return {
       id: r.id,
       numero: r.numero,
-      clienteNombre: `${r.despachos.length} parada(s)`,
+      clienteNombre: textoParadas(r.despachos),
       position: ultimoPunto ? [ultimoPunto.lat, ultimoPunto.lng] : [r.origen.lat, r.origen.lng],
       tone: "info",
     };

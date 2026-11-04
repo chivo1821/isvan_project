@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { ESTADO_RUTA_META, TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { ESTADO_RUTA_META, TIPO_VEHICULO_META, contarParadas, formatDateTime } from "@/lib/constants";
 import { IndicadorAvisos } from "./avisos-ruta";
 import type { RutaConDetalle } from "@/lib/mock-data";
 
@@ -54,7 +54,7 @@ export function RutasTable({ rutas }: { rutas: RutaConDetalle[] }) {
     {
       id: "paradas",
       header: "Paradas",
-      accessorFn: (row) => row.despachos.length,
+      accessorFn: (row) => contarParadas(row.despachos),
     },
     {
       id: "distancia",

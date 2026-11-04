@@ -7,7 +7,7 @@ import { ParadaAcciones, type MarcasParada } from "@/components/modules/despacha
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { documentoDespacho } from "@/lib/constants";
+import { contarParadas, documentoDespacho, textoParadas } from "@/lib/constants";
 import type { Cliente, Despacho, EstadoRuta, RutaPunto } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +77,10 @@ export function ViajeEnCurso({
     .map((p) => ({ ...p, ...marcasPropias[p.id] }));
 
   const enTransito = estadoRuta === "EN_TRANSITO";
-  const entregadas = paradas.filter((p) => p.estado === "ENTREGADO").length;
+  // Una parada = un cliente (contarParadas): queda entregada cuando se
+  // entregaron todos sus documentos.
+  const totalParadas = contarParadas(paradas);
+  const entregadas = totalParadas - contarParadas(paradas.filter((p) => p.estado !== "ENTREGADO"));
   const siguiente = enTransito ? paradas.find((p) => p.estado === "EN_TRANSITO") : undefined;
   const verMapa = escritorio || mapaAbierto;
 
@@ -98,8 +101,8 @@ export function ViajeEnCurso({
             {enTransito && enCaminoDesde && <p className="text-xs text-muted-foreground">{enCaminoDesde}</p>}
             <p className="text-base font-semibold">
               {enTransito
-                ? `${entregadas} de ${paradas.length} parada(s) entregadas`
-                : `${paradas.length} parada(s) en esta ruta`}
+                ? `${entregadas} de ${totalParadas} parada(s) entregadas`
+                : `${textoParadas(paradas)} en esta ruta`}
             </p>
             {siguiente && (
               <p className="truncate text-sm text-muted-foreground">

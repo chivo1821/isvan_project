@@ -140,7 +140,7 @@ export default async function DespachadorPage() {
                     ))}
                     {r.despachos.length > PARADAS_A_LA_VISTA && (
                       <li className="px-3 py-2 text-xs text-muted-foreground">
-                        y {r.despachos.length - PARADAS_A_LA_VISTA} parada(s) más
+                        y {r.despachos.length - PARADAS_A_LA_VISTA} documento(s) más
                       </li>
                     )}
                   </ol>

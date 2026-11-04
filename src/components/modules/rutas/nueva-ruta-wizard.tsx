@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TIPO_VEHICULO_META, documentoDespacho, formatDateTime } from "@/lib/constants";
+import { TIPO_VEHICULO_META, contarParadas, documentoDespacho, formatDateTime, textoParadas } from "@/lib/constants";
 import type { Almacen, Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
 import { salidaIso } from "@/lib/planificacion";
 import { MapaPrevioRuta } from "./mapa-previo-ruta";
@@ -373,7 +373,7 @@ export function NuevaRutaWizard({
         salidaProgramada,
       });
       toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {
-        description: `${new Set(ruta.despachos.map((d) => d.destinoClienteId)).size} parada(s) · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
+        description: `${textoParadas(ruta.despachos)} · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
       });
       // Lo pendiente (sin vehículo, horarios que se pisan...) no frena la
       // creación, pero se avisa de entrada; queda también en la ruta.
@@ -394,7 +394,7 @@ export function NuevaRutaWizard({
   const pesoSeleccionado = despachosSeleccionados.reduce((sum, d) => sum + pesoTotal(d), 0);
   // Una parada = un cliente, aunque lleve varios documentos (igual que el
   // planificador, ver _Parada en backend/app/services/plan_rutas.py).
-  const paradasSeleccionadas = new Set(despachosSeleccionados.map((d) => d.destinoClienteId)).size;
+  const paradasSeleccionadas = contarParadas(despachosSeleccionados);
   const porId = new Map(despachos.map((d) => [d.id, d]));
   const elegida = sugerencias?.find((s) => s.vehiculo.id === vehiculoId && (s.vehiculoApoyo?.id ?? null) === apoyoId);
   const vehiculoElegido = elegida?.vehiculo;
