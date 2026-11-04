@@ -74,6 +74,32 @@ export type ResumenDelivery = {
   motorizados: { id: string; nombre: string; placa: string }[];
 };
 
+/** Un pago (liquidación) que ya recibió el repartidor. */
+export type PagoDelivery = {
+  id: string;
+  desde: string;
+  hasta: string;
+  entregas: number;
+  totalUsd: number;
+  creadoEn: string;
+  nota: string | null;
+};
+
+/** GET /delivery/mi-cuenta: el estado de cuenta del repartidor que tiene la
+ * sesión (ver backend/app/api/delivery.py). No se puede pedir el de otro. */
+export type MiCuentaDelivery = {
+  desde: string;
+  hasta: string;
+  repartidor: string;
+  placa: string | null;
+  /** Solo se paga delivery en moto. */
+  enMoto: boolean;
+  totales: TotalesDelivery;
+  paradas: ParadaDelivery[];
+  tabulador: RangoTabulador[];
+  pagos: PagoDelivery[];
+};
+
 export type LiquidacionDelivery = {
   id: string;
   repartidorId: string;

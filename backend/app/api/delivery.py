@@ -1,8 +1,9 @@
 """Pago a los motorizados (delivery en moto).
 
-Solo ADMIN: es informacion de pago. Las reglas del calculo estan todas en
-app/services/delivery.py; aca solo se elige el periodo, se edita el
-tabulador y se cierran las liquidaciones.
+El tablero es solo ADMIN: es informacion de pago de todos. Cada repartidor
+ve aparte su propio estado de cuenta (mi_router), siempre el de su sesion.
+Las reglas del calculo estan todas en app/services/delivery.py; aca solo se
+elige el periodo, se edita el tabulador y se cierran las liquidaciones.
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ router = APIRouter(
     tags=["delivery"],
     dependencies=[Depends(requiere_rol("ADMIN"))],
 )
+# Lo que ve el propio repartidor. Router aparte porque el de arriba es solo
+# ADMIN para todos sus endpoints.
+mi_router = APIRouter(prefix="/delivery", tags=["delivery"])
 
 
 def _validar_periodo(desde: date, hasta: date) -> None:
@@ -152,6 +156,41 @@ def _liquidacion(cur, liquidacion_id: str) -> dict:
     if not liquidacion:
         raise HTTPException(404, "Liquidación no encontrada")
     return {**liquidacion, "totalUsd": float(liquidacion["totalUsd"])}
+
+
+@mi_router.get("/mi-cuenta")
+def mi_cuenta(desde: date, hasta: date, usuario: dict = Depends(requiere_rol("REPARTIDOR"))):
+    """El estado de cuenta del repartidor: sus entregas pagables del periodo
+    (pagadas y pendientes), el tabulador con que se calculan y los pagos que
+    ya recibio. Siempre el de quien tiene la sesion: no recibe un repartidor,
+    asi que no hay forma de ver el de otro."""
+    _validar_periodo(desde, hasta)
+    with get_connection() as conn, conn.cursor() as cur:
+        paradas = dl.paradas_pagables(cur, desde, hasta, usuario["id"])
+        cur.execute(
+            'SELECT u."nombre", v."placa", v."tipo" FROM "Usuario" u '
+            'LEFT JOIN "Vehiculo" v ON v."id" = u."vehiculoAsignadoId" WHERE u."id" = %s',
+            (usuario["id"],),
+        )
+        ficha = cur.fetchone()
+        cur.execute(
+            'SELECT l."id", l."desde", l."hasta", l."entregas", l."totalUsd", l."creadoEn", l."nota" '
+            'FROM "LiquidacionDelivery" l WHERE l."repartidorId" = %s ORDER BY l."creadoEn" DESC',
+            (usuario["id"],),
+        )
+        pagos = [{**l, "totalUsd": float(l["totalUsd"])} for l in cur.fetchall()]
+        return {
+            "desde": desde,
+            "hasta": hasta,
+            "repartidor": ficha["nombre"] if ficha else usuario["nombre"],
+            "placa": ficha["placa"] if ficha else None,
+            # Solo se paga delivery en moto: con otro vehiculo no hay nada que cobrar.
+            "enMoto": bool(ficha and ficha["tipo"] == "MOTO"),
+            "totales": dl.totales(paradas),
+            "paradas": paradas,
+            "tabulador": dl.tabulador(cur),
+            "pagos": pagos,
+        }
 
 
 @router.get("/liquidaciones")

@@ -119,6 +119,7 @@ ROUTERS_PROTEGIDOS = [
     rutas.router,
     reportes.router,
     delivery.router,
+    delivery.mi_router,
     historial.router,
     indicadores.router,
     vendedor.router,

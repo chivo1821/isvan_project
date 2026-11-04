@@ -15,6 +15,7 @@ import {
   MapPinCheckIcon,
   MapPinnedIcon,
   NavigationIcon,
+  WalletIcon,
   PackageIcon,
   RouteIcon,
   TruckIcon,
@@ -146,6 +147,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon, roles: ROLES_OPERACION },
       { label: "Despachador", href: "/despachador", icon: NavigationIcon, roles: ["ADMIN", "REPARTIDOR"] },
+      // Su propio estado de cuenta de delivery (el ADMIN ve el de todos en Delivery en moto).
+      { label: "Mi estado de cuenta", href: "/despachador/cuenta", icon: WalletIcon, roles: ["REPARTIDOR"] },
     ],
   },
   {
@@ -261,7 +264,13 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const active = item.exacto ? pathname === item.href : isActive(pathname, item.href);
+                  // Si otra opción del grupo es más específica y también
+                  // coincide (/despachador/cuenta dentro de /despachador), se
+                  // marca solo esa.
+                  const masEspecifica = group.items.some(
+                    (otra) => otra.href.length > item.href.length && isActive(pathname, otra.href)
+                  );
+                  const active = !masEspecifica && (item.exacto ? pathname === item.href : isActive(pathname, item.href));
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
