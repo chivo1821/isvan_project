@@ -106,6 +106,7 @@ enum OrigenDocumento {
   EXTRACTO_VENTAS
   CXC // futuro: reporte de cuentas por cobrar del sistema administrativo
   MANUAL
+  SISTEMA // emitido por el sistema administrativo
 }
 
 enum TipoMovimientoVenta {
@@ -573,6 +574,9 @@ model VentaCarga {
   revertidaEn    DateTime?
   // La validacion que se le mostro al ADMIN antes de confirmar, para poder
   // revisarla despues desde el historial.
+  // EXTRACTO: subida por el administrador. SISTEMA: la carga permanente donde
+  // escribe el sistema administrativo al emitir (una por empresa).
+  origen         String           @default("EXTRACTO")
   resumen        Json
   // Clientes y productos tal como vienen en el archivo. Se aplican a
   // VentaCliente/VentaProducto recien al confirmar: una carga pendiente no
@@ -1542,4 +1546,206 @@ model Tarea {
   terminadaEn    DateTime?
 
   @@index([estado, ejecutarDesde])
+}
+
+// ---------- Sistema administrativo: ventas e inventario (fase 1) ----------
+
+enum EstadoPedido {
+  BORRADOR
+  CONFIRMADO
+  FACTURADO
+  ANULADO
+}
+
+enum TipoDocumentoVenta {
+  FA // factura
+  NE // nota de entrega
+  NC // nota de credito
+  ND // nota de debito
+}
+
+enum EstadoDocumentoVenta {
+  BORRADOR
+  EN_EMISION // en la cola de la imprenta digital
+  EMITIDA
+  RECHAZADA // la imprenta lo rechazo: se corrige y se emite otro
+}
+
+// Un pedido del cliente. El id lo puede generar quien lo crea (la app del
+// vendedor sin senal): reenviar el mismo pedido no lo duplica.
+model Pedido {
+  id                String       @id
+  organizacionId    String       @default("org-principal")
+  empresaId         String
+  numero            String
+  clienteId         String
+  almacenId         String
+  vendedorId        String?
+  // WEB | APP | PORTAL
+  origen            String       @default("WEB")
+  estado            EstadoPedido @default(BORRADOR)
+  listaPrecioCodigo String?
+  notas             String?
+  creadoPorId       String
+  creadoEn          DateTime     @default(now())
+  confirmadoEn      DateTime?
+  anuladoEn         DateTime?
+  motivoAnulacion   String?
+
+  items PedidoItem[]
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, estado])
+  @@index([clienteId])
+}
+
+model PedidoItem {
+  id            String  @id @default(cuid())
+  pedidoId      String
+  pedido        Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  productoId    String
+  cajas         Decimal @db.Decimal(14, 3)
+  precioCajaUsd Decimal @db.Decimal(14, 4)
+  descuentoPct  Decimal @default(0) @db.Decimal(5, 2)
+}
+
+// Factura, nota de entrega, nota de credito o de debito. Emitida no se
+// edita: se corrige con una nota. Guarda la ficha fiscal del cliente, la
+// tasa y los porcentajes con que salio.
+model DocumentoVenta {
+  id                            String               @id @default(cuid())
+  organizacionId                String               @default("org-principal")
+  empresaId                     String
+  tipo                          TipoDocumentoVenta
+  // Numero interno (Correlativo); null hasta que se emite.
+  numero                        String?
+  // El que asigna la imprenta digital al emitir.
+  numeroControl                 String?
+  estado                        EstadoDocumentoVenta @default(BORRADOR)
+  pedidoId                      String?
+  documentoAfectadoId           String?
+  documentoAfectado             DocumentoVenta?      @relation("NotasDelDocumento", fields: [documentoAfectadoId], references: [id])
+  notas                         DocumentoVenta[]     @relation("NotasDelDocumento")
+  motivo                        String?
+  // NC: si la mercancia vuelve al inventario.
+  devuelveInventario            Boolean              @default(false)
+  clienteId                     String
+  almacenId                     String?
+  clienteRif                    String?
+  clienteRazonSocial            String?
+  clienteDomicilio              String?
+  clienteContribuyenteEspecial  Boolean              @default(false)
+  clientePorcentajeRetencionIva Int?
+  fechaEmision                  DateTime?            @db.Date
+  vencimiento                   DateTime?            @db.Date
+  tasa                          Decimal?             @db.Decimal(20, 8)
+  fechaTasa                     DateTime?            @db.Date
+  pagoEnDivisas                 Boolean              @default(false)
+  igtfPorcentaje                Decimal              @default(0) @db.Decimal(5, 2)
+  baseImponibleUsd              Decimal              @default(0) @db.Decimal(20, 2)
+  exentoUsd                     Decimal              @default(0) @db.Decimal(20, 2)
+  ivaUsd                        Decimal              @default(0) @db.Decimal(20, 2)
+  igtfUsd                       Decimal              @default(0) @db.Decimal(20, 2)
+  totalUsd                      Decimal              @default(0) @db.Decimal(20, 2)
+  baseImponibleBs               Decimal              @default(0) @db.Decimal(20, 2)
+  exentoBs                      Decimal              @default(0) @db.Decimal(20, 2)
+  ivaBs                         Decimal              @default(0) @db.Decimal(20, 2)
+  igtfBs                        Decimal              @default(0) @db.Decimal(20, 2)
+  totalBs                       Decimal              @default(0) @db.Decimal(20, 2)
+  // Desglose por alicuota: [{codigo, porcentaje, baseUsd, ivaUsd, baseBs, ivaBs}]
+  impuestos                     Json?
+  emisorFiscal                  String?
+  respuestaEmisor               Json?
+  errorEmision                  String?
+  creadoPorId                   String
+  creadoEn                      DateTime             @default(now())
+  emitidoEn                     DateTime?
+
+  items DocumentoVentaItem[]
+
+  @@unique([empresaId, tipo, numero])
+  @@index([empresaId, fechaEmision])
+  @@index([clienteId])
+  @@index([pedidoId])
+}
+
+model DocumentoVentaItem {
+  id                 String         @id @default(cuid())
+  documentoId        String
+  documento          DocumentoVenta @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  productoId         String
+  codigoProducto     BigInt
+  descripcion        String
+  cajas              Decimal        @db.Decimal(14, 3)
+  unidadesPorCaja    Int
+  precioCajaUsd      Decimal        @db.Decimal(14, 4)
+  descuentoPct       Decimal        @default(0) @db.Decimal(5, 2)
+  impuestoCodigo     String
+  porcentajeImpuesto Decimal        @db.Decimal(6, 2)
+  subtotalUsd        Decimal        @db.Decimal(20, 2)
+}
+
+// Un lote de un producto. Los productos sin lote usan uno llamado
+// "SIN-LOTE" (asi toda existencia tiene lote y la llave es simple).
+model Lote {
+  id          String    @id @default(cuid())
+  productoId  String
+  numero      String
+  vencimiento DateTime? @db.Date
+  creadoEn    DateTime  @default(now())
+
+  @@unique([productoId, numero])
+}
+
+// Existencia por almacen, producto y lote. Se mueve solo con
+// MovimientoInventario (ver app/services/inventario.py), en la misma
+// transaccion.
+model Existencia {
+  id         String  @id @default(cuid())
+  almacenId  String
+  productoId String
+  loteId     String
+  cajas      Decimal @default(0) @db.Decimal(14, 3)
+
+  @@unique([almacenId, productoId, loteId])
+  @@index([productoId])
+}
+
+// Cada entrada o salida. Solo se agregan filas.
+model MovimientoInventario {
+  id               BigInt   @id @default(autoincrement())
+  organizacionId   String   @default("org-principal")
+  empresaId        String
+  almacenId        String
+  productoId       String
+  loteId           String
+  // ENTRADA | SALIDA_VENTA | DEVOLUCION | TRASLADO_SALIDA | TRASLADO_ENTRADA | AJUSTE
+  tipo             String
+  // Con signo: positivo entra, negativo sale.
+  cajas            Decimal  @db.Decimal(14, 3)
+  documentoVentaId String?
+  ajusteId         String?
+  referencia       String?
+  usuarioId        String?
+  fecha            DateTime @default(now())
+
+  @@index([productoId, fecha])
+  @@index([documentoVentaId])
+}
+
+// Ajuste de inventario: lo propone uno y lo aprueba otro con permiso.
+model AjusteInventario {
+  id             String    @id @default(cuid())
+  organizacionId String    @default("org-principal")
+  empresaId      String
+  almacenId      String
+  // PROPUESTO | APROBADO | RECHAZADO
+  estado         String    @default("PROPUESTO")
+  motivo         String
+  // [{productoId, loteId, cajas}] con signo
+  items          Json
+  propuestoPorId String
+  resueltoPorId  String?
+  creadoEn       DateTime  @default(now())
+  resueltoEn     DateTime?
 }

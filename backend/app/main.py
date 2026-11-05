@@ -25,6 +25,7 @@ from app.api import (
     despachos,
     historial,
     indicadores,
+    inventario,
     maestra,
     motorizados,
     portal,
@@ -35,6 +36,7 @@ from app.api import (
     usuarios,
     vehiculos,
     vendedor,
+    ventas,
 )
 from app.core.auth import get_current_user
 from app.core.permisos import solo_su_modulo
@@ -131,6 +133,8 @@ ROUTERS_PROTEGIDOS = [
     # Sistema administrativo: cada endpoint pide su permiso (requiere_permiso).
     administracion.router,
     catalogo.router,
+    ventas.router,
+    inventario.router,
 ]
 
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que
@@ -142,9 +146,9 @@ ROUTERS_PROTEGIDOS = [
 # operacion se les cierra aca, de una sola vez (ver solo_su_modulo en
 # app/core/permisos.py).
 ROUTERS_POR_ROL = {
-    "VENDEDOR": [usuarios.router, vendedor.router, censo.router, administracion.router, catalogo.router],
-    "COBRANZAS": [usuarios.router, cobranzas.router, administracion.router, catalogo.router],
-    "SUPERVISOR": [usuarios.router, vendedor.router, censo.router, administracion.router],
+    "VENDEDOR": [usuarios.router, vendedor.router, censo.router, administracion.router, catalogo.router, ventas.router],
+    "COBRANZAS": [usuarios.router, cobranzas.router, administracion.router, catalogo.router, ventas.router],
+    "SUPERVISOR": [usuarios.router, vendedor.router, censo.router, administracion.router, ventas.router],
 }
 
 # En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:

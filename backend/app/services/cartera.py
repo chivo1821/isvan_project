@@ -33,8 +33,10 @@ from app.services import configuracion
 
 CENTAVO = Decimal("0.01")
 CERO = Decimal("0")
-TIPOS_CARGO = ("FA", "NE")
-TIPOS_CREDITO = ("DV", "DN")
+# ND y NC son las notas de debito y credito que emite el sistema
+# administrativo (el extracto de ventas no las trae).
+TIPOS_CARGO = ("FA", "NE", "ND")
+TIPOS_CREDITO = ("DV", "DN", "NC")
 
 Clave = tuple[str, str]  # (empresa, codigoCliente)
 
@@ -367,7 +369,7 @@ def movimientos(cur, claves: list[Clave], desde: date | None, hasta: date | None
     cur.execute(
         'SELECT "empresa"::text AS "empresa", "codigoCliente", "tipoDoc", "numero", "fecha", "montoUsd", "montoBs" '
         f'FROM "DocumentoCobro" WHERE "vigente" AND "fecha" >= %(inicio)s AND {filtro} '
-        "AND (\"tipoDoc\" IN ('FA', 'NE') AND \"montoUsd\" > 0 OR \"tipoDoc\" IN ('DV', 'DN') AND \"montoUsd\" < 0)",
+        "AND (\"tipoDoc\" IN ('FA', 'NE', 'ND') AND \"montoUsd\" > 0 OR \"tipoDoc\" IN ('DV', 'DN', 'NC') AND \"montoUsd\" < 0)",
         {**params, "inicio": inicio},
     )
     filas = [
