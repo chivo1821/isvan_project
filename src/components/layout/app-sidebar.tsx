@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   ClipboardCheckIcon,
   HandCoinsIcon,
+  LandmarkIcon,
   IceCreamConeIcon,
   LayoutDashboardIcon,
   MapPinCheckIcon,
@@ -56,6 +57,7 @@ type NavGroup = { label: string; items: NavItem[] };
 // propósito: su única pantalla es el despachador (ver (dashboard)/layout.tsx
 // y backend/app/core/permisos.py).
 const ROLES_OPERACION: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR"];
+const MODULO_ADMINISTRATIVO = process.env.NEXT_PUBLIC_MODULO_ADMINISTRATIVO === "1";
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -153,7 +155,30 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Administración",
-    items: [{ label: "Usuarios", href: "/usuarios", icon: UsersIcon, roles: ["ADMIN"] }],
+    items: [
+      { label: "Usuarios", href: "/usuarios", icon: UsersIcon, roles: ["ADMIN"] },
+      // El sistema administrativo (facturación, inventario) se ve solo donde
+      // se enciende con NEXT_PUBLIC_MODULO_ADMINISTRATIVO=1 (vista previa y
+      // desarrollo). En producción queda oculto hasta el corte.
+      ...(MODULO_ADMINISTRATIVO
+        ? [
+            {
+              label: "Sistema administrativo",
+              href: "/administrativo",
+              icon: LandmarkIcon,
+              roles: ["ADMIN"] as RolUsuario[],
+              children: [
+                { label: "Empresas", href: "/administrativo/empresas" },
+                { label: "Catálogo y precios", href: "/administrativo/catalogo" },
+                { label: "Pedidos", href: "/administrativo/pedidos" },
+                { label: "Documentos de venta", href: "/administrativo/documentos" },
+                { label: "Inventario", href: "/administrativo/inventario" },
+                { label: "Libro de ventas", href: "/administrativo/libro" },
+              ],
+            },
+          ]
+        : []),
+    ],
   },
 ];
 

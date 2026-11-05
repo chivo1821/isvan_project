@@ -413,3 +413,27 @@ def editar_ficha(cliente_id: str, data: FichaFiscal, usuario: dict = Depends(req
         bitacora.registrar(cur, usuario["id"], "Cliente", cliente_id, "ficha_fiscal", antes, valores)
         conn.commit()
     return {**valores, "id": cliente_id}
+
+
+@router.get("/clientes")
+def listar_clientes(
+    empresaId: str,
+    buscar: str | None = Query(default=None, max_length=80),
+    usuario: dict = Depends(requiere_permiso("catalogo.ver")),
+):
+    """Clientes de la empresa con su ficha fiscal y comercial (para pedidos
+    y para completar la ficha)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        empresa = empresas.exigir(cur, usuario, empresaId)
+        cur.execute(
+            'SELECT "id", "codigo", "nombre", "ciudad", "rifCedula", "razonSocial", "domicilioFiscal", '
+            '"contribuyenteEspecial", "porcentajeRetencionIva", "limiteCreditoUsd", "diasCredito", "rutaVenta", '
+            '"tipoVenta", "listaPrecioCodigo" FROM "Cliente" WHERE "empresa"::text = %s '
+            'AND (%s::text IS NULL OR "nombre" ILIKE %s OR "codigo" = %s OR "razonSocial" ILIKE %s OR "rifCedula" ILIKE %s) '
+            'ORDER BY "nombre" LIMIT 300',
+            (empresa["codigo"], buscar, f"%{buscar}%", (buscar or "").strip(), f"%{buscar}%", f"%{buscar}%"),
+        )
+        return [
+            {**c, "limiteCreditoUsd": float(c["limiteCreditoUsd"]) if c["limiteCreditoUsd"] is not None else None}
+            for c in cur.fetchall()
+        ]
