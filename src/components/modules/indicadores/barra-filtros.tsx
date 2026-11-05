@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { DateRange } from "react-day-picker";
 import { es } from "react-day-picker/locale";
-import { CalendarIcon, ChevronDownIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CalendarIcon, ChevronDownIcon, Loader2Icon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -361,6 +361,11 @@ export function BarraFiltros({
   }
 
   const hayFiltros = campos.some((campo) => filtros[campo].length > 0);
+  const cuantosFiltros = campos.filter((campo) => filtros[campo].length > 0).length;
+  // En el teléfono los seis filtros ocupaban cuatro líneas antes de ver un
+  // número: van plegados detrás de un botón (en pantallas grandes, siempre
+  // a la vista).
+  const [verFiltros, setVerFiltros] = useState(false);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -383,90 +388,105 @@ export function BarraFiltros({
         extra={atajos}
         onCambiar={(desde, hasta) => aplicar({ desde, hasta })}
       />
-      {ver("rutas") && (
-        <FiltroMultiple
-          etiqueta="Ruta"
-          todos="Todas las rutas"
-          opciones={soloDisponibles(comoOpciones(opciones.rutas), d?.rutas, filtros.rutas)}
-          acotadas={acotadas}
-          seleccion={filtros.rutas}
-          onCambiar={(rutas) => aplicar({ rutas })}
-        />
+      {campos.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="sm:hidden"
+          aria-expanded={verFiltros}
+          onClick={() => setVerFiltros(!verFiltros)}
+        >
+          <SlidersHorizontalIcon />
+          Filtros{cuantosFiltros > 0 && ` (${cuantosFiltros})`}
+          <ChevronDownIcon className={cn("transition-transform", verFiltros && "rotate-180")} />
+        </Button>
       )}
-      {ver("grupos") && (
-        <FiltroMultiple
-          etiqueta="Grupo"
-          todos="Todos los grupos"
-          opciones={soloDisponibles(comoOpciones(opciones.grupos ?? []), d?.grupos, filtros.grupos)}
-          acotadas={acotadas}
-          seleccion={filtros.grupos}
-          onCambiar={(grupos) => aplicar({ grupos })}
-        />
-      )}
-      {ver("tipos") && (
-        <FiltroMultiple
-          etiqueta="Tipo de cliente"
-          todos="Todos los tipos de cliente"
-          opciones={soloDisponibles(comoOpciones(opciones.tiposCliente), d?.tiposCliente, filtros.tipos)}
-          acotadas={acotadas}
-          seleccion={filtros.tipos}
-          onCambiar={(tipos) => aplicar({ tipos })}
-        />
-      )}
-      {ver("clientes") && (
-        <FiltroMultiple
-          etiqueta="Cliente"
-          todos="Todos los clientes"
-          opciones={soloDisponibles(
-            opciones.clientes.map((c) => ({
-              valor: c.codigo,
-              etiqueta: c.nombre,
-              detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
-            })),
-            d?.clientes,
-            filtros.clientes
-          )}
-          acotadas={acotadas}
-          seleccion={filtros.clientes}
-          onCambiar={(clientes) => aplicar({ clientes })}
-        />
-      )}
-      {ver("productos") && (
-        <FiltroMultiple
-          etiqueta="Producto"
-          todos="Todos los productos"
-          opciones={soloDisponibles(
-            (opciones.productos ?? []).map((p) => ({
-              valor: p.codigo,
-              etiqueta: p.nombre,
-              detalle: `SKU ${p.codigo} · ${p.grupo}`,
-            })),
-            d?.productos,
-            filtros.productos
-          )}
-          acotadas={acotadas}
-          seleccion={filtros.productos}
-          onCambiar={(productos) => aplicar({ productos })}
-        />
-      )}
-      {ver("tiposDocumento") && (
-        <FiltroMultiple
-          etiqueta="Tipo de documento"
-          todos="Todos los documentos"
-          opciones={soloDisponibles(
-            (opciones.tiposDocumento ?? []).map((codigo) => ({
-              valor: codigo,
-              etiqueta: TIPO_DOCUMENTO_META[codigo] ?? codigo,
-              detalle: codigo,
-            })),
-            d?.tiposDocumento,
-            filtros.tiposDocumento
-          )}
-          acotadas={acotadas}
-          seleccion={filtros.tiposDocumento}
-          onCambiar={(tiposDocumento) => aplicar({ tiposDocumento })}
-        />
-      )}
+      <div className={cn(verFiltros ? "contents" : "hidden", "sm:contents")}>
+        {ver("rutas") && (
+          <FiltroMultiple
+            etiqueta="Ruta"
+            todos="Todas las rutas"
+            opciones={soloDisponibles(comoOpciones(opciones.rutas), d?.rutas, filtros.rutas)}
+            acotadas={acotadas}
+            seleccion={filtros.rutas}
+            onCambiar={(rutas) => aplicar({ rutas })}
+          />
+        )}
+        {ver("grupos") && (
+          <FiltroMultiple
+            etiqueta="Grupo"
+            todos="Todos los grupos"
+            opciones={soloDisponibles(comoOpciones(opciones.grupos ?? []), d?.grupos, filtros.grupos)}
+            acotadas={acotadas}
+            seleccion={filtros.grupos}
+            onCambiar={(grupos) => aplicar({ grupos })}
+          />
+        )}
+        {ver("tipos") && (
+          <FiltroMultiple
+            etiqueta="Tipo de cliente"
+            todos="Todos los tipos de cliente"
+            opciones={soloDisponibles(comoOpciones(opciones.tiposCliente), d?.tiposCliente, filtros.tipos)}
+            acotadas={acotadas}
+            seleccion={filtros.tipos}
+            onCambiar={(tipos) => aplicar({ tipos })}
+          />
+        )}
+        {ver("clientes") && (
+          <FiltroMultiple
+            etiqueta="Cliente"
+            todos="Todos los clientes"
+            opciones={soloDisponibles(
+              opciones.clientes.map((c) => ({
+                valor: c.codigo,
+                etiqueta: c.nombre,
+                detalle: `Cód. ${c.codigo} · ruta ${c.ruta}`,
+              })),
+              d?.clientes,
+              filtros.clientes
+            )}
+            acotadas={acotadas}
+            seleccion={filtros.clientes}
+            onCambiar={(clientes) => aplicar({ clientes })}
+          />
+        )}
+        {ver("productos") && (
+          <FiltroMultiple
+            etiqueta="Producto"
+            todos="Todos los productos"
+            opciones={soloDisponibles(
+              (opciones.productos ?? []).map((p) => ({
+                valor: p.codigo,
+                etiqueta: p.nombre,
+                detalle: `SKU ${p.codigo} · ${p.grupo}`,
+              })),
+              d?.productos,
+              filtros.productos
+            )}
+            acotadas={acotadas}
+            seleccion={filtros.productos}
+            onCambiar={(productos) => aplicar({ productos })}
+          />
+        )}
+        {ver("tiposDocumento") && (
+          <FiltroMultiple
+            etiqueta="Tipo de documento"
+            todos="Todos los documentos"
+            opciones={soloDisponibles(
+              (opciones.tiposDocumento ?? []).map((codigo) => ({
+                valor: codigo,
+                etiqueta: TIPO_DOCUMENTO_META[codigo] ?? codigo,
+                detalle: codigo,
+              })),
+              d?.tiposDocumento,
+              filtros.tiposDocumento
+            )}
+            acotadas={acotadas}
+            seleccion={filtros.tiposDocumento}
+            onCambiar={(tiposDocumento) => aplicar({ tiposDocumento })}
+          />
+        )}
+      </div>
       {hayFiltros && (
         <Button
           variant="ghost"

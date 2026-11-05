@@ -44,9 +44,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <SidebarProvider>
       <AppSidebar rol={usuarioActual.rol} />
-      <SidebarInset>
+      {/* min-w-0: sin esto, una tabla ancha (aunque tenga su propio scroll)
+          estira el contenido y toda la página se corre de lado. */}
+      <SidebarInset className="min-w-0">
         <Topbar user={usuarioActual} />
-        <div className="flex-1 space-y-6 p-6">{children}</div>
+        <div className="flex-1 space-y-6 p-4 sm:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

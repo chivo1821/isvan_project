@@ -65,7 +65,7 @@ export function Kpi({
           {aviso && <AlertTriangleIcon className="size-3.5 text-warning" />}
           {label}
         </p>
-        <p className="text-2xl font-bold text-foreground tabular-nums">{valor}</p>
+        <p className="text-xl font-bold text-foreground tabular-nums sm:text-2xl">{valor}</p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {cambio}
           {detalle && <span className="text-xs text-muted-foreground">{detalle}</span>}

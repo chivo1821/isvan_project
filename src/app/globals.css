@@ -153,3 +153,38 @@
     @apply font-sans;
   }
 }
+/* Teléfono: en el tablero de indicadores (la clase va en la página) los
+   controles miden al menos 40 px de alto, para tocarlos con el dedo; lo
+   recomendado ronda los 44 px y el mínimo de WCAG es 24. Las opciones de
+   los menús y desplegables se abren fuera de la página (en un portal), así
+   que esas van para todo el sistema. En pantallas grandes no cambia nada. */
+@media (width < 40rem) {
+  .controles-tactiles
+    :is(
+      [data-slot="button"],
+      [data-slot="select-trigger"],
+      [data-slot="dropdown-menu-trigger"],
+      [data-slot="popover-trigger"],
+      [data-slot="dialog-trigger"],
+      [data-slot="alert-dialog-trigger"],
+      [data-slot="input"],
+      [data-slot="tabs-list"]
+    ) {
+    min-height: 2.5rem;
+  }
+  /* La lista de pestañas tiene 3 px de relleno arriba y abajo. */
+  .controles-tactiles [data-slot="tabs-trigger"] {
+    min-height: calc(2.5rem - 6px);
+  }
+  .controles-tactiles [data-slot="button"][data-size^="icon"] {
+    min-width: 2.5rem;
+  }
+  :is(
+      [data-slot="dropdown-menu-item"],
+      [data-slot="dropdown-menu-checkbox-item"],
+      [data-slot="dropdown-menu-radio-item"],
+      [data-slot="select-item"]
+    ) {
+    min-height: 2.5rem;
+  }
+}

@@ -71,7 +71,8 @@ export function Topbar({
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4">
       <div className="flex items-center gap-2">
-        <SidebarTrigger />
+        {/* En el teléfono es la única forma de llegar al menú: más grande para el dedo. */}
+        <SidebarTrigger className="max-sm:size-10" />
         <Separator orientation="vertical" className="h-5" />
         <Breadcrumb>
           <BreadcrumbList>

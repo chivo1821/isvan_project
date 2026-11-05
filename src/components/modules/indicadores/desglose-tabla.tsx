@@ -3,11 +3,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatNumero, formatPct, formatUsd } from "@/lib/constants";
 import type { Desglose, Dimension, FilaDesglose } from "@/lib/indicadores";
+import { ListaMovil } from "./item-movil";
 
-const PESTANAS: { dimension: Dimension; label: string; columna: string; conCodigo?: boolean }[] = [
+// corto: la etiqueta en el teléfono, para que las cinco pestañas quepan en una línea.
+const PESTANAS: { dimension: Dimension; label: string; corto?: string; columna: string; conCodigo?: boolean }[] = [
   { dimension: "ruta", label: "Ruta", columna: "Ruta" },
   { dimension: "grupo", label: "Grupo", columna: "Grupo de producto" },
-  { dimension: "tipo_cliente", label: "Tipo de cliente", columna: "Tipo de cliente" },
+  { dimension: "tipo_cliente", label: "Tipo de cliente", corto: "Tipo", columna: "Tipo de cliente" },
   { dimension: "producto", label: "Producto", columna: "Producto", conCodigo: true },
   { dimension: "cliente", label: "Cliente", columna: "Cliente", conCodigo: true },
 ];
@@ -42,7 +44,38 @@ function TablaDimension({
   }
   return (
     <div className="space-y-2">
-      <div className="max-h-[28rem] overflow-auto rounded-lg border border-border">
+      {/* En el teléfono, una fila por línea con la venta a la derecha y el
+          resto de las columnas debajo, en vez de ocho columnas. El nombre va
+          completo: cortado con «…» solo se leía pasando el mouse. */}
+      <ListaMovil>
+        {desglose.filas.map((fila) => (
+          <li key={fila.clave} className="space-y-1 px-3 py-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium break-words">{fila.nombre}</p>
+                {conCodigo && (
+                  <p className="text-xs break-words text-muted-foreground">
+                    {fila.clave}
+                    {fila.detalle && ` · ${fila.detalle}`}
+                  </p>
+                )}
+              </div>
+              <div className="shrink-0 text-right tabular-nums">
+                <p className="font-semibold">{formatUsd(fila.ventaNeta)}</p>
+                <p className="text-xs text-muted-foreground">{formatPct(total ? fila.ventaNeta / total : null)}</p>
+              </div>
+            </div>
+            <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
+              <span>Devol. {formatPct(fila.pctDevolucion)}</span>
+              <span>{formatNumero(fila.litros)} L</span>
+              <span>Margen {margen(fila)}</span>
+              {mostrarClientes && <span>{formatNumero(fila.clientes)} clientes</span>}
+              <span>Ticket {formatUsd(fila.ticketPromedio)}</span>
+            </p>
+          </li>
+        ))}
+      </ListaMovil>
+      <div className="hidden max-h-[28rem] overflow-auto rounded-lg border border-border sm:block">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
@@ -105,15 +138,20 @@ export function DesgloseTabla({ desgloses, total }: { desgloses: Record<Dimensio
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="ruta">
-          <div className="overflow-x-auto">
-            <TabsList>
-              {PESTANAS.map((p) => (
-                <TabsTrigger key={p.dimension} value={p.dimension}>
-                  {p.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
+          <TabsList className="flex-wrap justify-start group-data-horizontal/tabs:h-auto">
+            {PESTANAS.map((p) => (
+              <TabsTrigger key={p.dimension} value={p.dimension} className="h-7 flex-none">
+                {p.corto ? (
+                  <>
+                    <span className="sm:hidden">{p.corto}</span>
+                    <span className="hidden sm:inline">{p.label}</span>
+                  </>
+                ) : (
+                  p.label
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
           {PESTANAS.map((p) => (
             <TabsContent key={p.dimension} value={p.dimension} className="pt-2">
               <TablaDimension
