@@ -343,7 +343,7 @@ def cobertura(empresa: str):
             'WHERE "empresa" = %s AND "estado" = \'CONFIRMADA\' ORDER BY "confirmadaEn"',
             (empresa,),
         )
-        cargas = cur.fetchall()
+        cargas = [_horas_en_utc(c) for c in cur.fetchall()]
     return {"dias": dias, "cargas": cargas}
 
 

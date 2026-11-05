@@ -44,6 +44,7 @@ from app.schemas import (
     VisitasSemana,
 )
 from app.services import censo_tablero
+from app.services import cuadro_metas
 from app.services import indicadores_venta as iv
 from app.services.route_analysis import LatLng, haversine_km
 
@@ -480,6 +481,14 @@ def tablero_indicadores(
         disponibles = tablero["opcionesDisponibles"]
         disponibles["rutas"] = [r for r in disponibles["rutas"] if r in rutas]
         return tablero
+
+
+@router.get("/indicadores/cuadro-metas")
+def cuadro_metas_vendedor(empresa: str, mes: date, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
+    """El cuadro de metas en litros del mes, solo con sus rutas: las metas
+    las carga el ADMIN (ver /indicadores/metas) y aca se leen."""
+    with get_connection() as conn, conn.cursor() as cur:
+        return cuadro_metas.cuadro(cur, empresa, mes, _sus_rutas_en(cur, usuario, empresa))
 
 
 @router.get("/censo/pendientes")

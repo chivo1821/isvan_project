@@ -3,6 +3,7 @@
 // backend/app/core/portal_auth.py), pero apiGet la reenvía igual: manda
 // todas las cookies de la request.
 import { cache } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { apiGet } from "@/lib/api-client";
 import type { Empresa, EstadoCuentaPortal } from "@/lib/cobranzas";
 
@@ -21,7 +22,10 @@ export type CuentaPortal = {
 export const getCuentaPortal = cache(async (): Promise<CuentaPortal | null> => {
   try {
     return await apiGet<CuentaPortal>("/portal/me");
-  } catch {
+  } catch (err) {
+    // La sesión vencida ya redirige al login (ver sesionVencida en
+    // api-client.ts): ese redirect no se puede tragar acá.
+    unstable_rethrow(err);
     return null;
   }
 });

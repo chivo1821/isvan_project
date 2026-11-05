@@ -9,13 +9,14 @@ elige el periodo, se edita el tabulador y se cierran las liquidaciones.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Jsonb
 
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
+from app.schemas import en_utc
 from app.schemas import (
     AnulacionLiquidacionDelivery,
     ExclusionDeliveryCreate,
@@ -53,6 +54,28 @@ def _motorizados(cur) -> list[dict]:
     return cur.fetchall()
 
 
+# Las horas de cada entrega estan en UTC sin zona (ver app/core/fechas.py).
+# Estas respuestas no pasan por un modelo de schemas.py (ver Instante alli):
+# se les pone la zona al responder, no antes, porque los calculos y el pago
+# (que las copia a LiquidacionDeliveryParada) trabajan con ellas sin zona.
+# Sin zona el navegador las tomaba como hora local y las corria 4 horas.
+_HORAS_PARADA = ("entregadoEn", "liquidadaEn", "excluidaEn")
+
+
+def _con_zona(paradas: list[dict]) -> list[dict]:
+    return [
+        {**p, **{c: en_utc(p[c]) for c in _HORAS_PARADA if isinstance(p.get(c), datetime)}} for p in paradas
+    ]
+
+
+def _iso_con_zona(valor: str | None) -> str | None:
+    """Una hora ya guardada como texto (el detalle de un pago anulado): los
+    pagos anulados antes de esto la guardaron sin zona."""
+    if not valor or "+" in valor[10:] or valor.endswith("Z"):
+        return valor
+    return f"{valor}+00:00"
+
+
 @router.get("/resumen")
 def resumen(desde: date, hasta: date, repartidor: str | None = None):
     """Lo que hay que pagar en el periodo: totales, cuanto le toca a cada
@@ -65,7 +88,7 @@ def resumen(desde: date, hasta: date, repartidor: str | None = None):
             "hasta": hasta,
             "totales": dl.totales(paradas),
             "porMotorizado": dl.resumen_por_motorizado(paradas),
-            "paradas": paradas,
+            "paradas": _con_zona(paradas),
             "tabulador": dl.tabulador(cur),
             "motorizados": _motorizados(cur),
         }
@@ -206,7 +229,7 @@ def mi_cuenta(desde: date, hasta: date, usuario: dict = Depends(requiere_rol("RE
             # Solo se paga delivery en moto: con otro vehiculo no hay nada que cobrar.
             "enMoto": bool(ficha and ficha["tipo"] == "MOTO"),
             "totales": dl.totales(paradas),
-            "paradas": paradas,
+            "paradas": _con_zona(paradas),
             "tabulador": dl.tabulador(cur),
             "pagos": pagos,
         }
@@ -278,7 +301,7 @@ def _paradas_de_liquidacion(cur, liquidacion_id: str) -> list[dict]:
         (liquidacion_id,),
     )
     return [
-        {**p, "montoUsd": float(p["montoUsd"]), "entregadoEn": p["entregadoEn"].isoformat()}
+        {**p, "montoUsd": float(p["montoUsd"]), "entregadoEn": en_utc(p["entregadoEn"]).isoformat()}
         for p in cur.fetchall()
     ]
 
@@ -344,5 +367,6 @@ def detalle_liquidacion(liquidacion_id: str):
         if liquidacion["anuladaEn"] is not None:
             # Sus filas se borraron al anular: el detalle quedo guardado.
             cur.execute('SELECT "paradasAnuladas" FROM "LiquidacionDelivery" WHERE "id" = %s', (liquidacion_id,))
-            return {**liquidacion, "paradas": cur.fetchone()["paradasAnuladas"] or []}
+            paradas = cur.fetchone()["paradasAnuladas"] or []
+            return {**liquidacion, "paradas": [{**p, "entregadoEn": _iso_con_zona(p.get("entregadoEn"))} for p in paradas]}
         return {**liquidacion, "paradas": _paradas_de_liquidacion(cur, liquidacion_id)}

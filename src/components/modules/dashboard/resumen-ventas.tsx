@@ -41,7 +41,7 @@ export function ResumenVentas({ ventas }: { ventas: VentasEmpresa[] }) {
               </div>
               <Link
                 href={`/indicadores?empresa=${empresa}&desde=${desde}&hasta=${hasta}`}
-                className="inline-flex shrink-0 items-center gap-1 text-sm text-primary hover:underline"
+                className="enlace-tactil inline-flex shrink-0 items-center gap-1 text-sm text-primary hover:underline"
               >
                 Ver indicadores <ArrowRightIcon className="size-3.5" />
               </Link>

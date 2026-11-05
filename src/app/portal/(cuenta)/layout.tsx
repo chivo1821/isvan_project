@@ -5,6 +5,7 @@ import { ClockIcon, IceCreamConeIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PortalNav } from "@/components/modules/portal/portal-nav";
 import { SalirButton } from "@/components/modules/portal/salir-button";
+import { VigilanteSesion } from "@/components/shared/vigilante-sesion";
 import { getCuentaPortal } from "@/lib/portal";
 
 export const metadata: Metadata = {
@@ -20,7 +21,8 @@ export default async function CuentaPortalLayout({ children }: LayoutProps<"/por
   const activa = cuenta.estado === "ACTIVA" && cuenta.clientes.length > 0;
 
   return (
-    <div className="min-h-screen w-full bg-background">
+    <div className="controles-tactiles min-h-screen w-full bg-background">
+      <VigilanteSesion ruta="/portal/me" />
       <header className="border-b border-border bg-card print:hidden">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3">
           <div className="flex items-center justify-between gap-3">

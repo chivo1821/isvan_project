@@ -20,7 +20,9 @@ const esquema = z.object({
 type Valores = z.infer<typeof esquema>;
 
 export function IngresarForm() {
-  const claveNueva = useSearchParams().get("clave") === "nueva";
+  const params = useSearchParams();
+  const claveNueva = params.get("clave") === "nueva";
+  const expirada = params.get("expirada") != null;
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -55,6 +57,11 @@ export function IngresarForm() {
         <CardDescription>Con el correo y la contraseña de tu cuenta del portal.</CardDescription>
       </CardHeader>
       <CardContent>
+        {expirada && !claveNueva && (
+          <p role="status" className="mb-4 rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
+            Tu sesión venció. Vuelve a ingresar para continuar.
+          </p>
+        )}
         {claveNueva && (
           <p role="status" className="mb-4 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
             Contraseña actualizada. Ya puedes ingresar con la nueva.

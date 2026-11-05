@@ -26,7 +26,14 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.services.indicadores_venta import FUENTE, _fin_de_mes, es_de_baja, fecha_max_vigente, orden_ruta
+from app.services.indicadores_venta import (
+    FUENTE,
+    _fin_de_mes,
+    es_de_baja,
+    fecha_max_vigente,
+    orden_ruta,
+    ruta_comparable,
+)
 
 # Semaforo: verde al ritmo o mejor; amarillo desde este tanto del ritmo.
 AMARILLO_DESDE = 0.8
@@ -79,7 +86,10 @@ def _fila(ruta: str, litros: float, meta: float | None, total: int, transcurrido
     }
 
 
-def cuadro(cur, empresa: str, mes: date) -> dict:
+def cuadro(cur, empresa: str, mes: date, rutas: list[str] | None = None) -> dict:
+    """El cuadro del mes. Con `rutas` (el de un vendedor), solo esas rutas y
+    un total de ellas; los dias de venta y el phasing son los mismos de la
+    empresa."""
     inicio = mes.replace(day=1)
     fin = _fin_de_mes(inicio)
     feriados = feriados_entre(cur, inicio, fin)
@@ -109,6 +119,12 @@ def cuadro(cur, empresa: str, mes: date) -> dict:
         (empresa, inicio),
     )
     metas = {fila["ruta"]: fila["litros"] for fila in cur.fetchall() if not es_de_baja(fila["ruta"])}
+    if rutas is not None:
+        # Se comparan por el numero ("R3" y "3" son la misma ruta); las
+        # ventas sin ruta no son de nadie.
+        suyas = {ruta_comparable(r) for r in rutas}
+        litros = {r: v for r, v in litros.items() if r != SIN_RUTA and ruta_comparable(r) in suyas}
+        metas = {r: v for r, v in metas.items() if ruta_comparable(r) in suyas}
 
     rutas = sorted(set(litros) | set(metas), key=orden_ruta)
     filas = [_fila(r, litros.get(r, 0.0), metas.get(r), total, transcurridos, phasing) for r in rutas]

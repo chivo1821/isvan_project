@@ -153,8 +153,8 @@
     @apply font-sans;
   }
 }
-/* Teléfono: en el tablero de indicadores (la clase va en la página) los
-   controles miden al menos 40 px de alto, para tocarlos con el dedo; lo
+/* Teléfono: en el dashboard (la clase va en su layout) los controles
+   miden al menos 40 px de alto, para tocarlos con el dedo; lo
    recomendado ronda los 44 px y el mínimo de WCAG es 24. Las opciones de
    los menús y desplegables se abren fuera de la página (en un portal), así
    que esas van para todo el sistema. En pantallas grandes no cambia nada. */
@@ -179,6 +179,22 @@
   .controles-tactiles [data-slot="button"][data-size^="icon"] {
     min-width: 2.5rem;
   }
+  /* Los enlaces dentro de una tabla (D-0001, R-0001, la placa) y los que van
+     solos en su línea (clase enlace-tactil) medían 15 px de alto: se les
+     agranda el área de toque sin mover nada (el margen negativo compensa el
+     relleno). Los que van dentro de una frase quedan como están. */
+  .controles-tactiles :is(td a:not([data-slot]), a.enlace-tactil) {
+    padding-block: 0.75rem;
+    margin-block: -0.75rem;
+  }
+  /* Las casillas miden 16 px y ya traen un área de toque invisible de
+     40 × 32 (after:-inset-x-3 -inset-y-2 en ui/checkbox.tsx): en el
+     teléfono pasa a 40 × 40. */
+  .controles-tactiles [data-slot="checkbox"]::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+  }
   :is(
       [data-slot="dropdown-menu-item"],
       [data-slot="dropdown-menu-checkbox-item"],
@@ -186,5 +202,16 @@
       [data-slot="select-item"]
     ) {
     min-height: 2.5rem;
+  }
+}
+
+/* Un enlace en línea no toma relleno vertical para su área de toque: pasa a
+   inline-block. Va en la capa base para que un enlace con su propio display
+   (block, flex) lo conserve. */
+@media (width < 40rem) {
+  @layer base {
+    .controles-tactiles td a:not([data-slot]) {
+      display: inline-block;
+    }
   }
 }
