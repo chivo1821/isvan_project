@@ -33,11 +33,16 @@ INDICE = re.compile(r'\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)\S+\s+ON\
 TABLA_NUEVA = re.compile(r'\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?', re.I)
 
 
+def _git(*args: str) -> str:
+    return subprocess.run(["git", *args], capture_output=True, text=True, cwd=RAIZ, check=True).stdout
+
+
 def nuevas(base: str) -> list[Path]:
-    salida = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=A", f"{base}...HEAD", "--", "prisma/migrations"],
-        capture_output=True, text=True, cwd=RAIZ, check=True,
-    ).stdout
+    """Las migraciones que no estan en la rama base: las ya confirmadas, las
+    modificadas sin confirmar y las que todavia no se agregaron a git."""
+    base_comun = _git("merge-base", base, "HEAD").strip()
+    salida = _git("diff", "--name-only", "--diff-filter=A", base_comun, "--", "prisma/migrations")
+    salida += _git("ls-files", "--others", "--exclude-standard", "--", "prisma/migrations")
     return sorted({RAIZ / Path(l).parent for l in salida.splitlines() if l.endswith("migration.sql")})
 
 

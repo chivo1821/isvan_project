@@ -14,8 +14,10 @@ from fastapi.responses import JSONResponse
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from app.api import (
+    administracion,
     almacenes,
     auth,
+    catalogo,
     censo,
     clientes,
     cobranzas,
@@ -29,6 +31,7 @@ from app.api import (
     portal_auth,
     reportes,
     rutas,
+    tareas,
     usuarios,
     vehiculos,
     vendedor,
@@ -106,7 +109,7 @@ async def dato_invalido(request: Request, exc: psycopg.DataError):
 # cuenta de cliente no puede pasar get_current_user, asi que nunca entra a
 # los routers protegidos. cobranzas.tareas_router lo llama el cron de Vercel
 # con su propio secreto (CRON_SECRET).
-ROUTERS_PUBLICOS = [auth.router, portal_auth.router, portal.router, cobranzas.tareas_router]
+ROUTERS_PUBLICOS = [auth.router, portal_auth.router, portal.router, cobranzas.tareas_router, tareas.router]
 ROUTERS_PROTEGIDOS = [
     almacenes.router,
     # Antes que censo.router: si no, /censo/{censo_id} se queda con /censo/maestra.
@@ -125,6 +128,9 @@ ROUTERS_PROTEGIDOS = [
     vendedor.router,
     motorizados.router,
     cobranzas.router,
+    # Sistema administrativo: cada endpoint pide su permiso (requiere_permiso).
+    administracion.router,
+    catalogo.router,
 ]
 
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que
@@ -136,9 +142,9 @@ ROUTERS_PROTEGIDOS = [
 # operacion se les cierra aca, de una sola vez (ver solo_su_modulo en
 # app/core/permisos.py).
 ROUTERS_POR_ROL = {
-    "VENDEDOR": [usuarios.router, vendedor.router, censo.router],
-    "COBRANZAS": [usuarios.router, cobranzas.router],
-    "SUPERVISOR": [usuarios.router, vendedor.router, censo.router],
+    "VENDEDOR": [usuarios.router, vendedor.router, censo.router, administracion.router, catalogo.router],
+    "COBRANZAS": [usuarios.router, cobranzas.router, administracion.router, catalogo.router],
+    "SUPERVISOR": [usuarios.router, vendedor.router, censo.router, administracion.router],
 }
 
 # En Vercel, backend y frontend quedan bajo el mismo dominio (vercel.json:
