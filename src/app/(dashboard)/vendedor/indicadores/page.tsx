@@ -42,7 +42,7 @@ export default async function IndicadoresVendedorPage({ searchParams }: { search
 
   if (!("empresa" in opciones)) {
     return (
-      <div className="space-y-6">
+      <div className="controles-tactiles space-y-6">
         <PageHeader title="Indicadores de mis rutas" subtitle="Venta, margen y devoluciones de tus rutas de venta." />
         <Aviso titulo="Todavía no tienes rutas asignadas">
           Cuando el administrador te asigne tus rutas de venta, aquí vas a ver sus indicadores.
@@ -61,7 +61,7 @@ export default async function IndicadoresVendedorPage({ searchParams }: { search
   const actual = tablero?.resumen.actual ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="controles-tactiles space-y-6">
       <PageHeader
         title="Indicadores de mis rutas"
         subtitle="Venta, margen y devoluciones de tus rutas de venta, a partir del extracto del sistema de ventas. Montos en USD."

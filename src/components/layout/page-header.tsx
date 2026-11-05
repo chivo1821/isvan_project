@@ -18,8 +18,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex items-start gap-2">
+    // Con flex-wrap los botones bajan a otra línea cuando no caben al lado
+    // del título (teléfono, o computadora con zoom), en vez de salirse.
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-4">
+      <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-2">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
@@ -41,7 +43,7 @@ export function PageHeader({
           {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

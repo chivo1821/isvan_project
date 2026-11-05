@@ -46,7 +46,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   const actual = tablero?.resumen.actual ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="controles-tactiles space-y-6">
       <PageHeader
         title="Indicadores de venta"
         subtitle="Venta, margen y devoluciones a partir del extracto del sistema de ventas. Montos en USD."

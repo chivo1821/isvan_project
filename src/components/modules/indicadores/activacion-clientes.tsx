@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatNumero, formatPct, formatUsd } from "@/lib/constants";
 import { formatFecha, type ActivacionClientes as Activacion, type ListaActivacion } from "@/lib/indicadores";
+import { ItemMovil, ListaMovil } from "./item-movil";
 
 // Las listas pueden tener cientos de clientes: se dibujan de a tramos.
 const TRAMO = 100;
@@ -53,59 +55,91 @@ function TablaLista({
           {lista.total === 0 ? "Ningún cliente en esta lista." : "Ningún cliente coincide con la búsqueda."}
         </p>
       ) : (
-        <div className="max-h-[28rem] overflow-auto rounded-lg border border-border">
-          <Table>
-            <TableHeader className="sticky top-0 z-10 bg-card">
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Ruta</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="text-right">Última compra</TableHead>
-                {atendidos ? (
+        <>
+          <ListaMovil key={termino}>
+            {filtrados.map((c) => (
+              <ItemMovil
+                key={c.codigo}
+                nombre={c.nombre}
+                detalle={[c.codigo, c.ruta, c.tipo].filter(Boolean).join(" · ")}
+                valor={
+                  atendidos
+                    ? formatUsd(c.ventaPeriodo)
+                    : c.diasSinCompra != null
+                      ? `${formatNumero(c.diasSinCompra)} días`
+                      : "—"
+                }
+                valorDetalle={
                   <>
-                    <TableHead className="text-right">Documentos</TableHead>
-                    <TableHead className="text-right">Venta en el período</TableHead>
+                    {atendidos
+                      ? `${formatNumero(c.documentos)} doc.`
+                      : c.ultimaCompra
+                        ? `últ. ${formatFecha(c.ultimaCompra)}`
+                        : "sin compras"}
+                    {c.ventaAnterior ? (
+                      <span className="block" title={textoAnterior}>
+                        antes {formatUsd(c.ventaAnterior)}
+                      </span>
+                    ) : null}
                   </>
-                ) : (
-                  <TableHead className="text-right">Días sin compra</TableHead>
-                )}
-                <TableHead className="text-right" title={textoAnterior}>
-                  Venta período anterior
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtrados.slice(0, visibles).map((c) => (
-                <TableRow key={c.codigo}>
-                  <TableCell className="text-muted-foreground tabular-nums">{c.codigo}</TableCell>
-                  <TableCell className="font-medium">{c.nombre}</TableCell>
-                  <TableCell>{c.ruta}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.tipo}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {c.ultimaCompra ? formatFecha(c.ultimaCompra) : "—"}
-                  </TableCell>
+                }
+              />
+            ))}
+          </ListaMovil>
+          <div className="hidden max-h-[28rem] overflow-auto rounded-lg border border-border sm:block">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Ruta</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Última compra</TableHead>
                   {atendidos ? (
                     <>
-                      <TableCell className="text-right tabular-nums">{formatNumero(c.documentos)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatUsd(c.ventaPeriodo)}</TableCell>
+                      <TableHead className="text-right">Documentos</TableHead>
+                      <TableHead className="text-right">Venta en el período</TableHead>
                     </>
                   ) : (
-                    <TableCell className="text-right tabular-nums">
-                      {c.diasSinCompra != null ? formatNumero(c.diasSinCompra) : "—"}
-                    </TableCell>
+                    <TableHead className="text-right">Días sin compra</TableHead>
                   )}
-                  <TableCell className="text-right text-muted-foreground tabular-nums">
-                    {c.ventaAnterior ? formatUsd(c.ventaAnterior) : "—"}
-                  </TableCell>
+                  <TableHead className="text-right" title={textoAnterior}>
+                    Venta período anterior
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filtrados.slice(0, visibles).map((c) => (
+                  <TableRow key={c.codigo}>
+                    <TableCell className="text-muted-foreground tabular-nums">{c.codigo}</TableCell>
+                    <TableCell className="font-medium">{c.nombre}</TableCell>
+                    <TableCell>{c.ruta}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.tipo}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {c.ultimaCompra ? formatFecha(c.ultimaCompra) : "—"}
+                    </TableCell>
+                    {atendidos ? (
+                      <>
+                        <TableCell className="text-right tabular-nums">{formatNumero(c.documentos)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatUsd(c.ventaPeriodo)}</TableCell>
+                      </>
+                    ) : (
+                      <TableCell className="text-right tabular-nums">
+                        {c.diasSinCompra != null ? formatNumero(c.diasSinCompra) : "—"}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right text-muted-foreground tabular-nums">
+                      {c.ventaAnterior ? formatUsd(c.ventaAnterior) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
       {filtrados.length > visibles && (
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="hidden items-center justify-between gap-2 text-xs text-muted-foreground sm:flex">
           <span>
             Se muestran {formatNumero(visibles)} de {formatNumero(filtrados.length)}.
           </span>
@@ -123,6 +157,7 @@ function TablaLista({
  * backend/app/services/indicadores_venta.py). */
 export function ActivacionClientes({ activacion }: { activacion: Activacion }) {
   const [busqueda, setBusqueda] = useState("");
+  const [listaVista, setListaVista] = useState("atendidos");
   const { cartera, atendidos, noAtendidos, pctActivacion, comparacion } = activacion;
   const textoAnterior = `Venta neta del ${formatFecha(comparacion.desde)} al ${formatFecha(comparacion.hasta)}`;
 
@@ -167,16 +202,33 @@ export function ActivacionClientes({ activacion }: { activacion: Activacion }) {
         {cartera === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No hay clientes en la cartera con estos filtros.</p>
         ) : (
-          <Tabs defaultValue="atendidos">
-            <div className="overflow-x-auto">
-              <TabsList>
+          <Tabs value={listaVista} onValueChange={setListaVista}>
+            {/* Seis pestañas largas no caben en el teléfono: ahí se elige la
+                lista con un desplegable. */}
+            <Select value={listaVista} onValueChange={setListaVista}>
+              <SelectTrigger className="w-full sm:hidden" aria-label="Lista de clientes">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {activacion.listas.map((lista) => (
-                  <TabsTrigger key={lista.clave} value={lista.clave} disabled={lista.total === 0}>
+                  <SelectItem key={lista.clave} value={lista.clave} disabled={lista.total === 0}>
                     {lista.etiqueta} ({formatNumero(lista.total)})
-                  </TabsTrigger>
+                  </SelectItem>
                 ))}
-              </TabsList>
-            </div>
+              </SelectContent>
+            </Select>
+            <TabsList className="hidden flex-wrap justify-start group-data-horizontal/tabs:h-auto sm:inline-flex">
+              {activacion.listas.map((lista) => (
+                <TabsTrigger
+                  key={lista.clave}
+                  value={lista.clave}
+                  disabled={lista.total === 0}
+                  className="h-7 flex-none"
+                >
+                  {lista.etiqueta} ({formatNumero(lista.total)})
+                </TabsTrigger>
+              ))}
+            </TabsList>
             {activacion.listas.map((lista) => (
               <TabsContent key={lista.clave} value={lista.clave} className="pt-2">
                 <TablaLista lista={lista} busqueda={busqueda} textoAnterior={textoAnterior} />

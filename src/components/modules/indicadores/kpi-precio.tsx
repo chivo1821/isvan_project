@@ -18,7 +18,7 @@ export function KpiPrecio({ actual, variacion: v }: { actual: Indicadores; varia
           type="button"
           onClick={() => setPorUnidad(!porUnidad)}
           title={porUnidad ? "Ver por litro" : "Ver por unidad"}
-          className="inline-flex cursor-pointer items-center gap-1 rounded-sm underline decoration-dotted underline-offset-4 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="inline-flex cursor-pointer items-center gap-1 rounded-sm max-sm:-my-2.5 max-sm:py-2.5 underline decoration-dotted underline-offset-4 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {porUnidad ? "Precio por unidad" : "Precio por litro"}
           <ArrowLeftRightIcon className="size-3.5 shrink-0" aria-hidden />

@@ -38,12 +38,23 @@ function Estado({ semaforo }: { semaforo: Semaforo | null }) {
 
 /** Lo vendido contra la meta, con una marca donde debería ir (el phasing):
  * si la barra no llega a la marca, la ruta va atrasada. */
-function BarraTendencia({ tendencia, phasing, semaforo }: { tendencia: number | null; phasing: number | null; semaforo: Semaforo | null }) {
+function BarraTendencia({
+  tendencia,
+  phasing,
+  semaforo,
+  className,
+}: {
+  tendencia: number | null;
+  phasing: number | null;
+  semaforo: Semaforo | null;
+  /** Clases de la barra (por defecto, oculta en el teléfono). */
+  className?: string;
+}) {
   if (tendencia == null) return <span className="text-muted-foreground">—</span>;
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className={cn("font-semibold tabular-nums", colorDe(semaforo))}>{formatPct(tendencia, 0)}</span>
-      <span className="relative hidden h-2 w-20 overflow-hidden rounded-full bg-muted sm:block" aria-hidden>
+      <span className={cn("font-semibold whitespace-nowrap tabular-nums", colorDe(semaforo))}>{formatPct(tendencia, 0)}</span>
+      <span className={cn("relative hidden h-2 w-20 overflow-hidden rounded-full bg-muted sm:block", className)} aria-hidden>
         <span
           className={cn("absolute inset-y-0 left-0 rounded-full", semaforo ? SEMAFORO[semaforo].barra : "bg-muted-foreground")}
           style={{ width: `${Math.min(tendencia, 1) * 100}%` }}
@@ -58,15 +69,16 @@ function BarraTendencia({ tendencia, phasing, semaforo }: { tendencia: number | 
 
 function Dato({ etiqueta, valor, detalle }: { etiqueta: string; valor: string; detalle?: string }) {
   return (
-    <div className="rounded-lg border border-border px-4 py-3">
-      <p className="text-sm text-muted-foreground">{etiqueta}</p>
-      <p className="text-2xl font-semibold tabular-nums lg:text-3xl">{valor}</p>
+    <div className="rounded-lg border border-border px-3 py-2.5 sm:px-4 sm:py-3">
+      <p className="text-xs text-muted-foreground sm:text-sm">{etiqueta}</p>
+      <p className="text-xl font-semibold tabular-nums sm:text-2xl lg:text-3xl">{valor}</p>
       {detalle && <p className="text-xs text-muted-foreground">{detalle}</p>}
     </div>
   );
 }
 
-function Fila({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: boolean; cuadro: CuadroMetas }) {
+/** Lo que se calcula igual para la fila de la tabla y la del teléfono. */
+function calculosFila(fila: FilaCuadroMetas, cuadro: CuadroMetas) {
   // Lo que la ruta vende hoy por día (proyección ÷ días del mes = vendido ÷
   // días transcurridos), para comparar con lo que necesita.
   const ritmo = fila.proyeccion != null && cuadro.diasVenta ? fila.proyeccion / cuadro.diasVenta : null;
@@ -74,6 +86,95 @@ function Fila({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: 
   const acelerar = !cumplida && fila.necesidad != null && ritmo != null && fila.necesidad > ritmo;
   // Con pocos días la proyección todavía no dice mucho: va sin color.
   const colorProyeccion = cuadro.proyeccionConfiable ? colorDe(semaforoDe(fila.variacion)) : "text-muted-foreground";
+  return { ritmo, cumplida, acelerar, colorProyeccion };
+}
+
+function Necesidad({ fila, ritmo, cumplida, acelerar }: { fila: FilaCuadroMetas } & ReturnType<typeof calculosFila>) {
+  if (cumplida) return <span className="font-semibold text-success">cumplida</span>;
+  return (
+    <span
+      className={cn("font-semibold", acelerar ? "text-destructive" : fila.necesidad != null ? "text-success" : "")}
+      title={
+        acelerar && ritmo
+          ? fila.necesidad! / ritmo < 1.1
+            ? "Tiene que vender un poco más que su ritmo actual"
+            : `Tiene que vender ${formatNumero(fila.necesidad! / ritmo, 1)} veces su ritmo actual`
+          : undefined
+      }
+    >
+      {formatNumero(fila.necesidad, 1)}
+    </span>
+  );
+}
+
+/** La ruta en el teléfono: en vez de diez columnas, lo vendido contra la
+ * meta con su barra, y debajo lo que falta, lo que necesita por día y la
+ * proyección. */
+function FilaMovil({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: boolean; cuadro: CuadroMetas }) {
+  const c = calculosFila(fila, cuadro);
+  return (
+    <li className={cn("relative space-y-2 py-3 pr-3 pl-4", total && "bg-muted/40")}>
+      <span
+        className={cn("absolute inset-y-3 left-0 w-1 rounded-full", fila.semaforo ? SEMAFORO[fila.semaforo].barra : "bg-border")}
+        aria-hidden
+      />
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn("font-medium", total && "font-semibold")}>{fila.ruta}</span>
+        <Estado semaforo={fila.semaforo} />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 tabular-nums">
+          <p className="text-lg leading-tight font-semibold">
+            {formatNumero(fila.litros, 1)} <span className="text-sm font-normal text-muted-foreground">L</span>
+          </p>
+          {fila.meta != null && (
+            <p className="text-xs text-muted-foreground">de {formatNumero(fila.meta, 0)} L de meta</p>
+          )}
+        </div>
+        <BarraTendencia
+          tendencia={fila.tendencia}
+          phasing={cuadro.phasing}
+          semaforo={fila.semaforo}
+          className="block w-24"
+        />
+      </div>
+      {fila.meta != null && (
+        <dl className="grid grid-cols-3 gap-2 text-xs">
+          <div>
+            <dt className="text-muted-foreground">Faltan (L)</dt>
+            <dd className="text-sm tabular-nums">
+              {c.cumplida ? (
+                <span className="font-semibold text-success">+{formatNumero(-fila.faltante!, 1)}</span>
+              ) : (
+                formatNumero(fila.faltante, 1)
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Necesita / día</dt>
+            <dd className="text-sm tabular-nums">
+              <Necesidad fila={fila} {...c} />
+              {!c.cumplida && c.ritmo != null && (
+                <span className="block text-xs text-muted-foreground">vende {formatNumero(c.ritmo, 1)}</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Proyección</dt>
+            <dd className={cn("text-sm font-semibold tabular-nums", c.colorProyeccion)}>
+              {formatNumero(fila.proyeccion, 0)}
+              {fila.variacion != null && <span className="block text-xs">{formatPct(fila.variacion, 0)}</span>}
+            </dd>
+          </div>
+        </dl>
+      )}
+    </li>
+  );
+}
+
+function Fila({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: boolean; cuadro: CuadroMetas }) {
+  const c = calculosFila(fila, cuadro);
+  const { ritmo, cumplida, colorProyeccion } = c;
   const numero = cn("text-right tabular-nums", total && "font-semibold");
   return (
     <TableRow className={cn(total && "border-t-2 bg-muted/40 text-base hover:bg-muted/40 lg:text-lg")}>
@@ -99,22 +200,7 @@ function Fila({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: 
       </TableCell>
       <TableCell className={cn(numero, "text-muted-foreground")}>{formatNumero(ritmo, 1)}</TableCell>
       <TableCell className={numero}>
-        {cumplida ? (
-          <span className="font-semibold text-success">cumplida</span>
-        ) : (
-          <span
-            className={cn("font-semibold", acelerar ? "text-destructive" : fila.necesidad != null ? "text-success" : "")}
-            title={
-              acelerar && ritmo
-                ? fila.necesidad! / ritmo < 1.1
-                  ? "Tiene que vender un poco más que su ritmo actual"
-                  : `Tiene que vender ${formatNumero(fila.necesidad! / ritmo, 1)} veces su ritmo actual`
-                : undefined
-            }
-          >
-            {formatNumero(fila.necesidad, 1)}
-          </span>
-        )}
+        <Necesidad fila={fila} {...c} />
       </TableCell>
       <TableCell className={cn(numero, "font-semibold", colorProyeccion)}>{formatNumero(fila.proyeccion, 0)}</TableCell>
       <TableCell className={cn(numero, "font-semibold", colorProyeccion)}>{formatPct(fila.variacion, 0)}</TableCell>
@@ -193,36 +279,44 @@ export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
         {cuadro.filas.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No hay ventas ni metas este mes.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table className="text-sm lg:text-base">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-4">Ruta</TableHead>
-                  <TableHead className="text-right">Litros vendidos</TableHead>
-                  <TableHead className="text-right">Meta</TableHead>
-                  <TableHead className="text-right">Tendencia</TableHead>
-                  <TableHead className="text-right">Faltan (L)</TableHead>
-                  <TableHead className="text-right" title="Lo que vende hoy por día: vendido ÷ días transcurridos">
-                    Ritmo actual (L/día)
-                  </TableHead>
-                  <TableHead className="text-right" title="Lo que tiene que vender por día para llegar a la meta">
-                    Necesidad (L/día)
-                  </TableHead>
-                  <TableHead className="text-right">Proyección</TableHead>
-                  <TableHead className="text-right">Variación</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cuadro.filas.map((fila) => (
-                  <Fila key={fila.ruta} fila={fila} cuadro={cuadro} />
-                ))}
-                <Fila fila={cuadro.total} total cuadro={cuadro} />
-              </TableBody>
-            </Table>
-          </div>
+          <>
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border sm:hidden">
+              {cuadro.filas.map((fila) => (
+                <FilaMovil key={fila.ruta} fila={fila} cuadro={cuadro} />
+              ))}
+              <FilaMovil fila={cuadro.total} total cuadro={cuadro} />
+            </ul>
+            <div className="hidden overflow-x-auto sm:block">
+              <Table className="text-sm lg:text-base">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Ruta</TableHead>
+                    <TableHead className="text-right">Litros vendidos</TableHead>
+                    <TableHead className="text-right">Meta</TableHead>
+                    <TableHead className="text-right">Tendencia</TableHead>
+                    <TableHead className="text-right">Faltan (L)</TableHead>
+                    <TableHead className="text-right" title="Lo que vende hoy por día: vendido ÷ días transcurridos">
+                      Ritmo actual (L/día)
+                    </TableHead>
+                    <TableHead className="text-right" title="Lo que tiene que vender por día para llegar a la meta">
+                      Necesidad (L/día)
+                    </TableHead>
+                    <TableHead className="text-right">Proyección</TableHead>
+                    <TableHead className="text-right">Variación</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cuadro.filas.map((fila) => (
+                    <Fila key={fila.ruta} fila={fila} cuadro={cuadro} />
+                  ))}
+                  <Fila fila={cuadro.total} total cuadro={cuadro} />
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           La marca en la barra de tendencia es el phasing: si la barra no llega, la ruta va atrasada. La necesidad sale
           en rojo cuando es mayor que el ritmo actual (hay que acelerar) y en verde cuando el ritmo alcanza.
           {(cuadro.total.litrosSinMeta ?? 0) > 0 &&
