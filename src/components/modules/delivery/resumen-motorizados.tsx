@@ -18,7 +18,7 @@ export function ResumenMotorizados({
   // Las que el diálogo de pago ofrece para elegir: pendientes y con monto.
   const pendientesPorMotorizado = new Map<string, ParadaDelivery[]>();
   for (const p of paradas) {
-    if (p.liquidada || p.montoUsd == null) continue;
+    if (p.liquidada || p.excluida || p.montoUsd == null) continue;
     const clave = p.repartidorId ?? `placa:${p.placa}`;
     pendientesPorMotorizado.set(clave, [...(pendientesPorMotorizado.get(clave) ?? []), p]);
   }
@@ -61,6 +61,11 @@ export function ResumenMotorizados({
                             <span className="block text-xs">
                               Asígnale un repartidor a la moto en Vehículos → Choferes para poder pagarle.
                             </span>
+                          </span>
+                        )}
+                        {m.excluidas > 0 && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            {formatNumero(m.excluidas)} no se pagan
                           </span>
                         )}
                         {m.sinDistancia > 0 && (

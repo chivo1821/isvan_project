@@ -12,10 +12,17 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+from psycopg.types.json import Jsonb
 
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
-from app.schemas import LiquidacionDeliveryCreate, TabuladorDeliveryUpdate
+from app.schemas import (
+    AnulacionLiquidacionDelivery,
+    ExclusionDeliveryCreate,
+    ExclusionDeliveryQuitar,
+    LiquidacionDeliveryCreate,
+    TabuladorDeliveryUpdate,
+)
 from app.services import delivery as dl
 
 router = APIRouter(
@@ -101,7 +108,7 @@ def crear_liquidacion(data: LiquidacionDeliveryCreate, usuario: dict = Depends(r
         paradas = [
             p
             for p in dl.paradas_pagables(cur, data.desde, data.hasta, data.repartidorId)
-            if not p["liquidada"] and p["montoUsd"] is not None
+            if not p["liquidada"] and not p["excluida"] and p["montoUsd"] is not None
         ]
         if data.paradas is not None:
             elegidas = {(r.rutaId, r.clienteId, r.vehiculoId) for r in data.paradas}
@@ -161,12 +168,7 @@ def crear_liquidacion(data: LiquidacionDeliveryCreate, usuario: dict = Depends(r
 
 
 def _liquidacion(cur, liquidacion_id: str) -> dict:
-    cur.execute(
-        'SELECT l.*, r."nombre" AS "repartidor", u."nombre" AS "creadoPor" FROM "LiquidacionDelivery" l '
-        'JOIN "Usuario" r ON r."id" = l."repartidorId" JOIN "Usuario" u ON u."id" = l."creadoPorId" '
-        'WHERE l."id" = %s',
-        (liquidacion_id,),
-    )
+    cur.execute(_SELECT_LIQUIDACION + 'WHERE l."id" = %s', (liquidacion_id,))
     liquidacion = cur.fetchone()
     if not liquidacion:
         raise HTTPException(404, "Liquidación no encontrada")
@@ -189,7 +191,9 @@ def mi_cuenta(desde: date, hasta: date, usuario: dict = Depends(requiere_rol("RE
         )
         ficha = cur.fetchone()
         cur.execute(
-            'SELECT l."id", l."desde", l."hasta", l."entregas", l."totalUsd", l."creadoEn", l."nota" '
+            'SELECT l."id", l."desde", l."hasta", l."entregas", l."totalUsd", '
+            "l.\"creadoEn\" AT TIME ZONE 'UTC' AS \"creadoEn\", l.\"nota\", "
+            "l.\"anuladaEn\" AT TIME ZONE 'UTC' AS \"anuladaEn\", l.\"motivoAnulacion\" "
             'FROM "LiquidacionDelivery" l WHERE l."repartidorId" = %s ORDER BY l."creadoEn" DESC',
             (usuario["id"],),
         )
@@ -208,29 +212,137 @@ def mi_cuenta(desde: date, hasta: date, usuario: dict = Depends(requiere_rol("RE
         }
 
 
+# creadoEn y anuladaEn se guardan en UTC sin zona (ver app/core/fechas.py):
+# se mandan con su zona para que el navegador no los lea como hora local
+# (en Caracas se corrian 4 horas).
+_SELECT_LIQUIDACION = (
+    'SELECT l."id", l."repartidorId", l."desde", l."hasta", l."entregas", l."totalUsd", '
+    "l.\"creadoEn\" AT TIME ZONE 'UTC' AS \"creadoEn\", l.\"nota\", "
+    "l.\"anuladaEn\" AT TIME ZONE 'UTC' AS \"anuladaEn\", l.\"motivoAnulacion\", "
+    'r."nombre" AS "repartidor", u."nombre" AS "creadoPor", '
+    'ua."nombre" AS "anuladaPor" FROM "LiquidacionDelivery" l '
+    'JOIN "Usuario" r ON r."id" = l."repartidorId" JOIN "Usuario" u ON u."id" = l."creadoPorId" '
+    'LEFT JOIN "Usuario" ua ON ua."id" = l."anuladaPorId" '
+)
+
+
 @router.get("/liquidaciones")
-def listar_liquidaciones(repartidor: str | None = None):
+def listar_liquidaciones(repartidor: str | None = None, desde: date | None = None, hasta: date | None = None):
+    """Los pagos registrados, los anulados incluidos. Con desde/hasta, los
+    que cubren algun dia de ese periodo."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT l.*, r."nombre" AS "repartidor", u."nombre" AS "creadoPor" FROM "LiquidacionDelivery" l '
-            'JOIN "Usuario" r ON r."id" = l."repartidorId" JOIN "Usuario" u ON u."id" = l."creadoPorId" '
-            'WHERE (%s::text IS NULL OR l."repartidorId" = %s) ORDER BY l."creadoEn" DESC',
-            (repartidor, repartidor),
+            _SELECT_LIQUIDACION + 'WHERE (%(r)s::text IS NULL OR l."repartidorId" = %(r)s) '
+            'AND (%(d)s::date IS NULL OR l."hasta" >= %(d)s) AND (%(h)s::date IS NULL OR l."desde" <= %(h)s) '
+            'ORDER BY l."creadoEn" DESC',
+            {"r": repartidor, "d": desde, "h": hasta},
         )
         return [{**l, "totalUsd": float(l["totalUsd"])} for l in cur.fetchall()]
+
+
+@router.post("/liquidaciones/{liquidacion_id}/anular")
+def anular_liquidacion(
+    liquidacion_id: str, data: AnulacionLiquidacionDelivery, usuario: dict = Depends(requiere_rol("ADMIN"))
+):
+    """Da un pago por no hecho: sus entregas vuelven a quedar pendientes y se
+    pueden volver a pagar. El pago queda en el historial como anulado, con
+    el motivo y el detalle de lo que pagaba."""
+    motivo = data.motivo.strip()
+    if len(motivo) < 3:
+        raise HTTPException(400, "Escribe el motivo de la anulación")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT "anuladaEn" FROM "LiquidacionDelivery" WHERE "id" = %s FOR UPDATE', (liquidacion_id,))
+        fila = cur.fetchone()
+        if not fila:
+            raise HTTPException(404, "Pago no encontrado")
+        if fila["anuladaEn"] is not None:
+            raise HTTPException(409, "Este pago ya estaba anulado")
+        paradas = _paradas_de_liquidacion(cur, liquidacion_id)
+        cur.execute('DELETE FROM "LiquidacionDeliveryParada" WHERE "liquidacionId" = %s', (liquidacion_id,))
+        cur.execute(
+            'UPDATE "LiquidacionDelivery" SET "anuladaEn" = now(), "anuladaPorId" = %s, '
+            '"motivoAnulacion" = %s, "paradasAnuladas" = %s WHERE "id" = %s',
+            (usuario["id"], motivo, Jsonb(paradas), liquidacion_id),
+        )
+        conn.commit()
+        return _liquidacion(cur, liquidacion_id)
+
+
+def _paradas_de_liquidacion(cur, liquidacion_id: str) -> list[dict]:
+    cur.execute(
+        'SELECT p."rutaId", p."clienteId", p."vehiculoId", p."entregadoEn", p."km", p."montoUsd", p."rango", '
+        'ru."numero" AS "rutaNumero", c."codigo" AS "clienteCodigo", c."nombre" AS "clienteNombre", c."ciudad" '
+        'FROM "LiquidacionDeliveryParada" p '
+        'JOIN "Ruta" ru ON ru."id" = p."rutaId" JOIN "Cliente" c ON c."id" = p."clienteId" '
+        'WHERE p."liquidacionId" = %s ORDER BY p."entregadoEn"',
+        (liquidacion_id,),
+    )
+    return [
+        {**p, "montoUsd": float(p["montoUsd"]), "entregadoEn": p["entregadoEn"].isoformat()}
+        for p in cur.fetchall()
+    ]
+
+
+_ESTADO_PARADA = (
+    'SELECT EXISTS (SELECT 1 FROM "Despacho" d JOIN "Ruta" r ON r."id" = d."rutaId" '
+    '  JOIN "Vehiculo" v ON v."id" = %(v)s AND v."id" IN (r."vehiculoId", r."vehiculoApoyoId") '
+    "  AND v.\"tipo\" = 'MOTO' "
+    '  WHERE d."rutaId" = %(r)s AND d."destinoClienteId" = %(c)s AND d."entregadoEn" IS NOT NULL) AS "pagable", '
+    'EXISTS (SELECT 1 FROM "LiquidacionDeliveryParada" p WHERE p."rutaId" = %(r)s '
+    '  AND p."clienteId" = %(c)s AND p."vehiculoId" = %(v)s) AS "pagada"'
+)
+
+
+@router.post("/exclusiones")
+def excluir_paradas(data: ExclusionDeliveryCreate, usuario: dict = Depends(requiere_rol("ADMIN"))):
+    """Marca entregas como «no se paga», con motivo. Todas o ninguna: si una
+    ya esta pagada, primero hay que anular ese pago."""
+    motivo = data.motivo.strip()
+    if len(motivo) < 3:
+        raise HTTPException(400, "Escribe el motivo")
+    claves = {(r.rutaId, r.clienteId, r.vehiculoId) for r in data.paradas}
+    with get_connection() as conn, conn.cursor() as cur:
+        for ruta_id, cliente_id, vehiculo_id in claves:
+            cur.execute(_ESTADO_PARADA, {"r": ruta_id, "c": cliente_id, "v": vehiculo_id})
+            fila = cur.fetchone()
+            if not fila["pagable"]:
+                raise HTTPException(400, "Alguna de las entregas elegidas no es una entrega en moto pagable")
+            if fila["pagada"]:
+                raise HTTPException(409, "Alguna de las entregas elegidas ya está pagada: anula ese pago primero")
+        cur.executemany(
+            'INSERT INTO "ParadaDeliveryExcluida" ("id", "rutaId", "clienteId", "vehiculoId", "motivo", "creadoPorId") '
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            'ON CONFLICT ("rutaId", "clienteId", "vehiculoId") DO UPDATE SET "motivo" = EXCLUDED."motivo"',
+            [
+                (f"pdexc-{uuid.uuid4().hex[:10]}", ruta_id, cliente_id, vehiculo_id, motivo, usuario["id"])
+                for ruta_id, cliente_id, vehiculo_id in claves
+            ],
+        )
+        conn.commit()
+        return {"excluidas": len(claves)}
+
+
+@router.post("/exclusiones/quitar")
+def quitar_exclusiones(data: ExclusionDeliveryQuitar):
+    """Devuelve entregas marcadas «no se paga» a pendientes."""
+    with get_connection() as conn, conn.cursor() as cur:
+        quitadas = 0
+        for clave in {(r.rutaId, r.clienteId, r.vehiculoId) for r in data.paradas}:
+            cur.execute(
+                'DELETE FROM "ParadaDeliveryExcluida" WHERE "rutaId" = %s AND "clienteId" = %s AND "vehiculoId" = %s',
+                clave,
+            )
+            quitadas += cur.rowcount
+        conn.commit()
+        return {"quitadas": quitadas}
 
 
 @router.get("/liquidaciones/{liquidacion_id}")
 def detalle_liquidacion(liquidacion_id: str):
     with get_connection() as conn, conn.cursor() as cur:
         liquidacion = _liquidacion(cur, liquidacion_id)
-        cur.execute(
-            'SELECT p."entregadoEn", p."km", p."montoUsd", p."rango", ru."numero" AS "rutaNumero", '
-            'c."codigo" AS "clienteCodigo", c."nombre" AS "clienteNombre", c."ciudad" '
-            'FROM "LiquidacionDeliveryParada" p '
-            'JOIN "Ruta" ru ON ru."id" = p."rutaId" JOIN "Cliente" c ON c."id" = p."clienteId" '
-            'WHERE p."liquidacionId" = %s ORDER BY p."entregadoEn"',
-            (liquidacion_id,),
-        )
-        paradas = [{**p, "montoUsd": float(p["montoUsd"])} for p in cur.fetchall()]
-        return {**liquidacion, "paradas": paradas}
+        if liquidacion["anuladaEn"] is not None:
+            # Sus filas se borraron al anular: el detalle quedo guardado.
+            cur.execute('SELECT "paradasAnuladas" FROM "LiquidacionDelivery" WHERE "id" = %s', (liquidacion_id,))
+            return {**liquidacion, "paradas": cur.fetchone()["paradasAnuladas"] or []}
+        return {**liquidacion, "paradas": _paradas_de_liquidacion(cur, liquidacion_id)}

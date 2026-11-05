@@ -5,6 +5,7 @@ import { DescargarReporteButton } from "@/components/shared/descargar-reporte-bu
 import { Card, CardContent } from "@/components/ui/card";
 import { DetalleParadas } from "@/components/modules/delivery/detalle-paradas";
 import { FiltrosDeliveryBarra } from "@/components/modules/delivery/filtros-delivery";
+import { PagosRegistrados } from "@/components/modules/delivery/pagos-registrados";
 import { ResumenMotorizados } from "@/components/modules/delivery/resumen-motorizados";
 import { TabuladorDialog } from "@/components/modules/delivery/tabulador-dialog";
 import { apiGet } from "@/lib/api-client";
@@ -13,6 +14,7 @@ import {
   hoyCaracas,
   leerFiltros,
   queryDelivery,
+  type LiquidacionDelivery,
   type ResumenDelivery,
   type SearchParams,
 } from "@/lib/delivery";
@@ -20,7 +22,10 @@ import {
 // Solo ADMIN: lo aplica (dashboard)/layout.tsx y, de verdad, la API.
 export default async function DeliveryPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const filtros = leerFiltros(await searchParams, hoyCaracas());
-  const resumen = await apiGet<ResumenDelivery>(`/delivery/resumen?${queryDelivery(filtros)}`);
+  const [resumen, pagos] = await Promise.all([
+    apiGet<ResumenDelivery>(`/delivery/resumen?${queryDelivery(filtros)}`),
+    apiGet<LiquidacionDelivery[]>(`/delivery/liquidaciones?${queryDelivery(filtros)}`),
+  ]);
   const { totales } = resumen;
 
   return (
@@ -53,7 +58,11 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
           icon={PackageCheckIcon}
           label="Entregas pagables"
           value={formatNumero(totales.entregas)}
-          trend={`${formatNumero(totales.despachos)} documentos`}
+          trend={
+            totales.excluidas > 0
+              ? `${formatNumero(totales.despachos)} documentos · ${formatNumero(totales.excluidas)} no se pagan`
+              : `${formatNumero(totales.despachos)} documentos`
+          }
           tone="success"
         />
         <StatCard
@@ -76,7 +85,9 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
-      {totales.entregas === 0 ? (
+      {/* Por las paradas y no por totales.entregas: si todas quedaron «no se
+          paga», el detalle tiene que seguir a la vista para poder deshacerlo. */}
+      {resumen.paradas.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <BikeIcon className="size-10 text-muted-foreground" />
@@ -90,9 +101,11 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
       ) : (
         <>
           <ResumenMotorizados resumen={resumen} paradas={resumen.paradas} />
-          <DetalleParadas paradas={resumen.paradas} />
+          <DetalleParadas paradas={resumen.paradas} acciones />
         </>
       )}
+
+      <PagosRegistrados pagos={pagos} />
     </div>
   );
 }

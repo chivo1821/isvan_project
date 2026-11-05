@@ -8,9 +8,23 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, formatNumero, formatUsd } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 import type { ParadaDelivery } from "@/lib/delivery";
+import { NoSePagaDialog, VolverAPendienteButton } from "./no-se-paga";
 
 const TRAMO = 50;
+
+/** Las pendientes de la misma ruta y moto que `p`: para marcar la ruta entera. */
+function pendientesDeLaRuta(paradas: ParadaDelivery[], p: ParadaDelivery) {
+  return paradas.filter(
+    (q) =>
+      q.rutaId === p.rutaId &&
+      q.vehiculoId === p.vehiculoId &&
+      !q.liquidada &&
+      !q.excluida &&
+      q.montoUsd != null
+  );
+}
 
 function paraBuscar(texto: string) {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -18,13 +32,22 @@ function paraBuscar(texto: string) {
 
 /** Una fila por entrega pagable: el respaldo del pago, para revisarlo con el
  * motorizado. Se paga una vez por parada, aunque lleve varios documentos. */
+function estadoDe(p: ParadaDelivery) {
+  if (p.liquidada) return { label: "Pagado", tone: "success" as const };
+  if (p.excluida) return { label: "No se paga", tone: "neutral" as const };
+  return { label: "Pendiente", tone: "warning" as const };
+}
+
 export function DetalleParadas({
   paradas,
   conMotorizado = true,
+  acciones = false,
 }: {
   paradas: ParadaDelivery[];
   /** false en el estado de cuenta del propio repartidor: todas son suyas. */
   conMotorizado?: boolean;
+  /** Marcar «no se paga» o volver a pendiente (solo el tablero del ADMIN). */
+  acciones?: boolean;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [visibles, setVisibles] = useState(TRAMO);
@@ -72,11 +95,17 @@ export function DetalleParadas({
                   <TableHead>Rango</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead>Estado</TableHead>
+                  {acciones && <TableHead className="w-0" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtradas.slice(0, visibles).map((p) => (
-                  <TableRow key={`${p.rutaId}-${p.clienteId}-${p.vehiculoId}`}>
+                {filtradas.slice(0, visibles).map((p) => {
+                  const estado = estadoDe(p);
+                  return (
+                  <TableRow
+                    key={`${p.rutaId}-${p.clienteId}-${p.vehiculoId}`}
+                    className={p.excluida ? "text-muted-foreground" : undefined}
+                  >
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(p.fecha)}</TableCell>
                     {conMotorizado && (
                       <TableCell>{p.conductor ?? <span className="text-muted-foreground">{p.placa}</span>}</TableCell>
@@ -102,17 +131,27 @@ export function DetalleParadas({
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{p.rango ?? "—"}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
+                    <TableCell className={cn("text-right font-medium tabular-nums", p.excluida && "line-through")}>
                       {p.montoUsd == null ? "—" : formatUsd(p.montoUsd, 2)}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge
-                        label={p.liquidada ? "Pagado" : "Pendiente"}
-                        tone={p.liquidada ? "success" : "warning"}
-                      />
+                      <StatusBadge label={estado.label} tone={estado.tone} />
+                      {p.excluida && p.motivoExclusion && (
+                        <span className="mt-0.5 block max-w-48 text-xs text-muted-foreground">{p.motivoExclusion}</span>
+                      )}
                     </TableCell>
+                    {acciones && (
+                      <TableCell className="text-right">
+                        {p.excluida ? (
+                          <VolverAPendienteButton parada={p} />
+                        ) : !p.liquidada && p.montoUsd != null ? (
+                          <NoSePagaDialog parada={p} deLaRuta={pendientesDeLaRuta(paradas, p)} />
+                        ) : null}
+                      </TableCell>
+                    )}
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

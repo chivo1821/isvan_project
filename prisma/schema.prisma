@@ -151,33 +151,35 @@ model Usuario {
   vehiculoAsignadoId String?
   vehiculoAsignado   Vehiculo? @relation("ConductorDelVehiculo", fields: [vehiculoAsignadoId], references: [id])
 
-  despachosCreados      Despacho[]            @relation("DespachosCreadosPor")
+  despachosCreados      Despacho[]               @relation("DespachosCreadosPor")
   aprobacionesDespacho  DespachoAprobacion[]
-  rutasCreadas          Ruta[]                @relation("RutasCreadas")
-  rutasCanceladas       Ruta[]                @relation("RutasCanceladas")
-  reversosDespacho      DespachoReverso[]     @relation("ReversosDespacho")
+  rutasCreadas          Ruta[]                   @relation("RutasCreadas")
+  rutasCanceladas       Ruta[]                   @relation("RutasCanceladas")
+  reversosDespacho      DespachoReverso[]        @relation("ReversosDespacho")
   sesiones              Sesion[]
   cargasVenta           VentaCarga[]
-  listasPrecio          ListaPrecioCarga[]    @relation("ListasPrecioSubidasPor")
-  tabuladorDelivery     TabuladorDelivery[]   @relation("TabuladorDeliveryActualizadoPor")
-  liquidacionesDelivery LiquidacionDelivery[] @relation("LiquidacionesDelivery")
-  liquidacionesCreadas  LiquidacionDelivery[] @relation("LiquidacionesDeliveryCreadasPor")
-  redesViales           RedVialCarga[]        @relation("RedVialCargadaPor")
-  metasVenta            MetaVenta[]           @relation("MetasActualizadasPor")
-  metasLitros           MetaLitros[]          @relation("MetasLitrosActualizadasPor")
-  censos                Censo[]               @relation("CensosLlenados")
-  maestrasSubidas       MaestraCarga[]        @relation("MaestrasSubidasPor")
-  censosCorregidos      Censo[]               @relation("CensosCorregidos")
-  censosDevueltos       Censo[]               @relation("CensosDevueltos")
-  configuraciones       Configuracion[]       @relation("ConfiguracionActualizadaPor")
+  listasPrecio          ListaPrecioCarga[]       @relation("ListasPrecioSubidasPor")
+  tabuladorDelivery     TabuladorDelivery[]      @relation("TabuladorDeliveryActualizadoPor")
+  liquidacionesDelivery LiquidacionDelivery[]    @relation("LiquidacionesDelivery")
+  liquidacionesCreadas  LiquidacionDelivery[]    @relation("LiquidacionesDeliveryCreadasPor")
+  liquidacionesAnuladas LiquidacionDelivery[]    @relation("LiquidacionesDeliveryAnuladasPor")
+  paradasExcluidas      ParadaDeliveryExcluida[] @relation("ParadasDeliveryExcluidasPor")
+  redesViales           RedVialCarga[]           @relation("RedVialCargadaPor")
+  metasVenta            MetaVenta[]              @relation("MetasActualizadasPor")
+  metasLitros           MetaLitros[]             @relation("MetasLitrosActualizadasPor")
+  censos                Censo[]                  @relation("CensosLlenados")
+  maestrasSubidas       MaestraCarga[]           @relation("MaestrasSubidasPor")
+  censosCorregidos      Censo[]                  @relation("CensosCorregidos")
+  censosDevueltos       Censo[]                  @relation("CensosDevueltos")
+  configuraciones       Configuracion[]          @relation("ConfiguracionActualizadaPor")
   // Solo rol VENDEDOR: sus rutas de venta y las visitas que registra.
   rutasVenta            VendedorRuta[]
   visitas               Visita[]
   // Cobranzas
-  clientesVinculados    CuentaPortalCliente[] @relation("VinculadoPor")
-  tasasRegistradas      TasaCambio[]          @relation("TasaRegistradaPor")
-  pagosRegistrados      Pago[]                @relation("PagoRegistradoPor")
-  pagosRevisados        Pago[]                @relation("PagoRevisadoPor")
+  clientesVinculados    CuentaPortalCliente[]    @relation("VinculadoPor")
+  tasasRegistradas      TasaCambio[]             @relation("TasaRegistradaPor")
+  pagosRegistrados      Pago[]                   @relation("PagoRegistradoPor")
+  pagosRevisados        Pago[]                   @relation("PagoRevisadoPor")
   excepcionesDespacho   ExcepcionDespacho[]
 }
 
@@ -231,6 +233,7 @@ model Vehiculo {
   rutasApoyo        Ruta[]                      @relation("RutaVehiculoApoyo")
   conductores       Usuario[]                   @relation("ConductorDelVehiculo")
   paradasLiquidadas LiquidacionDeliveryParada[]
+  paradasExcluidas  ParadaDeliveryExcluida[]
 }
 
 // ---------- Clientes ----------
@@ -262,6 +265,7 @@ model Cliente {
   despachos         Despacho[]                  @relation("DespachoDestino")
   distanciasAlmacen DistanciaCliente[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+  paradasExcluidas  ParadaDeliveryExcluida[]
   censos            CensoCliente[]
 
   @@unique([empresa, codigo])
@@ -421,6 +425,7 @@ model Ruta {
   despachos         Despacho[]
   puntos            RutaPunto[]
   paradasLiquidadas LiquidacionDeliveryParada[]
+  paradasExcluidas  ParadaDeliveryExcluida[]
   reversos          DespachoReverso[]
 
   @@index([salidaProgramada])
@@ -697,21 +702,49 @@ model DistanciaCliente {
 // Un pago cerrado a un motorizado por un periodo. Congela lo que se le pago:
 // cambiar el tabulador despues no altera una liquidacion hecha.
 model LiquidacionDelivery {
-  id           String   @id @default(cuid())
-  repartidorId String
-  repartidor   Usuario  @relation("LiquidacionesDelivery", fields: [repartidorId], references: [id])
-  desde        DateTime @db.Date
-  hasta        DateTime @db.Date
-  entregas     Int
-  totalUsd     Decimal  @db.Decimal(12, 2)
-  creadoEn     DateTime @default(now())
-  creadoPorId  String
-  creadoPor    Usuario  @relation("LiquidacionesDeliveryCreadasPor", fields: [creadoPorId], references: [id])
-  nota         String?
+  id              String    @id @default(cuid())
+  repartidorId    String
+  repartidor      Usuario   @relation("LiquidacionesDelivery", fields: [repartidorId], references: [id])
+  desde           DateTime  @db.Date
+  hasta           DateTime  @db.Date
+  entregas        Int
+  totalUsd        Decimal   @db.Decimal(12, 2)
+  creadoEn        DateTime  @default(now())
+  creadoPorId     String
+  creadoPor       Usuario   @relation("LiquidacionesDeliveryCreadasPor", fields: [creadoPorId], references: [id])
+  nota            String?
+  // Anulado: el pago se dio por no hecho y sus entregas volvieron a quedar
+  // pendientes. Se conserva con su motivo; el detalle de lo que pagaba queda
+  // en paradasAnuladas, porque sus filas de LiquidacionDeliveryParada se
+  // borran (si no, esas entregas no se podrian volver a pagar).
+  anuladaEn       DateTime?
+  anuladaPorId    String?
+  anuladaPor      Usuario?  @relation("LiquidacionesDeliveryAnuladasPor", fields: [anuladaPorId], references: [id], onDelete: SetNull)
+  motivoAnulacion String?
+  paradasAnuladas Json?
 
   paradas LiquidacionDeliveryParada[]
 
   @@index([repartidorId, desde])
+}
+
+// Una entrega pagable que se decidio no pagar (p. ej. rutas viejas cerradas
+// tarde desde la oficina). Misma llave que LiquidacionDeliveryParada. No
+// suma a lo pendiente; borrar la fila la devuelve a pendiente.
+model ParadaDeliveryExcluida {
+  id          String   @id @default(cuid())
+  rutaId      String
+  ruta        Ruta     @relation(fields: [rutaId], references: [id], onDelete: Cascade)
+  clienteId   String
+  cliente     Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  vehiculoId  String
+  vehiculo    Vehiculo @relation(fields: [vehiculoId], references: [id], onDelete: Cascade)
+  motivo      String
+  creadoEn    DateTime @default(now())
+  creadoPorId String?
+  creadoPor   Usuario? @relation("ParadasDeliveryExcluidasPor", fields: [creadoPorId], references: [id], onDelete: SetNull)
+
+  @@unique([rutaId, clienteId, vehiculoId])
 }
 
 // Cada parada pagada en una liquidacion. El unique (ruta, cliente) es lo que

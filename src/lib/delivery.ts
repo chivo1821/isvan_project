@@ -37,6 +37,11 @@ export type ParadaDelivery = {
   liquidada: boolean;
   liquidacionId: string | null;
   liquidadaEn: string | null;
+  /** Marcada «no se paga»: se muestra, pero no suma a lo que hay que pagar. */
+  excluida: boolean;
+  motivoExclusion: string | null;
+  excluidaEn: string | null;
+  excluidaPor: string | null;
 };
 
 export type MotorizadoDelivery = {
@@ -51,6 +56,8 @@ export type MotorizadoDelivery = {
   liquidadoUsd: number;
   /** Entregas cuya distancia todavía no se pudo calcular: no tienen monto. */
   sinDistancia: number;
+  /** Marcadas «no se paga»: fuera de las entregas y de los montos. */
+  excluidas: number;
 };
 
 export type TotalesDelivery = {
@@ -62,6 +69,8 @@ export type TotalesDelivery = {
   liquidadoUsd: number;
   promedioUsd: number | null;
   sinDistancia: number;
+  excluidas: number;
+  excluidoUsd: number;
 };
 
 export type ResumenDelivery = {
@@ -83,6 +92,9 @@ export type PagoDelivery = {
   totalUsd: number;
   creadoEn: string;
   nota: string | null;
+  /** Anulado: se dio por no hecho y sus entregas volvieron a pendientes. */
+  anuladaEn: string | null;
+  motivoAnulacion: string | null;
 };
 
 /** GET /delivery/mi-cuenta: el estado de cuenta del repartidor que tiene la
@@ -111,6 +123,9 @@ export type LiquidacionDelivery = {
   creadoEn: string;
   creadoPor: string;
   nota: string | null;
+  anuladaEn: string | null;
+  motivoAnulacion: string | null;
+  anuladaPor: string | null;
 };
 
 // ---------- Filtros en la URL ----------

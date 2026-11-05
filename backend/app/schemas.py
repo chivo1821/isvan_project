@@ -777,6 +777,23 @@ class LiquidacionDeliveryCreate(BaseModel):
     paradas: Optional[list[ParadaDeliveryRef]] = Field(default=None, max_length=2000)
 
 
+class ExclusionDeliveryCreate(BaseModel):
+    """Marca entregas como «no se paga»: salen de lo pendiente."""
+
+    paradas: list[ParadaDeliveryRef] = Field(min_length=1, max_length=2000)
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+class ExclusionDeliveryQuitar(BaseModel):
+    """Devuelve entregas marcadas «no se paga» a pendientes."""
+
+    paradas: list[ParadaDeliveryRef] = Field(min_length=1, max_length=2000)
+
+
+class AnulacionLiquidacionDelivery(BaseModel):
+    motivo: str = Field(min_length=3, max_length=300)
+
+
 class ResumenRendimiento(BaseModel):
     """Indicadores del reparto para el dashboard (ver app/api/reportes.py).
     Los promedios son None mientras no haya paradas con las dos marcas."""
