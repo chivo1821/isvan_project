@@ -11,6 +11,9 @@ Se elige con la variable de entorno ALMACEN_FOTOS:
 - "r2": Cloudflare R2 (produccion). Gratis hasta 10 GB y un millon de
   subidas al mes, y descargar no cuesta. Necesita R2_ACCOUNT_ID,
   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y R2_BUCKET. El bucket es privado.
+- "s3": cualquier almacenamiento compatible con S3 (AWS S3, Google Cloud
+  Storage), para instalaciones fuera de Vercel. Necesita S3_ENDPOINT,
+  S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY y S3_BUCKET.
 - "local": en backend/media/, para desarrollo. Imita a R2: la subida va a un
   endpoint del propio backend con un enlace firmado igual de efimero. Es el
   modo por defecto fuera de Vercel.
@@ -138,8 +141,13 @@ def firmar_url(
 class AlmacenR2:
     REGION = "auto"
 
-    def __init__(self, cuenta: str, acceso: str, secreto: str, bucket: str):
-        self.host = f"{cuenta}.r2.cloudflarestorage.com"
+    def __init__(
+        self, cuenta: str, acceso: str, secreto: str, bucket: str, host: str | None = None, region: str | None = None
+    ):
+        # Con host y region sirve para cualquier almacenamiento compatible con
+        # S3 (ver el modo "s3" en almacen()): las firmas son las mismas.
+        self.host = host or f"{cuenta}.r2.cloudflarestorage.com"
+        self.region = region or self.REGION
         self.acceso, self.secreto, self.bucket = acceso, secreto, bucket
 
     def _url(self, metodo: str, clave: str, vigencia_s: int, cabeceras: dict[str, str] | None = None) -> str:
@@ -147,7 +155,7 @@ class AlmacenR2:
             metodo=metodo,
             host=self.host,
             ruta=f"/{self.bucket}/{validar_clave(clave)}",
-            region=self.REGION,
+            region=self.region,
             acceso=self.acceso,
             secreto=self.secreto,
             vigencia_s=vigencia_s,
@@ -274,6 +282,18 @@ def almacen() -> AlmacenR2 | AlmacenLocal:
         return AlmacenR2(
             os.environ["R2_ACCOUNT_ID"], os.environ["R2_ACCESS_KEY_ID"], os.environ["R2_SECRET_ACCESS_KEY"],
             os.environ["R2_BUCKET"],
+        )
+    if elegido == "s3":
+        # AWS S3 (S3_ENDPOINT=s3.us-east-1.amazonaws.com) o Google Cloud
+        # Storage en modo compatible (storage.googleapis.com, region "auto",
+        # con claves HMAC). Las URLs van con el bucket en la ruta.
+        variables = ("S3_ENDPOINT", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET")
+        faltan = [v for v in variables if not os.getenv(v)]
+        if faltan:
+            raise AlmacenNoConfigurado(f"Faltan variables de S3: {', '.join(faltan)}")
+        return AlmacenR2(
+            "", os.environ["S3_ACCESS_KEY_ID"], os.environ["S3_SECRET_ACCESS_KEY"], os.environ["S3_BUCKET"],
+            host=os.environ["S3_ENDPOINT"].removeprefix("https://").rstrip("/"), region=os.environ["S3_REGION"],
         )
     raise AlmacenNoConfigurado(
         "El almacenamiento de fotos no esta configurado en este servidor (variable ALMACEN_FOTOS)"

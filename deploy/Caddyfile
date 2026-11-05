@@ -1,0 +1,19 @@
+# Proxy de la instalacion en contenedores (docker-compose.yml): hace lo mismo
+# que las rewrites de vercel.json. La API ya registra cada ruta con y sin el
+# prefijo /api/backend (ver backend/app/main.py), asi que no hace falta
+# recortarlo.
+#
+# DOMINIO=":80" sirve por HTTP (pruebas). Con un dominio real
+# (DOMINIO="gestion.empresa.com") Caddy saca el certificado HTTPS solo;
+# entonces COOKIE_SECURE=true.
+{$DOMINIO}
+
+encode gzip
+
+handle /api/backend/* {
+	reverse_proxy api:8000
+}
+
+handle {
+	reverse_proxy web:3000
+}
