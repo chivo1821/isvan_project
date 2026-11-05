@@ -46,7 +46,36 @@ export function mensajeDeError(err: unknown, respaldo: string): string {
   return respaldo;
 }
 
+/** Endpoints que responden 401 como parte de su trabajo (contraseña o PIN
+ * equivocados): ahí no se saca a nadie de la pantalla. */
+const LOGIN_ENDPOINTS = ["/auth/login", "/auth/motorizado/", "/portal/auth/"];
+
+/** Un 401 de la API es una sesión vencida (o borrada): se manda a iniciar
+ * sesión de nuevo. Antes solo lo revisaba el layout, que en la navegación
+ * dentro del sistema no se vuelve a ejecutar: la página daba "401 Sesión
+ * inválida" y lo que ya estaba en pantalla se seguía viendo.
+ * El portal de clientes tiene su propia sesión y su propia puerta. */
+async function sesionVencida(path: string): Promise<void> {
+  if (LOGIN_ENDPOINTS.some((p) => path.startsWith(p))) return;
+  const ingreso = path.startsWith("/portal") ? "/portal/ingresar" : "/login";
+  if (typeof window === "undefined") {
+    // Server Component: redirect() corta el render. La ruta pedida la pone
+    // src/proxy.ts en esta cabecera (RUTA_ACTUAL_HEADER).
+    const [{ headers }, { redirect }] = await Promise.all([import("next/headers"), import("next/navigation")]);
+    const from = ingreso === "/login" ? (await headers()).get("x-ruta-actual") : null;
+    redirect(`${ingreso}?expirada=1${from ? `&from=${encodeURIComponent(from)}` : ""}`);
+  }
+  if (!window.location.pathname.startsWith(ingreso)) {
+    const from = ingreso === "/login" ? `&from=${encodeURIComponent(window.location.pathname + window.location.search)}` : "";
+    // Carga completa a propósito: borra de la memoria del navegador todo lo
+    // que la pantalla ya tenía (con router.push quedaría en su caché).
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign(`${ingreso}?expirada=1${from}`);
+  }
+}
+
 async function handle<T>(res: Response, path: string): Promise<T> {
+  if (res.status === 401) await sesionVencida(path);
   if (!res.ok) {
     let detalle = "";
     let datos: unknown;

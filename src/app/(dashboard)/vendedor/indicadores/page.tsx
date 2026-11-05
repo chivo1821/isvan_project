@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { ActivacionClientes } from "@/components/modules/indicadores/activacion-clientes";
 import { BarraFiltros } from "@/components/modules/indicadores/barra-filtros";
+import { CuadroMetasLitros } from "@/components/modules/indicadores/cuadro-metas";
 import { DesgloseTabla } from "@/components/modules/indicadores/desglose-tabla";
 import { KpiGrid, textoComparacion } from "@/components/modules/indicadores/kpi-grid";
 import { MapaVentas } from "@/components/modules/indicadores/mapa-ventas";
@@ -12,6 +13,7 @@ import {
   hoyCaracas,
   leerFiltros,
   queryApi,
+  type CuadroMetas,
   type OpcionesIndicadoresVendedor,
   type SearchParams,
   type TableroIndicadoresVendedor,
@@ -42,7 +44,7 @@ export default async function IndicadoresVendedorPage({ searchParams }: { search
 
   if (!("empresa" in opciones)) {
     return (
-      <div className="controles-tactiles space-y-6">
+      <div className="space-y-6">
         <PageHeader title="Indicadores de mis rutas" subtitle="Venta, margen y devoluciones de tus rutas de venta." />
         <Aviso titulo="Todavía no tienes rutas asignadas">
           Cuando el administrador te asigne tus rutas de venta, aquí vas a ver sus indicadores.
@@ -54,14 +56,21 @@ export default async function IndicadoresVendedorPage({ searchParams }: { search
   const { empresa } = opciones;
   const leidos = leerFiltros({ ...params, empresa }, opciones, hoyCaracas());
   const filtros = { ...leidos, rutas: leidos.rutas.filter((r) => opciones.rutas.includes(r)) };
-  const tablero =
+  // El cuadro de metas en litros va por el mes de la fecha «hasta», como en
+  // el del administrador, y solo con sus rutas.
+  const [tablero, cuadro] =
     opciones.cargasConfirmadas > 0
-      ? await apiGet<TableroIndicadoresVendedor>(`/vendedor/indicadores/tablero?${queryApi(filtros)}`)
-      : null;
+      ? await Promise.all([
+          apiGet<TableroIndicadoresVendedor>(`/vendedor/indicadores/tablero?${queryApi(filtros)}`),
+          apiGet<CuadroMetas>(
+            `/vendedor/indicadores/cuadro-metas?empresa=${empresa}&mes=${filtros.hasta.slice(0, 7)}-01`
+          ).catch(() => null),
+        ])
+      : [null, null];
   const actual = tablero?.resumen.actual ?? null;
 
   return (
-    <div className="controles-tactiles space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="Indicadores de mis rutas"
         subtitle="Venta, margen y devoluciones de tus rutas de venta, a partir del extracto del sistema de ventas. Montos en USD."
@@ -100,6 +109,8 @@ export default async function IndicadoresVendedorPage({ searchParams }: { search
               </CardContent>
             </Card>
           )}
+
+          {cuadro && <CuadroMetasLitros cuadro={cuadro} soloLectura />}
 
           <GraficosVenta
             serie={tablero.serie}

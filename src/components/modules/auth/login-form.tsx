@@ -65,6 +65,11 @@ export function LoginForm() {
       <CardHeader>
         <CardTitle>Iniciar sesión</CardTitle>
         <CardDescription>Ingresa con tu correo y contraseña.</CardDescription>
+        {searchParams.get("expirada") && (
+          <p role="status" className="rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
+            Tu sesión venció. Vuelve a iniciar sesión para continuar.
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">

@@ -60,13 +60,17 @@ export function SeguimientoOverview({
               <p className="mt-1 text-muted-foreground">
                 {r.vehiculoPlaca} · {r.paradas} parada(s)
               </p>
-              <Link
-                href={`/seguimiento/${r.id}`}
-                className="mt-1 inline-block text-xs text-primary hover:underline"
-                onClick={(e) => e.stopPropagation()}
-              >
-                Ver seguimiento detallado →
-              </Link>
+              {/* El margen va afuera: en el teléfono el enlace usa el suyo para
+                  agrandar su área de toque (ver enlace-tactil en globals.css). */}
+              <span className="mt-1 block">
+                <Link
+                  href={`/seguimiento/${r.id}`}
+                  className="enlace-tactil inline-block text-xs text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Ver seguimiento detallado →
+                </Link>
+              </span>
             </button>
           ))
         )}

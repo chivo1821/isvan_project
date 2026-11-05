@@ -30,7 +30,7 @@ export function PageHeader({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-foreground max-sm:-m-3 max-sm:p-3"
                     aria-label="Ayuda"
                   >
                     <HelpCircleIcon className="size-4" />

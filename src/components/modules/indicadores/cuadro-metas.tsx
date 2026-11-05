@@ -215,8 +215,17 @@ function Fila({ fila, total = false, cuadro }: { fila: FilaCuadroMetas; total?: 
  * calculado con las ventas cargadas (ver backend/app/services/cuadro_metas.py).
  * Va por el mes de la fecha «hasta» del período elegido, con todas las
  * rutas: los demás filtros no aplican. */
-export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
+export function CuadroMetasLitros({
+  cuadro,
+  soloLectura = false,
+}: {
+  cuadro: CuadroMetas;
+  /** El del vendedor: sus rutas, sin editar feriados ni cargar metas. */
+  soloLectura?: boolean;
+}) {
   const sinMetas = cuadro.filas.every((f) => f.meta == null);
+  // Con una sola ruta el total repetiría la misma fila.
+  const conTotal = cuadro.filas.length > 1;
   const conteo = (["verde", "amarillo", "rojo"] as Semaforo[])
     .map((s) => ({ s, n: cuadro.filas.filter((f) => f.semaforo === s).length }))
     .filter((c) => c.n > 0);
@@ -231,7 +240,7 @@ export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
             {cuadro.ventasHasta ? ` (${formatDiaCorto(cuadro.ventasHasta)})` : ""}.
           </CardDescription>
         </div>
-        <FeriadosDialog anioInicial={Number(cuadro.mes.slice(0, 4))} />
+        {!soloLectura && <FeriadosDialog anioInicial={Number(cuadro.mes.slice(0, 4))} />}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -272,7 +281,9 @@ export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
         {sinMetas && (
           <p className="flex items-start gap-1.5 text-sm text-muted-foreground">
             <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-            Este mes todavía no tiene metas en litros: cárgalas en «Metas de venta», en «Litros vendidos».
+            {soloLectura
+              ? "Tus metas en litros de este mes todavía no están cargadas: las carga el administrador."
+              : "Este mes todavía no tiene metas en litros: cárgalas en «Metas de venta», en «Litros vendidos»."}
           </p>
         )}
 
@@ -284,7 +295,7 @@ export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
               {cuadro.filas.map((fila) => (
                 <FilaMovil key={fila.ruta} fila={fila} cuadro={cuadro} />
               ))}
-              <FilaMovil fila={cuadro.total} total cuadro={cuadro} />
+              {conTotal && <FilaMovil fila={cuadro.total} total cuadro={cuadro} />}
             </ul>
             <div className="hidden overflow-x-auto sm:block">
               <Table className="text-sm lg:text-base">
@@ -310,7 +321,7 @@ export function CuadroMetasLitros({ cuadro }: { cuadro: CuadroMetas }) {
                   {cuadro.filas.map((fila) => (
                     <Fila key={fila.ruta} fila={fila} cuadro={cuadro} />
                   ))}
-                  <Fila fila={cuadro.total} total cuadro={cuadro} />
+                  {conTotal && <Fila fila={cuadro.total} total cuadro={cuadro} />}
                 </TableBody>
               </Table>
             </div>

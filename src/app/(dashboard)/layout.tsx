@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { VigilanteSesion } from "@/components/shared/vigilante-sesion";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { RUTA_ACTUAL_HEADER } from "@/proxy";
 import { INICIO_POR_ROL, MODULOS_POR_ROL, enModulo } from "@/lib/constants";
@@ -43,12 +44,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <SidebarProvider>
+      <VigilanteSesion ruta="/auth/me" />
       <AppSidebar rol={usuarioActual.rol} />
       {/* min-w-0: sin esto, una tabla ancha (aunque tenga su propio scroll)
           estira el contenido y toda la página se corre de lado. */}
       <SidebarInset className="min-w-0">
         <Topbar user={usuarioActual} />
-        <div className="flex-1 space-y-6 p-4 sm:p-6">{children}</div>
+        <div className="controles-tactiles flex-1 space-y-6 p-4 sm:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
