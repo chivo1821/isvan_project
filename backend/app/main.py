@@ -21,6 +21,7 @@ from app.api import (
     cobranzas,
     delivery,
     despachos,
+    gastos,
     historial,
     indicadores,
     maestra,
@@ -125,6 +126,7 @@ ROUTERS_PROTEGIDOS = [
     vendedor.router,
     motorizados.router,
     cobranzas.router,
+    gastos.router,
 ]
 
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que

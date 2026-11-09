@@ -181,6 +181,7 @@ model Usuario {
   pagosRegistrados      Pago[]                   @relation("PagoRegistradoPor")
   pagosRevisados        Pago[]                   @relation("PagoRevisadoPor")
   excepcionesDespacho   ExcepcionDespacho[]
+  cargasGasto           GastoCarga[]
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
@@ -1215,4 +1216,57 @@ model CuentaBancariaEmpresa {
   creadaEn    DateTime @default(now())
 
   @@index([empresa])
+}
+
+// ---------- Gastos (estado de resultados) ----------
+//
+// Los gastos de cada empresa llegan en un Excel (pedido del cliente,
+// 2026-11-09). Cada archivo es una carga: se revisa en una vista previa, se
+// confirma y se puede revertir, como las ventas. Con las ventas y el costo de
+// los indicadores dan el resultado de las operaciones (ver
+// app/services/gastos.py).
+
+enum EstadoCargaGasto {
+  CONFIRMADA
+  REVERTIDA
+}
+
+model GastoCarga {
+  id           String           @id @default(cuid())
+  empresa      Empresa
+  archivo      String
+  periodoDesde DateTime         @db.Date
+  periodoHasta DateTime         @db.Date
+  filas        Int
+  totalUsd     Decimal          @db.Decimal(20, 2)
+  estado       EstadoCargaGasto @default(CONFIRMADA)
+  subidaEn     DateTime         @default(now())
+  subidaPorId  String
+  subidaPor    Usuario          @relation(fields: [subidaPorId], references: [id])
+  revertidaEn  DateTime?
+  gastos       Gasto[]
+
+  @@index([empresa, estado])
+}
+
+model Gasto {
+  id          String     @id @default(cuid())
+  cargaId     String
+  carga       GastoCarga @relation(fields: [cargaId], references: [id], onDelete: Cascade)
+  empresa     Empresa
+  fecha       DateTime   @db.Date
+  categoria   String
+  descripcion String?
+  proveedor   String?
+  referencia  String?
+  // El monto en USD es el que cuenta en el resultado. Si el Excel lo trae en
+  // Bs, se convierte con la tasa BCV de esa fecha (la guardada en tasa).
+  montoUsd    Decimal    @db.Decimal(20, 2)
+  montoBs     Decimal?   @db.Decimal(20, 2)
+  // USD | BS: en que moneda venia en el Excel.
+  moneda      String
+  tasa        Decimal?   @db.Decimal(20, 8)
+
+  @@index([empresa, fecha])
+  @@index([cargaId])
 }
