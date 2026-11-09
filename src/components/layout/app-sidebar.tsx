@@ -162,6 +162,7 @@ const NAV_GROUPS: NavGroup[] = [
 const INICIO_HIJOS: NavLeaf[] = [
   { label: "Resumen", href: "/" },
   { label: "Indicadores de venta", href: "/indicadores" },
+  { label: "Resultados y gastos", href: "/gastos" },
   { label: "Delivery en moto", href: "/delivery" },
   { label: "Censo de clientes", href: "/censo" },
 ];
