@@ -34,6 +34,7 @@ import {
   DespachosTransitoMap,
   type DespachoMapPoint,
 } from "@/components/modules/despachos/despachos-transito-map";
+import { EstatusDespachos } from "@/components/modules/dashboard/estatus-despachos";
 import { RendimientoReparto, type ResumenRendimiento } from "@/components/modules/dashboard/rendimiento-reparto";
 import { RendimientoVendedoresCard } from "@/components/modules/dashboard/rendimiento-vendedores";
 import { ResumenVentas, type VentasEmpresa } from "@/components/modules/dashboard/resumen-ventas";
@@ -46,7 +47,7 @@ import {
   type ResumenIndicadores,
 } from "@/lib/indicadores";
 import { sinUbicacion } from "@/lib/ubicacion";
-import type { RendimientoVendedores } from "@/lib/vendedor";
+import type { DespachoLista, RendimientoVendedores } from "@/lib/vendedor";
 
 export default async function DashboardPage() {
   const [
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
     resumen,
     ventas,
     rendimientoVendedores,
+    estatusDespachos,
   ] = await Promise.all([
     getDespachosConDetalle(),
     getDespachosPendientesAprobacion(),
@@ -71,6 +73,7 @@ export default async function DashboardPage() {
     apiGet<ResumenRendimiento>("/reportes/resumen").catch(() => null),
     ventasDelUltimoMes(),
     apiGet<RendimientoVendedores>("/vendedor/rendimiento").catch(() => null),
+    apiGet<DespachoLista[]>("/reportes/estatus-despachos").catch(() => null),
   ]);
 
   const rutasEnTransito = rutasActivas.filter((r) => r.estado === "EN_TRANSITO");
@@ -138,6 +141,8 @@ export default async function DashboardPage() {
             tone="destructive"
           />
         </div>
+
+        {estatusDespachos && <EstatusDespachos despachos={estatusDespachos} />}
 
         {resumen && <RendimientoReparto resumen={resumen} />}
 

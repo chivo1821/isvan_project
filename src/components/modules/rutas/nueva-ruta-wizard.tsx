@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangleIcon, CalendarClockIcon, PackageSearchIcon, RouteIcon, SparklesIcon, UserIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  CalendarClockIcon,
+  PackageSearchIcon,
+  RouteIcon,
+  SearchIcon,
+  SparklesIcon,
+  UserIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { apiPost } from "@/lib/api-client";
 import { NumberedCard } from "@/components/shared/numbered-card";
@@ -20,8 +28,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TIPO_VEHICULO_META, contarParadas, documentoDespacho, formatDateTime, textoParadas } from "@/lib/constants";
+import {
+  TIPO_VEHICULO_META,
+  contarParadas,
+  documentoDespacho,
+  formatDate,
+  formatDateTime,
+  textoParadas,
+} from "@/lib/constants";
 import type { Almacen, Cliente, Despacho, Ruta, Vehiculo } from "@/lib/mock-data";
+import { coincideBusqueda } from "@/lib/busqueda";
 import { salidaIso } from "@/lib/planificacion";
 import { MapaPrevioRuta } from "./mapa-previo-ruta";
 
@@ -189,6 +205,21 @@ export function NuevaRutaWizard({
 }) {
   const router = useRouter();
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+  // Filtra la lista de despachos a incluir (pedido del cliente): por código
+  // o nombre del cliente y por documento. Lo ya marcado sigue marcado aunque
+  // la búsqueda lo esconda.
+  const [busqueda, setBusqueda] = useState("");
+  const visibles = despachos.filter((d) =>
+    coincideBusqueda(busqueda, [
+      d.destinoCliente.codigo,
+      d.destinoCliente.nombre,
+      documentoDespacho(d),
+      d.numeroDocumento,
+      d.numero,
+    ])
+  );
+  const idsVisibles = new Set(visibles.map((d) => d.id));
+  const ocultosMarcados = [...seleccionados].filter((id) => !idsVisibles.has(id)).length;
   const [buscando, setBuscando] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaVehiculo[] | null>(null);
   // El vehículo elegido y, si es un Morocho, la segunda moto: van juntos.
@@ -379,7 +410,8 @@ export function NuevaRutaWizard({
         vehiculoApoyoId: apoyoId,
         salidaProgramada,
       });
-      toast.success(`Ruta ${ruta.numero} planificada para el ${formatDateTime(ruta.salidaProgramada)}`, {
+      const cuando = sinHora ? formatDate(ruta.salidaProgramada) : formatDateTime(ruta.salidaProgramada);
+      toast.success(`Ruta ${ruta.numero} planificada para el ${cuando}`, {
         description: `${textoParadas(ruta.despachos)} · ${ruta.distanciaTotalKm?.toLocaleString("es-VE")} km estimados.`,
       });
       // Lo pendiente (sin vehículo, horarios que se pisan...) no frena la
@@ -406,6 +438,16 @@ export function NuevaRutaWizard({
   const elegida = sugerencias?.find((s) => s.vehiculo.id === vehiculoId && (s.vehiculoApoyo?.id ?? null) === apoyoId);
   const vehiculoElegido = elegida?.vehiculo;
   const apoyoElegido = elegida?.vehiculoApoyo ?? null;
+  // Las motos salen en el día (pedido del cliente): con la sugerencia en
+  // «solo motos» no se pide la hora, salvo que se elija a mano un vehículo
+  // que no es moto. Por dentro sigue la hora por defecto (la próxima en
+  // punto), que decide qué motos están libres.
+  const sinHora = soloMotos && (!vehiculoElegido || vehiculoElegido.tipo === "MOTO");
+  const textoSalida = salidaProgramada
+    ? sinHora
+      ? `Sale el ${formatDate(salidaProgramada)}, en el día`
+      : `Sale el ${formatDateTime(salidaProgramada)}`
+    : null;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -413,7 +455,7 @@ export function NuevaRutaWizard({
         <NumberedCard
           number={1}
           title="Salida del almacén"
-          helpText="Fecha y hora en que la ruta sale del almacén: es la hora de recogida que ve el repartidor y define qué vehículos están libres. Se puede planificar a futuro y cambiar después desde la ruta o la planificación."
+          helpText="Fecha y hora en que la ruta sale del almacén: es la hora de recogida que ve el repartidor y define qué vehículos están libres. Con la sugerencia en «solo motos» se elige solo la fecha: las motos salen en el día. Se puede planificar a futuro y cambiar después desde la ruta o la planificación."
         >
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
@@ -428,21 +470,24 @@ export function NuevaRutaWizard({
                 className="w-44"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="salida-hora" className="text-sm font-normal text-muted-foreground">
-                Hora
-              </Label>
-              <Input
-                id="salida-hora"
-                type="time"
-                value={salida.hora}
-                onChange={(e) => cambiarSalida({ hora: e.target.value })}
-                className="w-32"
-              />
-            </div>
+            {!sinHora && (
+              <div className="space-y-1">
+                <Label htmlFor="salida-hora" className="text-sm font-normal text-muted-foreground">
+                  Hora
+                </Label>
+                <Input
+                  id="salida-hora"
+                  type="time"
+                  value={salida.hora}
+                  onChange={(e) => cambiarSalida({ hora: e.target.value })}
+                  className="w-32"
+                />
+              </div>
+            )}
             <p className="flex items-center gap-1.5 pb-2 text-sm text-muted-foreground">
               <CalendarClockIcon className="size-4" aria-hidden />
-              {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Elige la fecha y la hora"}
+              {textoSalida ?? (sinHora ? "Elige la fecha" : "Elige la fecha y la hora")}
+              {sinHora && " · solo motos"}
             </p>
           </div>
         </NumberedCard>
@@ -684,51 +729,79 @@ export function NuevaRutaWizard({
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10" />
-                    <TableHead>Documento</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Ruta cliente</TableHead>
-                    <TableHead className="text-right">Peso est.</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {despachos.map((d) => (
-                    <TableRow
-                      key={d.id}
-                      className="cursor-pointer"
-                      onClick={() => alternar(d.id)}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={seleccionados.has(d.id)} onCheckedChange={() => alternar(d.id)} />
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium">{documentoDespacho(d)}</span>
-                        <span className="block text-xs text-muted-foreground">{d.numero}</span>
-                      </TableCell>
-                      <TableCell>
-                        {d.destinoCliente.nombre}
-                        <span className="block text-xs text-muted-foreground">
-                          cód. {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {d.destinoCliente.rutaComercial ? (
-                          <StatusBadge tone="neutral" label={d.destinoCliente.rutaComercial} />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatKg(pesoTotal(d))}
-                      </TableCell>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <div className="relative w-full sm:max-w-sm">
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder="Buscar por código o nombre del cliente, o documento"
+                    aria-label="Buscar despachos"
+                    className="pl-8"
+                  />
+                </div>
+                {busqueda.trim() && (
+                  <p className="text-xs text-muted-foreground">
+                    {visibles.length} de {despachos.length} despacho(s)
+                    {ocultosMarcados > 0 && ` · ${ocultosMarcados} marcado(s) fuera de la búsqueda siguen incluidos`}
+                  </p>
+                )}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10" />
+                      <TableHead>Documento</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Ruta cliente</TableHead>
+                      <TableHead className="text-right">Peso est.</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {visibles.length === 0 && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={5} className="h-16 text-center text-muted-foreground">
+                          Ningún despacho coincide con «{busqueda.trim()}».
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {visibles.map((d) => (
+                      <TableRow
+                        key={d.id}
+                        className="cursor-pointer"
+                        onClick={() => alternar(d.id)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox checked={seleccionados.has(d.id)} onCheckedChange={() => alternar(d.id)} />
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium">{documentoDespacho(d)}</span>
+                          <span className="block text-xs text-muted-foreground">{d.numero}</span>
+                        </TableCell>
+                        <TableCell>
+                          {d.destinoCliente.nombre}
+                          <span className="block text-xs text-muted-foreground">
+                            cód. {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {d.destinoCliente.rutaComercial ? (
+                            <StatusBadge tone="neutral" label={d.destinoCliente.rutaComercial} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {formatKg(pesoTotal(d))}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </NumberedCard>
@@ -736,7 +809,7 @@ export function NuevaRutaWizard({
         <NumberedCard
           number={4}
           title="Vehículo (opcional)"
-          helpText="Se sugieren los vehículos libres a la hora de salida con mejor ajuste de capacidad. Si no hay ninguno, la ruta se planifica sin vehículo y se le asigna después desde la ruta o la planificación."
+          helpText="Se sugieren los vehículos libres a la hora de salida (las motos, en el día) con mejor ajuste de capacidad. Si no hay ninguno, la ruta se planifica sin vehículo y se le asigna después desde la ruta o la planificación."
         >
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -817,7 +890,7 @@ export function NuevaRutaWizard({
                 {formatKg(pesoSeleccionado)}
               </p>
               <p className="text-muted-foreground">
-                {salidaProgramada ? `Sale el ${formatDateTime(salidaProgramada)}` : "Falta la fecha y hora de salida"}
+                {textoSalida ?? (sinHora ? "Falta la fecha de salida" : "Falta la fecha y hora de salida")}
                 {" · "}
                 {vehiculoElegido ? (
                   apoyoElegido ? (
