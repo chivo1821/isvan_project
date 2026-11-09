@@ -87,6 +87,10 @@ def _hora(instante: datetime) -> str:
     return a_caracas(instante).strftime("%d/%m %H:%M")
 
 
+def _dia(instante: datetime) -> str:
+    return a_caracas(instante).strftime("%d/%m")
+
+
 def km_por_calle(a: LatLng, b: LatLng) -> float:
     """La misma estimacion que usa el planificador (ver plan_rutas.py)."""
     return round(haversine_km(a, b) * FACTOR_VIALIDAD, 1)
@@ -214,8 +218,14 @@ def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
     limite_morocho = configuracion.leer(cur, "morochoMaxKg") if morochos else None
     ahora = ahora_utc()
 
+    # Las motos no tienen hora de salida a la vista (pedido del cliente,
+    # 2026-11-09): salen en el dia. Sus avisos no mencionan horas y la salida
+    # solo se da por vencida cuando paso el dia.
+    rutas_de_moto = set(motos)
+
     for r in activas:
         avisos = salida[r["id"]]
+        es_moto = r["id"] in rutas_de_moto
         if not r.get("vehiculoId"):
             avisos.append({"tipo": "SIN_VEHICULO", "mensaje": "Sin vehículo asignado: hay que asignarle uno antes de la salida"})
         propia = ventana(r, regresos.get(r["id"], 0))
@@ -234,15 +244,19 @@ def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
                     continue
                 vistas.add(otra["id"])
                 if se_pisan(propia, ventana(otra, regresos.get(otra["id"], 0))):
-                    avisos.append({
-                        "tipo": "CHOQUE_HORARIO",
-                        "mensaje": (
+                    if es_moto:
+                        mensaje = (
+                            f"La moto {vehiculo['placa']} también tiene la ruta {otra['numero']} "
+                            f"({'en tránsito' if otra['estado'] == 'EN_TRANSITO' else 'el ' + _dia(ventana(otra)[0])}) "
+                            "y se cruzan"
+                        )
+                    else:
+                        mensaje = (
                             f"El vehículo {vehiculo['placa']} también tiene la ruta {otra['numero']} "
                             f"({'en tránsito' if otra['estado'] == 'EN_TRANSITO' else 'sale ' + _hora(ventana(otra)[0])}) "
                             "y los horarios se pisan"
-                        ),
-                        "rutaId": otra["id"],
-                    })
+                        )
+                    avisos.append({"tipo": "CHOQUE_HORARIO", "mensaje": mensaje, "rutaId": otra["id"]})
             if (
                 vehiculo["tipo"] == "MOTO" and r["id"] in lejanias and limite_moto is not None
                 and lejanias[r["id"]] > limite_moto
@@ -265,7 +279,15 @@ def avisos_de(cur, rutas: list[dict]) -> dict[str, list[dict]]:
                         f"{tope:,.0f} kg (máximo de un Morocho: {limite_morocho:g} kg)"
                     ),
                 })
-        if r["estado"] == "PLANIFICADA" and r["salidaProgramada"] < ahora - timedelta(minutes=TOLERANCIA_ATRASO_MIN):
+        if r["estado"] != "PLANIFICADA":
+            continue
+        if es_moto:
+            if a_caracas(r["salidaProgramada"]).date() < a_caracas(ahora).date():
+                avisos.append({
+                    "tipo": "SALIDA_VENCIDA",
+                    "mensaje": f"Debía salir el {_dia(r['salidaProgramada'])} y todavía no salió",
+                })
+        elif r["salidaProgramada"] < ahora - timedelta(minutes=TOLERANCIA_ATRASO_MIN):
             avisos.append({
                 "tipo": "SALIDA_VENCIDA",
                 "mensaje": f"Debía salir el {_hora(r['salidaProgramada'])} y todavía no salió",
