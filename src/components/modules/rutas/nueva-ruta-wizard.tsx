@@ -174,8 +174,11 @@ export function NuevaRutaWizard({
   despachos,
   salidaInicial,
   almacen,
+  soloMotosPorDefecto = false,
 }: {
   despachos: DespachoConCliente[];
+  /** El ajuste "Sugerir solo rutas de motos" de la planificación. */
+  soloMotosPorDefecto?: boolean;
   /** El almacén de salida, para ubicarlo en el mapa de vista previa. */
   almacen?: Almacen | null;
   /** La salida por defecto (la próxima hora en punto). La calcula el
@@ -206,6 +209,9 @@ export function NuevaRutaWizard({
   // Primero las motos libres (motorizados) con lo liviano y cercano; sin
   // esto el planificador consolida en camiones y las motos casi no salen.
   const [priorizarMotos, setPriorizarMotos] = useState(true);
+  // Solo motos (ajuste "Sugerir solo rutas de motos" de la planificación,
+  // pedido del cliente): se puede apagar aquí para una planificación puntual.
+  const [soloMotos, setSoloMotos] = useState(soloMotosPorDefecto);
   // Qué tan lejos puede estar una parada de las demás del mismo viaje. Es el
   // freno contra viajes absurdos (un cliente en La Guaira y otro en
   // Charallave); bajarlo da viajes más compactos pero usa más vehículos.
@@ -256,6 +262,7 @@ export function NuevaRutaWizard({
         despachoIds: despachos.map((d) => d.id),
         mezclarRutasComerciales,
         priorizarMotos,
+        soloMotos,
         radioMaxKm: Number(radioMaxKm),
         salidaProgramada,
       });
@@ -497,6 +504,19 @@ export function NuevaRutaWizard({
                 />
                 <Label htmlFor="priorizar-motos" className="text-sm font-normal text-muted-foreground">
                   Priorizar motorizados para entregas livianas cercanas
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="solo-motos"
+                  checked={soloMotos}
+                  onCheckedChange={(v) => {
+                    setSoloMotos(v === true);
+                    setPlan(null);
+                  }}
+                />
+                <Label htmlFor="solo-motos" className="text-sm font-normal text-muted-foreground">
+                  Sugerir solo rutas de motos (lo que no cabe en una moto queda sin asignar)
                 </Label>
               </div>
             </div>
