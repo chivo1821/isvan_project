@@ -21,6 +21,7 @@ from app.api import (
     cobranzas,
     delivery,
     despachos,
+    gastos,
     historial,
     indicadores,
     maestra,
@@ -59,6 +60,12 @@ app.add_middleware(
 )
 
 
+# Un ano, sin includeSubDomains: el dominio propio del cliente puede tener
+# otros subdominios que no son nuestros. El mismo valor va en
+# next.config.ts para las paginas.
+HSTS = "max-age=31536000"
+
+
 @app.middleware("http")
 async def cabeceras_de_seguridad(request: Request, call_next):
     """Cabeceras que pidio el escaneo de OWASP ZAP: que el navegador no
@@ -69,6 +76,12 @@ async def cabeceras_de_seguridad(request: Request, call_next):
     respuesta = await call_next(request)
     respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
     respuesta.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
+    # HSTS: el navegador que ya vio el sitio por HTTPS no vuelve a usar la
+    # version sin cifrar (ni deja que alguien en la red lo baje a HTTP). Solo
+    # cuando la peticion llego por HTTPS (en Vercel lo dice
+    # x-forwarded-proto): por HTTP el navegador lo ignora y en local sobra.
+    if request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip() == "https":
+        respuesta.headers.setdefault("Strict-Transport-Security", HSTS)
     return respuesta
 
 
@@ -125,6 +138,7 @@ ROUTERS_PROTEGIDOS = [
     vendedor.router,
     motorizados.router,
     cobranzas.router,
+    gastos.router,
 ]
 
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que

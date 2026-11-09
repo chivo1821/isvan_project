@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { LogInIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { apiPost } from "@/lib/api-client";
+import { ApiError, apiPost, mensajeDeError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,8 +50,14 @@ export function LoginForm() {
     let usuario: Usuario;
     try {
       usuario = await apiPost<Usuario>("/auth/login", values);
-    } catch {
-      setError("Correo o contraseña incorrectos.");
+    } catch (err) {
+      // 429: la cuenta quedó bloqueada por intentos fallidos; el mensaje
+      // del servidor dice cuántos minutos faltan.
+      setError(
+        err instanceof ApiError && err.status === 429
+          ? mensajeDeError(err, "Demasiados intentos fallidos.")
+          : "Correo o contraseña incorrectos."
+      );
       return;
     }
     // Carga completa, no router.push: la sesión recién creada tiene que

@@ -22,11 +22,10 @@ import hmac
 import secrets
 import uuid
 from datetime import timedelta
-from functools import lru_cache
 
 from fastapi import HTTPException
 
-from app.core.auth import hash_password, verify_password
+from app.core.auth import comparar_sin_cuenta, hash_password, verify_password
 from app.core.fechas import ahora_utc
 from app.core.portal_auth import cerrar_sesiones
 from app.services import correo
@@ -109,17 +108,6 @@ def _usar_codigo(cur, cuenta: dict, proposito: str, codigo: str) -> None:
         cur.connection.commit()
         raise invalido
     cur.execute('UPDATE "CodigoCorreo" SET "usadoEn" = %s WHERE "id" = %s', (ahora_utc(), fila["id"]))
-
-
-@lru_cache(maxsize=1)
-def _hash_de_relleno() -> str:
-    return hash_password(secrets.token_urlsafe(16))
-
-
-def _cuenta_falsa_para_tiempo() -> None:
-    """Gasta lo mismo que un bcrypt real cuando el correo no existe, para que
-    el tiempo de respuesta no delate que cuentas hay."""
-    verify_password("x", _hash_de_relleno())
 
 
 def registrar(cur, datos: dict) -> None:
@@ -211,7 +199,7 @@ def reenviar(cur, email: str, proposito: str) -> None:
 def autenticar(cur, email: str, password: str) -> dict:
     cuenta = _por_email(cur, email, bloquear=True)
     if cuenta is None:
-        _cuenta_falsa_para_tiempo()
+        comparar_sin_cuenta()
         raise HTTPException(401, "Correo o contraseña incorrectos")
     ahora = ahora_utc()
     if cuenta["bloqueadoHasta"] and cuenta["bloqueadoHasta"] > ahora:
