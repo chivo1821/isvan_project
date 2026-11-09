@@ -152,6 +152,16 @@ class DespachoVendedor(BaseModel):
     clienteCodigo: str
     clienteNombre: str
     rutaVenta: str
+    tipoDocumento: Optional[str] = None
+
+
+class DespachoEstatus(DespachoVendedor):
+    """Un despacho en el cuadro de estatus del resumen (ADMIN): lo mismo que
+    ve el vendedor, de todos los clientes. Un cliente que no esta en ventas
+    no tiene ruta de venta."""
+
+    rutaVenta: Optional[str] = None
+    vehiculoPlaca: Optional[str] = None
 
 
 class DespachosVendedor(BaseModel):

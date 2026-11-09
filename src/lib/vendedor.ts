@@ -21,9 +21,18 @@ export type DespachoVendedor = {
   clienteCodigo: string;
   clienteNombre: string;
   rutaVenta: string;
+  tipoDocumento?: string | null;
 };
 
 export type DespachosVendedor = { rutas: RutaVenta[]; despachos: DespachoVendedor[] };
+
+/** Un despacho en la lista de "Mis despachos" o en el cuadro de estatus del
+ * resumen (GET /reportes/estatus-despachos, de todos los clientes: uno que
+ * no está en ventas no tiene ruta de venta). */
+export type DespachoLista = Omit<DespachoVendedor, "rutaVenta"> & {
+  rutaVenta: string | null;
+  vehiculoPlaca?: string | null;
+};
 
 /** Cómo va un despacho, en las palabras del vendedor: ¿ya se cargó?, ¿ya
  * salió?, ¿ya llegó? */
@@ -37,7 +46,9 @@ export const CATEGORIA_DESPACHO_META: Record<CategoriaDespacho, { label: string;
   otro: { label: "Rechazado o cancelado", tone: "destructive" },
 };
 
-export function categoriaDespacho(d: DespachoVendedor): CategoriaDespacho {
+export function categoriaDespacho(
+  d: Pick<DespachoVendedor, "estado" | "rutaNumero" | "rutaEstado">
+): CategoriaDespacho {
   if (d.estado === "ENTREGADO") return "entregado";
   if (d.estado === "EN_TRANSITO") return "en_camino";
   if (d.estado === "RECHAZADO" || d.estado === "CANCELADO") return "otro";
