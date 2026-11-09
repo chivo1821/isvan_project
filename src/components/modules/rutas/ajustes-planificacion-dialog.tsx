@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDateTime } from "@/lib/constants";
@@ -81,6 +82,16 @@ export function AjustesPlanificacionDialog({ ajustes }: { ajustes: AjustePlanifi
           {ajustes.map((a) => (
             <div key={a.clave} className="space-y-1.5">
               <Label htmlFor={`ajuste-${a.clave}`}>{a.etiqueta}</Label>
+              {a.tipo === "si_no" ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    id={`ajuste-${a.clave}`}
+                    checked={valores[a.clave] === "1"}
+                    onCheckedChange={(v) => setValores((prev) => ({ ...prev, [a.clave]: v === true ? "1" : "0" }))}
+                  />
+                  {valores[a.clave] === "1" ? "Sí" : "No"}
+                </label>
+              ) : (
               <div className="flex items-center gap-2">
                 <Input
                   id={`ajuste-${a.clave}`}
@@ -95,10 +106,12 @@ export function AjustesPlanificacionDialog({ ajustes }: { ajustes: AjustePlanifi
                 />
                 <span className="text-sm text-muted-foreground">{a.unidad}</span>
               </div>
+              )}
               <p className="text-xs text-muted-foreground">{a.descripcion}</p>
               <p className="text-xs text-muted-foreground">
-                Entre {a.minimo.toLocaleString("es-VE")} y {a.maximo.toLocaleString("es-VE")} {a.unidad} · por
-                defecto {a.defecto.toLocaleString("es-VE")} {a.unidad}
+                {a.tipo === "si_no"
+                  ? `Por defecto: ${a.defecto ? "sí" : "no"}`
+                  : `Entre ${a.minimo.toLocaleString("es-VE")} y ${a.maximo.toLocaleString("es-VE")} ${a.unidad} · por defecto ${a.defecto.toLocaleString("es-VE")} ${a.unidad}`}
                 {a.actualizadoEn &&
                   ` · cambiado el ${formatDateTime(a.actualizadoEn)}${a.actualizadoPor ? ` por ${a.actualizadoPor}` : ""}`}
               </p>

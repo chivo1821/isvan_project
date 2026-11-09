@@ -1,20 +1,23 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { NuevaRutaWizard } from "@/components/modules/rutas/nueva-ruta-wizard";
+import { apiGet } from "@/lib/api-client";
 import { getAlmacenById, getClientesRaw, getDespachosDisponiblesParaRutaRaw } from "@/lib/mock-data";
-import { proximaHoraEnPunto } from "@/lib/planificacion";
+import { proximaHoraEnPunto, type AjustePlanificacion } from "@/lib/planificacion";
 import { getUsuarioActual } from "@/lib/session";
 
 // De donde salen las rutas (ALMACEN_BASE_ID en backend/app/api/rutas.py).
 const ALMACEN_BASE_ID = "alm-catia";
 
 export default async function NuevaRutaPage() {
-  const [despachos, clientes, usuarioActual, almacen] = await Promise.all([
+  const [despachos, clientes, usuarioActual, almacen, ajustes] = await Promise.all([
     getDespachosDisponiblesParaRutaRaw(),
     getClientesRaw(),
     getUsuarioActual(),
     getAlmacenById(ALMACEN_BASE_ID),
+    apiGet<AjustePlanificacion[]>("/rutas/configuracion").catch(() => []),
   ]);
+  const soloMotos = ajustes.find((a) => a.clave === "planSoloMotos")?.valor === 1;
   if (!usuarioActual) redirect("/login");
 
   const despachosConCliente = despachos.map((d) => ({
@@ -32,6 +35,7 @@ export default async function NuevaRutaPage() {
         despachos={despachosConCliente}
         salidaInicial={proximaHoraEnPunto()}
         almacen={almacen ?? null}
+        soloMotosPorDefecto={soloMotos}
       />
     </div>
   );
