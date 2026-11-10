@@ -151,6 +151,28 @@ async def carga_local(ficha: str, request: Request, usuario: dict = Depends(requ
 # ---------- Envio ----------
 
 
+# Lo mas que puede durar un censo (de abrirlo a enviarlo). El borrador del
+# telefono vive 3 dias (lib/formulario/borrador.ts): un censo retomado al dia
+# siguiente sigue siendo valido.
+DURACION_MAXIMA = timedelta(days=3)
+
+
+def horas_del_envio(iniciado_tel: datetime, terminado_tel: datetime, ahora: datetime) -> tuple[datetime, datetime, datetime]:
+    """Las horas de inicio y fin del censo, sin depender del reloj del
+    telefono. El fin es la hora del servidor al recibirlo (el vendedor acaba
+    de darle a enviar); el inicio, el fin menos lo que duro el censo segun el
+    telefono (la resta no depende de que su reloj este bien).
+
+    Antes se rechazaba el envio ("las horas no son coherentes") si el reloj
+    del telefono iba adelantado mas de 10 minutos o si el censo se retomaba
+    del borrador al dia siguiente: el vendedor no podia enviar."""
+    duracion = terminado_tel - iniciado_tel
+    if duracion < timedelta(0):
+        duracion = timedelta(0)
+    duracion = min(duracion, DURACION_MAXIMA)
+    return ahora - duracion, ahora, ahora
+
+
 class EnvioCenso(BaseModel):
     respuestas: dict
     iniciadoEn: str
@@ -163,11 +185,9 @@ class EnvioCenso(BaseModel):
 def enviar(datos: EnvioCenso, usuario: dict = Depends(requiere_rol("VENDEDOR"))):
     """Recibe un censo: las respuestas y la clave de cada foto ya subida."""
     respuestas = dict(datos.respuestas)
-    iniciado = _instante(datos.iniciadoEn, "iniciadoEn")
-    terminado = _instante(datos.terminadoEn, "terminadoEn")
-    ahora = ahora_utc()
-    if terminado < iniciado or terminado > ahora + timedelta(minutes=10) or terminado - iniciado > timedelta(days=1):
-        raise HTTPException(422, "Las horas de inicio y fin del formulario no son coherentes")
+    iniciado, terminado, ahora = horas_del_envio(
+        _instante(datos.iniciadoEn, "iniciadoEn"), _instante(datos.terminadoEn, "terminadoEn"), ahora_utc()
+    )
 
     defin = _definicion()
     preguntas = xf.preguntas_de(defin)

@@ -31,7 +31,7 @@ from datetime import timedelta
 
 from fastapi import HTTPException
 
-from app.core.auth import hash_password, verify_password
+from app.core.auth import comparar_sin_cuenta, hash_password, verify_password
 from app.core.fechas import ahora_utc
 from app.services import configuracion
 
@@ -153,6 +153,7 @@ def autenticar(cur, placa: str, pin: str) -> dict:
     )
     usuario = cur.fetchone()
     if not usuario or not usuario["pinHash"]:
+        comparar_sin_cuenta()
         raise HTTPException(401, _MENSAJE_GENERICO)
 
     ahora = ahora_utc()

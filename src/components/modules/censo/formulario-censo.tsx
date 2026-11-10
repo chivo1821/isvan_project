@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { HistoryIcon, Loader2Icon, SendIcon } from "lucide-react";
+import { HistoryIcon, Loader2Icon, SendIcon, Trash2Icon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -355,9 +355,27 @@ export function FormularioCenso({
               Revisa las fotos: si alguna no quedó, tómala de nuevo. (Guardado el{" "}
               {formatDateTime(new Date(recuperadoEn).toISOString())})
             </p>
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setRecuperadoEn(null)}>
-              Entendido
-            </Button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setRecuperadoEn(null)}>
+                Seguir con este
+              </Button>
+              {/* Borra el censo guardado en el teléfono para hacerlo de nuevo
+                  desde cero (p. ej. quedó con datos de otro comercio). */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => {
+                  if (window.confirm("¿Borrar el censo guardado y empezar uno nuevo? Se pierden las respuestas y las fotos.")) {
+                    limpiar();
+                  }
+                }}
+              >
+                <Trash2Icon />
+                Borrar y empezar de nuevo
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       )}

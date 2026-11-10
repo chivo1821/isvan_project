@@ -11,7 +11,16 @@ import { getUsuarioActual } from "@/lib/session";
 /** Pantallas solo para ADMIN, además del dashboard ("/"): las cifras del
  * negocio y los módulos de vendedor, cobranzas y supervisor (un DESPACHOS
  * no entra a ellos). El despachador sí es de la operación. */
-const RUTAS_SOLO_ADMIN = ["/indicadores", "/delivery", "/censo", "/vendedor", "/cobranzas", "/supervisor", "/administrativo"];
+const RUTAS_SOLO_ADMIN = [
+  "/indicadores",
+  "/delivery",
+  "/censo",
+  "/vendedor",
+  "/cobranzas",
+  "/supervisor",
+  "/gastos",
+  "/administrativo",
+];
 
 function esSoloAdmin(ruta: string) {
   return ruta === "/" || RUTAS_SOLO_ADMIN.some((r) => enModulo(ruta, r));

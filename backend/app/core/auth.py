@@ -14,6 +14,7 @@ import os
 import secrets
 import uuid
 from datetime import timedelta
+from functools import lru_cache
 
 import bcrypt
 from fastapi import Cookie, Depends, HTTPException
@@ -39,6 +40,19 @@ def verify_password(password: str, password_hash: str) -> bool:
     # un 500 en el login que cualquiera podia provocar. Se recorta igual que
     # antes, asi las claves guardadas siguen funcionando.
     return bcrypt.checkpw(password.encode("utf-8")[:72], password_hash.encode("utf-8"))
+
+
+@lru_cache(maxsize=1)
+def _hash_de_relleno() -> str:
+    return hash_password(secrets.token_urlsafe(16))
+
+
+def comparar_sin_cuenta() -> None:
+    """Gasta lo mismo que un bcrypt real cuando la cuenta no existe, para que
+    el tiempo de respuesta no delate que correos (o placas) estan
+    registrados. Sin esto, un correo inexistente respondia al instante y uno
+    real tardaba lo que tarda bcrypt."""
+    verify_password("x", _hash_de_relleno())
 
 
 def _hash_token(token: str) -> str:

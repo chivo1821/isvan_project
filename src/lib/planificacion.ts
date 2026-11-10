@@ -135,6 +135,8 @@ export type Agenda = {
 
 /** GET /rutas/configuracion */
 export type AjustePlanificacion = {
+  /** "si_no": se muestra como casilla (1 = sí, 0 = no). */
+  tipo?: "numero" | "si_no";
   clave: string;
   valor: number;
   defecto: number;

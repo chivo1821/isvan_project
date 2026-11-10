@@ -53,6 +53,21 @@ AJUSTES: dict[str, dict] = {
         ),
         "unidad": "kg",
     },
+    "planSoloMotos": {
+        "grupo": "planificacion",
+        # 1 = si, 0 = no (ver "tipo": la pantalla lo muestra como casilla).
+        "defecto": 1.0,
+        "minimo": 0.0,
+        "maximo": 1.0,
+        "tipo": "si_no",
+        "etiqueta": "Sugerir solo rutas de motos",
+        "descripcion": (
+            "La sugerencia de rutas arma viajes solo con motos (y Morochos). Lo que no cabe en una moto "
+            "(peso, distancia o frío) queda sin asignar, para planificarlo aparte. En Nueva ruta se puede "
+            "apagar para una planificación puntual."
+        ),
+        "unidad": "",
+    },
     "cobranzaDiasTolerancia": {
         "grupo": "cobranzas",
         "defecto": 15.0,
@@ -170,6 +185,7 @@ def todos(cur, grupo: str = "planificacion") -> list[dict]:
             "etiqueta": ajuste["etiqueta"],
             "descripcion": ajuste["descripcion"],
             "unidad": ajuste["unidad"],
+            "tipo": ajuste.get("tipo", "numero"),
             "actualizadoEn": fila["actualizadoEn"] if fila else None,
             "actualizadoPor": fila["actualizadoPor"] if fila else None,
         })

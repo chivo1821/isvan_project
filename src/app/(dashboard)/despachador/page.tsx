@@ -54,8 +54,8 @@ export default async function DespachadorPage() {
         title="Mis pedidos"
         subtitle={
           rutas.length
-            ? `${pedidos} pedido(s) en ${rutas.length} ruta(s), con la hora de recogida en el almacén`
-            : "Tus rutas y la hora en que tienes que recoger cada pedido en el almacén"
+            ? `${pedidos} pedido(s) en ${rutas.length} ruta(s), con el día de recogida en el almacén`
+            : "Tus rutas y cuándo tienes que recoger cada pedido en el almacén"
         }
         actions={
           usuarioActual?.rol === "REPARTIDOR" && (
@@ -96,7 +96,10 @@ export default async function DespachadorPage() {
                         ) : (
                           <>
                             <WarehouseIcon className="size-4 text-muted-foreground" aria-hidden />
-                            Recoger en el almacén a las {formatHora(r.salidaProgramada)}
+                            {/* Las motos salen en el día, sin hora fija (pedido del cliente). */}
+                            {r.vehiculo?.tipo === "MOTO"
+                              ? "Recoger en el almacén"
+                              : `Recoger en el almacén a las ${formatHora(r.salidaProgramada)}`}
                           </>
                         )}
                       </p>

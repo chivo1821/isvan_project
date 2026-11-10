@@ -360,6 +360,7 @@ def sugerir_rutas(data: PlanRutasRequest):
         data.radioMaxKm,
         data.salidaProgramada,
         priorizar_motos=data.priorizarMotos,
+        solo_motos=data.soloMotos,
     )
 
 

@@ -97,7 +97,7 @@ def mis_despachos(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
         despachos = []
         if rutas:
             cur.execute(
-                'SELECT d."id", d."numero", d."numeroDocumento", d."estado", d."fechaCreacion", '
+                'SELECT d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado", d."fechaCreacion", '
                 'd."llegadaEn", d."entregadoEn", r."numero" AS "rutaNumero", r."estado" AS "rutaEstado", '
                 'cl."empresa", cl."codigo" AS "clienteCodigo", cl."nombre" AS "clienteNombre", '
                 'vc."ruta" AS "rutaVenta" '

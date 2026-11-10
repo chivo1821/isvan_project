@@ -152,6 +152,16 @@ class DespachoVendedor(BaseModel):
     clienteCodigo: str
     clienteNombre: str
     rutaVenta: str
+    tipoDocumento: Optional[str] = None
+
+
+class DespachoEstatus(DespachoVendedor):
+    """Un despacho en el cuadro de estatus del resumen (ADMIN): lo mismo que
+    ve el vendedor, de todos los clientes. Un cliente que no esta en ventas
+    no tiene ruta de venta."""
+
+    rutaVenta: Optional[str] = None
+    vehiculoPlaca: Optional[str] = None
 
 
 class DespachosVendedor(BaseModel):
@@ -723,6 +733,8 @@ class PlanRutasRequest(BaseModel):
     # con los despachos livianos y cercanos que les caben. False = consolidar
     # en la menor cantidad de vehiculos (las motos solo si sobra algo chico).
     priorizarMotos: bool = True
+    # Solo motos (y Morochos). None = el ajuste planSoloMotos de la configuracion.
+    soloMotos: Optional[bool] = None
     # Distancia maxima (km) entre una parada y las demas del mismo viaje.
     # Vacio = el valor por defecto del servicio
     # (plan_rutas.RADIO_MAX_ENTRE_PARADAS_KM).

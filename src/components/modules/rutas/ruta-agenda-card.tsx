@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClockIcon, PackageIcon, TruckIcon, UserIcon } from "lucide-react";
+import { BikeIcon, CalendarClockIcon, PackageIcon, TruckIcon, UserIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { AvisosRuta, IndicadorAvisos } from "@/components/modules/rutas/avisos-ruta";
 import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
@@ -7,6 +7,7 @@ import {
   ESTADO_RUTA_META,
   TIPO_VEHICULO_META,
   documentoDespacho,
+  formatDate,
   formatDateTime,
   formatHora,
 } from "@/lib/constants";
@@ -38,6 +39,9 @@ export function RutaAgendaCard({
   // Morocho: un pedido grande en dos motos.
   const apoyo = vehiculos.find((v) => v.id === ruta.vehiculoApoyoId);
   const programable = puedeProgramar && ruta.estado === "PLANIFICADA";
+  // Las motos salen en el día, sin hora fija a la vista (pedido del
+  // cliente): solo el día, y únicamente cuando hace falta (atrasadas).
+  const esMoto = vehiculo?.tipo === "MOTO";
 
   return (
     <div
@@ -48,10 +52,17 @@ export function RutaAgendaCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 font-semibold tabular-nums">
-            <CalendarClockIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            {mostrarFecha ? formatDateTime(ruta.salidaProgramada) : formatHora(ruta.salidaProgramada)}
-          </p>
+          {esMoto ? (
+            <p className="flex items-center gap-1.5 font-semibold tabular-nums">
+              <BikeIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {mostrarFecha ? `Moto · ${formatDate(ruta.salidaProgramada)}` : "Moto · en el día"}
+            </p>
+          ) : (
+            <p className="flex items-center gap-1.5 font-semibold tabular-nums">
+              <CalendarClockIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {mostrarFecha ? formatDateTime(ruta.salidaProgramada) : formatHora(ruta.salidaProgramada)}
+            </p>
+          )}
           <Link href={`/rutas/${ruta.id}`} className="text-primary hover:underline">
             {ruta.numero}
           </Link>

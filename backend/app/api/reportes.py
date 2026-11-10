@@ -25,7 +25,7 @@ from app.core.db import get_connection
 from app.core.fechas import a_caracas, hoy_caracas
 from app.services import delivery as dl
 from app.core.ubicacion import sin_ubicacion
-from app.schemas import ResumenRendimiento
+from app.schemas import DespachoEstatus, ResumenRendimiento
 
 router = APIRouter(
     prefix="/reportes",
@@ -471,3 +471,34 @@ def resumen_rendimiento():
             for v in por_vehiculo
         ],
     }
+
+
+# Mismo criterio que la lista del vendedor (app/api/vendedor.py): lo abierto
+# siempre y lo cerrado de los ultimos 30 dias.
+DIAS_DE_ESTATUS = 30
+_ESTADOS_CERRADOS = ["ENTREGADO", "CANCELADO", "RECHAZADO"]
+
+
+@router.get(
+    "/estatus-despachos", response_model=list[DespachoEstatus], dependencies=[Depends(requiere_rol("ADMIN"))]
+)
+def estatus_despachos():
+    """Los despachos para el cuadro de estatus del resumen: por despachar,
+    cargados en un viaje, en transito y entregados. Cada uno con lo que ve el
+    vendedor en "Mis despachos", de todos los clientes."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT d."id", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado"::text AS "estado", '
+            'd."fechaCreacion", d."llegadaEn", d."entregadoEn", r."numero" AS "rutaNumero", '
+            'r."estado"::text AS "rutaEstado", v."placa" AS "vehiculoPlaca", cl."empresa"::text AS "empresa", '
+            'cl."codigo" AS "clienteCodigo", cl."nombre" AS "clienteNombre", vc."ruta" AS "rutaVenta" '
+            'FROM "Despacho" d '
+            'JOIN "Cliente" cl ON cl."id" = d."destinoClienteId" '
+            'LEFT JOIN "VentaCliente" vc ON vc."empresa" = cl."empresa" AND vc."codigo" = cl."codigo" '
+            'LEFT JOIN "Ruta" r ON r."id" = d."rutaId" '
+            'LEFT JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'WHERE d."fechaCreacion" >= now() - %s::interval OR d."estado"::text <> ALL(%s) '
+            'ORDER BY d."fechaCreacion" DESC',
+            (f"{DIAS_DE_ESTATUS} days", _ESTADOS_CERRADOS),
+        )
+        return cur.fetchall()

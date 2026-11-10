@@ -90,7 +90,10 @@ def resetear_password(usuario_id: str, data: ResetPasswordRequest):
     correo — un administrador resetea a un colega bloqueado directamente."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'UPDATE "Usuario" SET "passwordHash" = %s WHERE "id" = %s RETURNING "id"',
+            # Tambien levanta el bloqueo por intentos fallidos: el admin
+            # resetea justamente al que se quedo afuera.
+            'UPDATE "Usuario" SET "passwordHash" = %s, "intentosFallidos" = 0, "bloqueadoHasta" = NULL '
+            'WHERE "id" = %s RETURNING "id"',
             (hash_password(data.passwordNueva), usuario_id),
         )
         if not cur.fetchone():

@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TIPO_VEHICULO_META, formatDateTime } from "@/lib/constants";
+import { TIPO_VEHICULO_META, formatDate, formatDateTime } from "@/lib/constants";
 import type { Ruta } from "@/lib/mock-data/types";
 import { partesCaracas, salidaIso, type VehiculoOpcion } from "@/lib/planificacion";
 
@@ -34,8 +34,10 @@ function detalleVehiculo(
     return { texto: v.estado === "EN_MANTENIMIENTO" ? "en mantenimiento" : "fuera de servicio", problema: true };
   }
   if (pesoKg != null && v.capacidadKg < pesoKg) return { texto: "capacidad insuficiente", problema: true };
-  if (libre === false) return { texto: "ocupado a esa hora", problema: true };
-  if (libre === true) return { texto: "libre a esa hora", problema: false };
+  // Las motos salen en el día, sin hora a la vista (pedido del cliente).
+  const cuando = v.tipo === "MOTO" ? "" : " a esa hora";
+  if (libre === false) return { texto: `ocupado${cuando}`, problema: true };
+  if (libre === true) return { texto: `libre${cuando}`, problema: false };
   return { texto: "", problema: false };
 }
 
@@ -84,6 +86,9 @@ export function ProgramarRutaDialog({
   const salidaCambio = fecha !== inicial.fecha || hora !== inicial.hora;
   const vehiculoNuevo = vehiculoId === SIN_VEHICULO ? null : vehiculoId;
   const principal = vehiculos.find((v) => v.id === vehiculoNuevo);
+  // Las motos salen en el día (pedido del cliente): no se pide la hora y se
+  // conserva la que la ruta ya tenía.
+  const esMoto = principal?.tipo === "MOTO";
   // Un Morocho lleva un solo cliente (ver backend/app/services/morocho.py).
   const variosClientes = (clientes ?? 0) > 1;
   const puedeMorocho = principal?.tipo === "MOTO" && !variosClientes;
@@ -118,7 +123,9 @@ export function ProgramarRutaDialog({
     try {
       const actualizada = await apiPatch<Ruta>(`/rutas/${ruta.id}/programacion`, cambios);
       toast.success(`Ruta ${ruta.numero} actualizada`, {
-        description: `Sale el ${formatDateTime(actualizada.salidaProgramada)}${
+        description: `Sale el ${
+          esMoto ? formatDate(actualizada.salidaProgramada) : formatDateTime(actualizada.salidaProgramada)
+        }${
           actualizada.vehiculoId ? "" : " · sin vehículo"
         }.`,
       });
@@ -160,8 +167,9 @@ export function ProgramarRutaDialog({
         <DialogHeader>
           <DialogTitle>Programar la ruta {ruta.numero}</DialogTitle>
           <DialogDescription>
-            La hora de salida es la de recogida en el almacén que ve el repartidor. El vehículo se puede
-            asignar ahora o más adelante.
+            {esMoto
+              ? "Las motos salen en el día: solo se elige la fecha. El vehículo se puede cambiar ahora o más adelante."
+              : "La hora de salida es la de recogida en el almacén que ve el repartidor. El vehículo se puede asignar ahora o más adelante."}
           </DialogDescription>
         </DialogHeader>
 
@@ -177,16 +185,18 @@ export function ProgramarRutaDialog({
                 className="w-44"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`hora-${ruta.id}`}>Hora</Label>
-              <Input
-                id={`hora-${ruta.id}`}
-                type="time"
-                value={hora}
-                onChange={(e) => setHora(e.target.value)}
-                className="w-32"
-              />
-            </div>
+            {!esMoto && (
+              <div className="space-y-1.5">
+                <Label htmlFor={`hora-${ruta.id}`}>Hora</Label>
+                <Input
+                  id={`hora-${ruta.id}`}
+                  type="time"
+                  value={hora}
+                  onChange={(e) => setHora(e.target.value)}
+                  className="w-32"
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -225,7 +235,8 @@ export function ProgramarRutaDialog({
             </Select>
             {salidaCambio && libres && (
               <p className="text-xs text-muted-foreground">
-                Con el horario nuevo, si el vehículo elegido choca con otra ruta se avisará al guardar.
+                {esMoto ? "Con la fecha nueva" : "Con el horario nuevo"}, si el vehículo elegido choca con otra ruta se
+                avisará al guardar.
               </p>
             )}
           </div>

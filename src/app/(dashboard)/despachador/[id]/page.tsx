@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ViajeEnCurso } from "@/components/modules/despachador/viaje-en-curso";
 import { IniciarRutaButton, NoCompletarRutaButton } from "@/components/modules/despachador/despachador-actions";
-import { ESTADO_RUTA_META, describirVehiculo, formatDateTime, formatHora } from "@/lib/constants";
+import { ESTADO_RUTA_META, describirVehiculo, formatDate, formatDateTime, formatHora } from "@/lib/constants";
 import { getRutaConDetalle } from "@/lib/mock-data";
 
 export default async function DespachadorDetallePage({ params }: PageProps<"/despachador/[id]">) {
@@ -26,7 +26,9 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
         <div className="flex flex-col items-start justify-between gap-4 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center">
           <div className="space-y-1 text-sm text-muted-foreground">
             <p className="text-base font-semibold text-foreground">
-              Recoger en el almacén: {formatDateTime(ruta.salidaProgramada)}
+              Recoger en el almacén:{" "}
+              {/* Las motos salen en el día, sin hora fija (pedido del cliente). */}
+              {ruta.vehiculo?.tipo === "MOTO" ? formatDate(ruta.salidaProgramada) : formatDateTime(ruta.salidaProgramada)}
             </p>
             {ruta.distanciaTotalKm != null && ruta.tiempoTotalMin != null && (
               <p>

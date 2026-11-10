@@ -423,6 +423,7 @@ def sugerir_plan_rutas(
     radio_max_km: float | None = None,
     salida_programada: datetime | None = None,
     priorizar_motos: bool = True,
+    solo_motos: bool | None = None,
 ) -> dict:
     """Devuelve los viajes propuestos y los despachos que quedaron fuera.
 
@@ -432,6 +433,10 @@ def sugerir_plan_rutas(
     cantidad de vehiculos, y las motos casi nunca salen: dos camiones se
     llevan todo (pedido del cliente, 2026-10-07: los motorizados tienen que
     tomarse en cuenta).
+
+    solo_motos (pedido del cliente, 2026-11-09): los viajes se arman solo con
+    motos (y Morochos); lo que no cabe en una moto queda sin asignar. None =
+    el ajuste "planSoloMotos" de la configuracion.
 
     radio_max_km ajusta que tan lejos puede estar una parada de las demas del
     mismo viaje (por defecto RADIO_MAX_ENTRE_PARADAS_KM): bajarlo da viajes
@@ -452,6 +457,11 @@ def sugerir_plan_rutas(
             cur, inicio, inicio + timedelta(minutes=pl.DURACION_POR_DEFECTO_MIN)
         )
         flota = _flota_funcional(cur)
+        if solo_motos is None:
+            solo_motos = configuracion.leer(cur, "planSoloMotos") >= 0.5
+        if solo_motos:
+            flota = [v for v in flota if v["tipo"] == "MOTO"]
+            libres_a_esa_hora = [v for v in libres_a_esa_hora if v["tipo"] == "MOTO"]
         limite_moto = configuracion.leer(cur, "motoDistanciaMaxKm")
         limite_morocho = configuracion.leer(cur, "morochoMaxKg")
         cur.execute('SELECT * FROM "Almacen" WHERE "id" = %s', (ALMACEN_BASE_ID,))
@@ -478,7 +488,11 @@ def sugerir_plan_rutas(
             "sugerencias": [],
             "sinAsignar": sin_asignar + [{
                 "despachoIds": [id_ for p in paradas for id_ in p.despacho_ids],
-                "motivo": "No hay ningún vehículo funcional en la flota para dimensionar los viajes",
+                "motivo": (
+                    "No hay ninguna moto funcional y la sugerencia está en «solo motos»: apágala para usar camiones"
+                    if solo_motos
+                    else "No hay ningún vehículo funcional en la flota para dimensionar los viajes"
+                ),
             }],
         }
 
@@ -617,14 +631,15 @@ def sugerir_plan_rutas(
         elif p.requiere_frio and not hay_frio:
             motivo = "Requieren refrigeración y no hay ningún vehículo refrigerado funcional"
         elif not hay_no_moto and p.km_almacen > limite_moto:
-            motivo = (
-                f"Están a más de {limite_moto:g} km del almacén (el máximo para motos) "
-                "y en la flota funcional solo hay motos"
+            motivo = f"Están a más de {limite_moto:g} km del almacén (el máximo para motos)" + (
+                "" if solo_motos else " y en la flota funcional solo hay motos"
             )
         else:
             motivo = "Ningún vehículo de la flota puede llevarlos"
         motivos_fuera.setdefault(motivo, []).append(p)
     for motivo, grupo in motivos_fuera.items():
+        if solo_motos:
+            motivo = f"{motivo}. La sugerencia está en «solo motos»: para estos, apágala y usa un camión"
         sin_asignar.append({"despachoIds": [id_ for p in grupo for id_ in p.despacho_ids], "motivo": motivo})
 
     return {
