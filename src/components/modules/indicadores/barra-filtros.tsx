@@ -137,7 +137,7 @@ function SelectorPeriodo({
   );
 }
 
-type OpcionFiltro = { valor: string; etiqueta: string; detalle?: string };
+export type OpcionFiltro = { valor: string; etiqueta: string; detalle?: string };
 
 // Con más opciones que esto el menú trae un buscador (clientes, productos) y
 // dibuja solo las primeras coincidencias, para no pintar cientos de filas.
@@ -163,7 +163,7 @@ function paraBuscar(texto: string) {
 /** Filtro de varios valores. La selección se aplica al cerrar el menú, no
  * con cada clic: cada cambio vuelve a calcular toda la página. Con muchas
  * opciones (clientes, productos) trae un buscador por nombre o código. */
-function FiltroMultiple({
+export function FiltroMultiple({
   etiqueta,
   todos,
   opciones,
