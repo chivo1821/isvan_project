@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangleIcon,

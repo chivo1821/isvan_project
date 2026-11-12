@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatBs, formatNumero, formatUsd } from "@/lib/constants";

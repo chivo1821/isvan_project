@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { toast } from "sonner";
 import { apiPatch } from "@/lib/api-client";
 import { NuevoVehiculoDialog } from "@/components/modules/flota/nuevo-vehiculo-dialog";

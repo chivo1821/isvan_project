@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { AlertTriangleIcon, TruckIcon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiPatch, mensajeDeError } from "@/lib/api-client";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { PagoCard } from "@/components/modules/cobranzas/pago-card";

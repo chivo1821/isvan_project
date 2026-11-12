@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { cn } from "@/lib/utils";
 import { ESTADO_RUTA_META } from "@/lib/constants";
 import { StatusBadge } from "@/components/shared/status-badge";
