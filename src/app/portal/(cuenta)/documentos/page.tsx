@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { Card, CardContent } from "@/components/ui/card";
 import { DocumentosTabla } from "@/components/modules/portal/documentos-tabla";
 import { apiGet } from "@/lib/api-client";

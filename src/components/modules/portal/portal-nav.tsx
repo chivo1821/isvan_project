@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { usePathname } from "next/navigation";
 import { FileTextIcon, HomeIcon, ReceiptIcon, WalletIcon } from "lucide-react";
 import { cn } from "@/lib/utils";

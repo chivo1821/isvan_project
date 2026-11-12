@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { useSearchParams } from "next/navigation";
 import { MailCheckIcon } from "lucide-react";
 import { toast } from "sonner";

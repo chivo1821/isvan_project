@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { redirect } from "next/navigation";
 import { ClockIcon, IceCreamConeIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";

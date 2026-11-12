@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import type { LatLngExpression, Map as MapaLeaflet } from "leaflet";
 import { CircleMarker, Popup, useMap } from "react-leaflet";
 import { EncuestaEnPopup } from "@/components/modules/censo/encuesta-popup";

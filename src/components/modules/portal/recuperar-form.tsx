@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { KeyRoundIcon } from "lucide-react";
 import { apiPost, mensajeDeError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
