@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { BikeIcon, CalendarClockIcon, PackageIcon, TruckIcon, UserIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { AvisosRuta, IndicadorAvisos } from "@/components/modules/rutas/avisos-ruta";
