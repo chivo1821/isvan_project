@@ -5,7 +5,7 @@
 # por que no se uso prisma-client-py.
 fastapi
 uvicorn[standard]
-psycopg[binary]
+psycopg[binary,pool]
 httpx
 pydantic
 python-dotenv

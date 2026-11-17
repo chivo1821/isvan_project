@@ -201,3 +201,14 @@ export type Ruta = {
   despachos: Despacho[];
   puntos: RutaPunto[];
 };
+
+/** Respuesta de GET /rutas/activas/con-relaciones y /rutas/{id}/con-relaciones:
+ * las rutas junto con SOLO los almacenes, clientes, usuarios y vehículos que
+ * usan — en vez de las listas completas (ver backend/app/api/rutas.py). */
+export type RutasConRelaciones = {
+  rutas: Ruta[];
+  almacenes: Almacen[];
+  clientes: Cliente[];
+  usuarios: Usuario[];
+  vehiculos: Vehiculo[];
+};
