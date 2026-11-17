@@ -17,7 +17,7 @@ from app.core.conductor import CONDUCTOR_DEL_VEHICULO
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 from app.core.numero import siguiente_numero
-from app.core.permisos import es_de_su_vehiculo, es_repartidor, vehiculo_asignado
+from app.core.permisos import ROLES_DE_UN_MODULO, es_de_su_vehiculo, es_repartidor, vehiculo_asignado
 from app.core.ubicacion import sin_ubicacion
 
 from app.schemas import (
@@ -27,6 +27,7 @@ from app.schemas import (
     Ruta,
     RutaCreate,
     RutaProgramacion,
+    RutasConRelaciones,
     SugerenciaVehiculo,
     SugerenciaVehiculoRequest,
     en_utc,
@@ -191,6 +192,111 @@ def version_seguimiento(ruta: str | None = None):
             {"ruta": ruta},
         )
         return {"version": cur.fetchone()["version"]}
+
+
+# ---------- Rutas con sus relaciones, en una sola llamada ----------
+#
+# El detalle y las vistas de rutas activas necesitan la ruta mas los
+# almacenes, clientes, usuarios y vehiculos que usa. Antes el frontend
+# armaba eso pidiendo las listas COMPLETAS de cada tabla (4-7 llamadas por
+# pagina, cada una trayendo filas que no se usaban). Estos endpoints
+# devuelven solo lo relacionado: menos llamadas y menos datos por llamada,
+# que es lo que cobra el plan gratis de Vercel (aviso de CPU, 2026-11-12/16).
+#
+# Ojo con el orden: /activas/con-relaciones va ANTES de
+# /{ruta_id}/con-relaciones; si no, "activas" se tomaria como el id de una
+# ruta.
+
+
+def _relaciones_de_rutas(cur, usuario: dict, rutas: list[dict]) -> dict:
+    """Solo los almacenes, clientes, usuarios y vehiculos que esas rutas
+    usan, respetando lo que cada rol puede ver (mismo criterio que
+    GET /clientes, /usuarios y /vehiculos)."""
+    almacen_ids = [r["origenId"] for r in rutas]
+    vehiculo_ids = list(
+        {r["vehiculoId"] for r in rutas if r["vehiculoId"]}
+        | {r["vehiculoApoyoId"] for r in rutas if r.get("vehiculoApoyoId")}
+    )
+    cliente_ids = list({d["destinoClienteId"] for r in rutas for d in r["despachos"]})
+
+    cur.execute('SELECT * FROM "Almacen" WHERE "id" = ANY(%s::text[])', (almacen_ids,))
+    almacenes = cur.fetchall()
+
+    # Las rutas ya vienen filtradas por rol, asi que sus clientes y
+    # vehiculos relacionados son justo los que el usuario podia pedir por
+    # los endpoints de lista (un repartidor: los de su vehiculo).
+    cur.execute('SELECT * FROM "Cliente" WHERE "id" = ANY(%s::text[]) ORDER BY "nombre"', (cliente_ids,))
+    clientes = cur.fetchall()
+
+    cur.execute(
+        f'SELECT v.*, {CONDUCTOR_DEL_VEHICULO} AS "conductor" FROM "Vehiculo" v '
+        'WHERE v."id" = ANY(%s::text[]) ORDER BY v."placa"',
+        (vehiculo_ids,),
+    )
+    vehiculos = cur.fetchall()
+
+    if es_repartidor(usuario) or usuario["rol"] in ROLES_DE_UN_MODULO:
+        # Igual que GET /usuarios: estos roles no ven el directorio, solo su
+        # propia ficha (para un repartidor alcanza: el conductor es el).
+        cur.execute('SELECT * FROM "Usuario" WHERE "id" = %s', (usuario["id"],))
+    else:
+        # Quien creo o cancelo cada ruta, mas los repartidores asignados a
+        # los vehiculos usados (de ahi sale el nombre del conductor).
+        usuario_ids = list(
+            {r["creadoPorId"] for r in rutas}
+            | {r["canceladaPorId"] for r in rutas if r.get("canceladaPorId")}
+        )
+        cur.execute(
+            'SELECT * FROM "Usuario" WHERE "id" = ANY(%s::text[]) OR "vehiculoAsignadoId" = ANY(%s::text[]) '
+            'ORDER BY "nombre"',
+            (usuario_ids, vehiculo_ids),
+        )
+    usuarios = cur.fetchall()
+
+    return {"almacenes": almacenes, "clientes": clientes, "usuarios": usuarios, "vehiculos": vehiculos}
+
+
+@router.get("/activas/con-relaciones", response_model=RutasConRelaciones)
+def rutas_activas_con_relaciones(usuario: dict = Depends(get_current_user)):
+    """Las rutas activas (PLANIFICADA y EN_TRANSITO) con solo las relaciones
+    que usan. Cada ruta trae solo su ultimo punto, como en GET /rutas.
+
+    Un REPARTIDOR solo ve las de su vehiculo asignado."""
+    vacio = {"rutas": [], "almacenes": [], "clientes": [], "usuarios": [], "vehiculos": []}
+    with get_connection() as conn, conn.cursor() as cur:
+        if es_repartidor(usuario):
+            vehiculo_id = vehiculo_asignado(usuario)
+            if not vehiculo_id:
+                return vacio
+            cur.execute(
+                'SELECT * FROM "Ruta" WHERE "estado" IN (%s, %s) AND %s IN ("vehiculoId", "vehiculoApoyoId") '
+                'ORDER BY "salidaProgramada" ASC',
+                ("PLANIFICADA", "EN_TRANSITO", vehiculo_id),
+            )
+        else:
+            cur.execute(
+                'SELECT * FROM "Ruta" WHERE "estado" IN (%s, %s) ORDER BY "salidaProgramada" DESC',
+                ("PLANIFICADA", "EN_TRANSITO"),
+            )
+        rutas = _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
+        return {"rutas": rutas, **_relaciones_de_rutas(cur, usuario, rutas)}
+
+
+@router.get("/{ruta_id}/con-relaciones", response_model=RutasConRelaciones)
+def ruta_con_relaciones(ruta_id: str, usuario: dict = Depends(get_current_user)):
+    """Una ruta (con el trazado completo, como GET /rutas/{id}) mas solo las
+    relaciones que usa, en una sola llamada."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Ruta no encontrada")
+        # Mismo criterio que GET /rutas/{id}: para un repartidor, la ruta de
+        # otro vehiculo es un 404, no un 403.
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"], row.get("vehiculoApoyoId")):
+            raise HTTPException(404, "Ruta no encontrada")
+        ruta = _con_detalle(cur, row)
+        return {"rutas": [ruta], **_relaciones_de_rutas(cur, usuario, [ruta])}
 
 
 # ---------- Planificacion: agenda y configuracion ----------

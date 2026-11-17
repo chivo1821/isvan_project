@@ -648,6 +648,19 @@ class Ruta(BaseModel):
     avisos: list[AvisoRuta] = []
 
 
+class RutasConRelaciones(BaseModel):
+    """Rutas con lo que hace falta para mostrarlas, en una sola llamada (ver
+    GET /rutas/activas/con-relaciones y /rutas/{id}/con-relaciones): solo los
+    almacenes, clientes, usuarios y vehiculos que esas rutas usan, en vez de
+    las listas completas."""
+
+    rutas: list[Ruta]
+    almacenes: list[Almacen]
+    clientes: list[Cliente]
+    usuarios: list[Usuario]
+    vehiculos: list[Vehiculo]
+
+
 class ReversarRutaRequest(BaseModel):
     motivo: str
 

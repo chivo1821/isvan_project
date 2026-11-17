@@ -9,7 +9,7 @@ import {
   getDespachosRaw,
 } from "./despachos";
 import { getRutaPuntosRaw } from "./ruta-puntos";
-import { getRutaRaw, getRutasRaw } from "./rutas";
+import { getRutaConRelacionesRaw, getRutaRaw, getRutasActivasConRelacionesRaw, getRutasRaw } from "./rutas";
 import type {
   Almacen,
   Cliente,
@@ -17,6 +17,7 @@ import type {
   DespachoAprobacion,
   Ruta,
   RutaPunto,
+  RutasConRelaciones,
   Usuario,
   Vehiculo,
 } from "./types";
@@ -30,8 +31,10 @@ export {
   getDespachoAprobacionesRaw,
   getDespachosDisponiblesParaRutaRaw,
   getDespachosRaw,
+  getRutaConRelacionesRaw,
   getRutaPuntosRaw,
   getRutaRaw,
+  getRutasActivasConRelacionesRaw,
   getRutasRaw,
   getUsuariosRaw,
   getVehiculosRaw,
@@ -193,31 +196,23 @@ function armarRutaConDetalle(ruta: Ruta, datos: Awaited<ReturnType<typeof cargar
   };
 }
 
-/** Solo lo que hace falta para pintar UNA ruta: la ruta con su trazado, el
- * almacén, la flota, los clientes y los usuarios. No trae la lista completa
- * de despachos, aprobaciones ni las demás rutas, que en el detalle no se
- * usan — y que en un viaje de decenas de paradas hacían pesar cada refresco
- * cientos de kB de más (se nota al marcar una llegada, ver
- * modules/despachador/parada-acciones.tsx). */
-async function cargarParaUnaRuta() {
-  const [almacenes, clientes, usuarios, vehiculos] = await Promise.all([
-    getAlmacenesRaw(),
-    getClientesRaw(),
-    getUsuariosRaw(),
-    getVehiculosRaw(),
-  ]);
-  return { almacenes, clientes, usuarios, vehiculos, despachos: [], despachoAprobaciones: [], rutas: [] };
+/** La respuesta de un endpoint con-relaciones ya trae exactamente lo que
+ * armarRutaConDetalle necesita: se usa tal cual, sin pedir nada más. Antes
+ * esto eran 4-5 llamadas con las listas COMPLETAS de almacenes, clientes,
+ * usuarios y vehículos solo para quedarse con las pocas filas que la ruta
+ * usa (ver backend/app/api/rutas.py, sección «con-relaciones»). */
+function datosDeRelaciones(rel: RutasConRelaciones) {
+  const { rutas: _rutas, ...relaciones } = rel;
+  return { ...relaciones, despachos: [], despachoAprobaciones: [], rutas: [] };
 }
 
 export async function getRutaConDetalle(id: string): Promise<RutaConDetalle | undefined> {
-  // Pide la ruta puntual (única con el trazado completo) en vez de traer
-  // todas las rutas con su geometría solo para quedarse con una.
-  const [ruta, datos] = await Promise.all([
-    getRutaRaw(id).catch(() => undefined),
-    cargarParaUnaRuta(),
-  ]);
-  if (!ruta) return undefined;
-  return armarRutaConDetalle(ruta, datos);
+  // Una sola llamada: la ruta puntual (única con el trazado completo) con
+  // solo sus relaciones.
+  const rel = await getRutaConRelacionesRaw(id).catch(() => undefined);
+  const ruta = rel?.rutas[0];
+  if (!rel || !ruta) return undefined;
+  return armarRutaConDetalle(ruta, datosDeRelaciones(rel));
 }
 
 export async function getRutasConDetalle(): Promise<RutaConDetalle[]> {
@@ -225,12 +220,13 @@ export async function getRutasConDetalle(): Promise<RutaConDetalle[]> {
   return datos.rutas.map((r) => armarRutaConDetalle(r, datos));
 }
 
-const ESTADOS_RUTA_ACTIVOS = ["PLANIFICADA", "EN_TRANSITO"] as const;
-
+// Las rutas activas ya las filtra la API (PLANIFICADA y EN_TRANSITO, y por
+// rol): una sola llamada con solo las relaciones que usan, en vez de
+// cargarTodo() completo para después descartar casi todo.
 export async function getRutasActivas(): Promise<RutaConDetalle[]> {
-  return (await getRutasConDetalle()).filter((r) =>
-    (ESTADOS_RUTA_ACTIVOS as readonly string[]).includes(r.estado)
-  );
+  const rel = await getRutasActivasConRelacionesRaw();
+  const datos = datosDeRelaciones(rel);
+  return rel.rutas.map((r) => armarRutaConDetalle(r, datos));
 }
 
 export async function getRutasByVehiculoId(vehiculoId: string): Promise<RutaConDetalle[]> {
