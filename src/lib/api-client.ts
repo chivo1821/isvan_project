@@ -11,7 +11,7 @@
 // navegador -- hay que leer la cookie de la request entrante (next/headers)
 // y reenviarla a mano como header Cookie.
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 async function cookieHeader(): Promise<HeadersInit> {
   if (typeof window !== "undefined") return {};

@@ -186,8 +186,42 @@ def _hojas_por_prioridad(libro) -> list:
 
 
 def _es_encabezado_de_costos(fila: tuple) -> bool:
-    nombres = {normalizar_encabezado(v) for v in fila if v is not None}
-    return "pc" in nombres and any(n.startswith("codigo") for n in nombres)
+    nombres = [_norm_costos(v) for v in fila if v is not None]
+    return (_columna_costo(nombres) is not None or _columna_precio_unidad(nombres) is not None) and any(
+        n.startswith("codigo") for n in nombres
+    )
+
+
+def _norm_costos(valor: object) -> str:
+    """Como normalizar_encabezado pero colapsa tambien los saltos de linea:
+    la lista oficial del proveedor trae encabezados como "Precio Caja\\nDistribuidores"."""
+    return re.sub(r"\s+", "_", normalizar_encabezado(valor)).strip("_")
+
+
+# El costo por caja llega como "Pc" en la hoja "precio de compras" del
+# extracto de ventas, o como "Precio Caja Distribuidores" en la lista oficial
+# del proveedor (Tio Rico). OJO: la columna "Precio Caja $. Cliente" de esa
+# lista es el precio al cliente final y NUNCA debe usarse como costo.
+_ALIAS_COLUMNA_COSTO = ("pc", "costo_caja_usd")
+_PREFIJO_COLUMNA_COSTO = "precio_caja_distribuidor"
+# El negocio tambien exporta listas con el "Precio Un Distribuidor" (por
+# UNIDAD): esas se convierten a costo por caja en la capa de la API, que es
+# donde se conocen las unidadesPorCaja de cada producto. En la practica la
+# columna viene como "Precio Un Distribuidores S/IVA": por eso es prefijo.
+_PREFIJO_COLUMNA_PRECIO_UNIDAD = "precio_un_distribuidor"
+
+
+def _columna_costo(nombres: list[str]) -> int | None:
+    """Indice de la columna de costo por caja, o None si la fila no la tiene."""
+    for alias in _ALIAS_COLUMNA_COSTO:
+        if alias in nombres:
+            return nombres.index(alias)
+    return next((i for i, n in enumerate(nombres) if n.startswith(_PREFIJO_COLUMNA_COSTO)), None)
+
+
+def _columna_precio_unidad(nombres: list[str]) -> int | None:
+    """Indice de una columna de precio por UNIDAD, o None."""
+    return next((i for i, n in enumerate(nombres) if n.startswith(_PREFIJO_COLUMNA_PRECIO_UNIDAD)), None)
 
 
 def _leer_costos(libro, hoja_ventas) -> dict[int, float]:
@@ -202,9 +236,9 @@ def _leer_costos(libro, hoja_ventas) -> dict[int, float]:
         if not encontrado:
             continue
         indice, encabezado = encontrado
-        nombres = [normalizar_encabezado(v) for v in encabezado]
+        nombres = [_norm_costos(v) for v in encabezado]
         col_codigo = next(i for i, n in enumerate(nombres) if n.startswith("codigo"))
-        col_costo = nombres.index("pc")
+        col_costo = _columna_costo(nombres)
         costos: dict[int, float] = {}
         for fila in hoja.iter_rows(values_only=True, min_row=indice + 2):
             if not fila or len(fila) <= max(col_codigo, col_costo):
@@ -229,6 +263,10 @@ class ListaPrecios:
     productos: dict[int, dict]
     # Filas con codigo que no se pueden usar: {fila, codigo, motivo}.
     descartadas: list[dict]
+    # True si la columna de precio venia por UNIDAD (p. ej. "Precio Un
+    # Distribuidor"): el parser no sabe cuantas unidades trae la caja, asi
+    # que la API lo convierte a costo por caja antes de comparar/aplicar.
+    precio_por_unidad: bool = False
 
 
 def leer_lista_precios(contenido: bytes) -> ListaPrecios:
@@ -244,14 +282,18 @@ def leer_lista_precios(contenido: bytes) -> ListaPrecios:
     finally:
         libro.close()
     raise HTTPException(
-        400, 'El archivo no tiene una hoja con las columnas "Codigo" y "Pc" (el costo por caja)'
+        400, 'El archivo no tiene una hoja de costos: se busca una columna "Codigo" junto a '
+        '"Pc" (extracto de ventas), "Precio Caja Distribuidores" o "Precio Un Distribuidor" (listas del proveedor)'
     )
 
 
 def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
-    nombres = [normalizar_encabezado(v) for v in encabezado]
+    nombres = [_norm_costos(v) for v in encabezado]
     col_codigo = next(i for i, n in enumerate(nombres) if n.startswith("codigo"))
-    col_costo = nombres.index("pc")
+    col_costo = _columna_costo(nombres)
+    precio_por_unidad = col_costo is None
+    if precio_por_unidad:
+        col_costo = _columna_precio_unidad(nombres)
     col_nombre = next((i for i, n in enumerate(nombres) if n.startswith(("descripcion", "producto", "nombre"))), None)
     col_grupo = next((i for i, n in enumerate(nombres) if n.startswith("grupo")), None)
 
@@ -288,7 +330,7 @@ def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
 
     if not productos:
         raise HTTPException(400, f'La hoja "{hoja.title}" no tiene productos con codigo y costo')
-    return ListaPrecios(hoja=hoja.title, productos=productos, descartadas=descartadas)
+    return ListaPrecios(hoja=hoja.title, productos=productos, descartadas=descartadas, precio_por_unidad=precio_por_unidad)
 
 
 # ---------- Archivos sin encabezado ----------

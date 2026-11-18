@@ -853,6 +853,17 @@ def confirmar_carga(carga_id: str):
         )
         reemplazadas = cur.rowcount
         _aplicar_dimensiones(cur, carga["empresa"], carga["dimensiones"])
+        # Se sella en cada fila el costo que rige al confirmar (el que trae
+        # este archivo o el que ya estaba si no trae hoja de costos): desde
+        # aqui el margen de este periodo NO cambia aunque despues se suba
+        # una lista de precios nueva.
+        cur.execute(
+            'UPDATE "Venta" v SET "costoCajaUsd" = vp."costoCajaUsd" '
+            'FROM "VentaProducto" vp '
+            'WHERE v."cargaId" = %(id)s AND vp."empresa" = v."empresa" '
+            '  AND vp."codigo" = v."codigoProducto"',
+            {"id": carga_id},
+        )
         cur.execute(
             'UPDATE "VentaCarga" SET "estado" = \'CONFIRMADA\', "confirmadaEn" = now() WHERE "id" = %s',
             (carga_id,),
@@ -961,8 +972,10 @@ def revertir_carga(carga_id: str):
 # El costo por caja tambien puede llegar solo, sin un extracto de ventas: la
 # lista de precios de compra que manda el proveedor. Cubre a todos los
 # productos de la lista, se hayan vendido o no en el ultimo archivo. Como en
-# las cargas, primero se ve que cambia y despues se aplica. El costo no tiene
-# fecha: el margen de todos los meses se recalcula con el nuevo.
+# las cargas, primero se ve que cambia y despues se aplica. La lista nueva
+# manda desde que se sube: las ventas ya confirmadas conservan el costo
+# sellado en su fila (ver confirmar_carga) y solo las que no tienen sello
+# (viejas, antes del backfill) se siguen calculando con el costo vigente.
 
 
 def _leer_lista_subida(archivo: UploadFile) -> ListaPrecios:
@@ -970,6 +983,32 @@ def _leer_lista_subida(archivo: UploadFile) -> ListaPrecios:
     if len(contenido) > TAMANO_MAXIMO_BYTES:
         raise HTTPException(413, f"El archivo pesa {len(contenido) / 1_000_000:.1f} MB y el maximo es 4.5 MB")
     return leer_lista_precios(contenido)
+
+
+def _normalizar_a_costo_por_caja(cur, empresa: str, lista: ListaPrecios) -> None:
+    """Si la lista trae precio por UNIDAD (p. ej. "Precio Un Distribuidor"),
+    lo convierte a costo por caja con las unidadesPorCaja conocidas en
+    ventas. Los que no tienen conversion conocida pasan a descartadas: nunca
+    se inventa un factor."""
+    if not lista.precio_por_unidad:
+        return
+    cur.execute(
+        'SELECT "codigo", "unidadesPorCaja"::int AS und FROM "VentaProducto" WHERE "empresa" = %s',
+        (empresa,),
+    )
+    unidades = {int(r["codigo"]): r["und"] for r in cur.fetchall() if r["und"]}
+    productos: dict[int, dict] = {}
+    for codigo, p in lista.productos.items():
+        und = unidades.get(codigo)
+        if und:
+            productos[codigo] = {**p, "costoCajaUsd": round(p["costoCajaUsd"] * und, 4)}
+        else:
+            lista.descartadas.append({
+                "fila": p["fila"],
+                "codigo": str(codigo),
+                "motivo": "precio por unidad y no se sabe cuantas unidades trae la caja",
+            })
+    lista.productos = productos
 
 
 def _comparar_lista(cur, empresa: str, lista: ListaPrecios) -> dict:
@@ -1059,6 +1098,7 @@ def analizar_lista_precios(empresa: str = Form(...), archivo: UploadFile = File(
     _validar_empresa(empresa)
     lista = _leer_lista_subida(archivo)
     with get_connection() as conn, conn.cursor() as cur:
+        _normalizar_a_costo_por_caja(cur, empresa, lista)
         return _comparar_lista(cur, empresa, lista)
 
 
@@ -1073,11 +1113,12 @@ def aplicar_lista_precios(
     de ventas."""
     _validar_empresa(empresa)
     lista = _leer_lista_subida(archivo)
-    productos = [
-        {"codigo": codigo, "nombre": p["nombre"], "grupo": p["grupo"], "costoCajaUsd": p["costoCajaUsd"]}
-        for codigo, p in lista.productos.items()
-    ]
     with get_connection() as conn, conn.cursor() as cur:
+        _normalizar_a_costo_por_caja(cur, empresa, lista)
+        productos = [
+            {"codigo": codigo, "nombre": p["nombre"], "grupo": p["grupo"], "costoCajaUsd": p["costoCajaUsd"]}
+            for codigo, p in lista.productos.items()
+        ]
         cambios = _comparar_lista(cur, empresa, lista)
         cur.execute(
             'INSERT INTO "ListaPrecioCarga" ("id", "empresa", "archivo", "productos", "subidaPorId") '
