@@ -206,7 +206,7 @@ class AlmacenLocal:
 
     def __init__(self, carpeta: Path = CARPETA_LOCAL, base_api: str | None = None):
         self.carpeta = carpeta
-        self.base_api = (base_api or os.getenv("API_URL_PUBLICA") or "http://localhost:8000").rstrip("/")
+        self.base_api = (base_api or os.getenv("API_URL_PUBLICA") or "http://localhost:8010").rstrip("/")
 
     def _ruta(self, clave: str) -> Path:
         return self.carpeta / validar_clave(clave)
