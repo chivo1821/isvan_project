@@ -110,12 +110,14 @@ SUMAS: dict[str, str] = {
     "litros": 'COALESCE(SUM(v."litros"), 0)',
     "cajas": 'COALESCE(SUM(v."cajas"), 0)',
     "unidades": 'COALESCE(SUM(v."unidades"), 0)',
-    # El costo es por CAJA, nunca por unidad. Las filas de productos sin
-    # costo cargado no suman (SUM ignora el NULL) y se reportan aparte.
-    "costo": 'COALESCE(SUM(v."cajas" * vp."costoCajaUsd"), 0)',
+    # El costo es por CAJA, nunca por unidad. Manda el costo sellado en la
+    # fila al confirmar su carga; si la fila no lo tiene (ventas viejas aun
+    # sin backfill), se cae al costo vigente del producto. Las filas sin
+    # costo no suman (SUM ignora el NULL) y se reportan aparte.
+    "costo": 'COALESCE(SUM(v."cajas" * COALESCE(v."costoCajaUsd", vp."costoCajaUsd")), 0)',
     # Indicador de calidad obligatorio: cuanta venta no tiene costo, es
     # decir, cuanto del margen es en realidad desconocido.
-    "ventaSinCosto": 'COALESCE(SUM(v."montoUsd") FILTER (WHERE vp."costoCajaUsd" IS NULL), 0)',
+    "ventaSinCosto": 'COALESCE(SUM(v."montoUsd") FILTER (WHERE COALESCE(v."costoCajaUsd", vp."costoCajaUsd") IS NULL), 0)',
     "clientes": 'COUNT(DISTINCT v."codigoCliente")',
     # Una cadena con varias sucursales tiene un codigo por sucursal y un
     # mismo nombre: por nombre se cuentan cadenas, por codigo tiendas.
@@ -580,9 +582,9 @@ def productos_del_periodo(cur, f: Filtros) -> list[dict]:
     condicion, params = where(f)
     cur.execute(
         'SELECT v."codigoProducto" AS "codigo", MAX(vp."nombre") AS "nombre", MAX(vp."grupo") AS "grupo", '
-        'BOOL_OR(vp."costoCajaUsd" IS NOT NULL) AS "tieneCosto", '
+        'BOOL_OR(COALESCE(v."costoCajaUsd", vp."costoCajaUsd") IS NOT NULL) AS "tieneCosto", '
         'COALESCE(SUM(v."montoUsd"), 0) AS "ventaNeta", '
-        'COALESCE(SUM(v."cajas" * vp."costoCajaUsd"), 0) AS "costo" '
+        'COALESCE(SUM(v."cajas" * COALESCE(v."costoCajaUsd", vp."costoCajaUsd")), 0) AS "costo" '
         f'{FUENTE} {condicion} GROUP BY v."codigoProducto"',
         params,
     )

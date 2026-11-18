@@ -656,6 +656,11 @@ model Venta {
   litros                Decimal             @db.Decimal(18, 6)
   montoBs               Decimal             @db.Decimal(20, 4)
   montoUsd              Decimal             @db.Decimal(20, 10)
+  // Costo por caja sellado al confirmar la carga: el que regia en ese
+  // periodo. Una lista de precios nueva NO toca los meses ya cerrados.
+  // NULL en las ventas anteriores al backfill; las consultas caen al costo
+  // vigente del producto con COALESCE (ver SUMAS en indicadores_venta.py).
+  costoCajaUsd          Decimal?            @db.Decimal(14, 4)
 
   @@index([empresa, fecha])
   @@index([empresa, codigoCliente])
