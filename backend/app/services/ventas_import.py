@@ -186,16 +186,44 @@ def _hojas_por_prioridad(libro) -> list:
 
 
 def _es_encabezado_de_costos(fila: tuple) -> bool:
+    """Encabezado de una lista de precios: codigo + costo por caja o precio
+    por unidad (este ultimo solo sirve en la lista subida sola, donde la API
+    lo convierte; ver _es_encabezado_de_costos_por_caja)."""
     nombres = [_norm_costos(v) for v in fila if v is not None]
-    return (_columna_costo(nombres) is not None or _columna_precio_unidad(nombres) is not None) and any(
-        n.startswith("codigo") for n in nombres
+    return _columna_codigo(nombres) is not None and (
+        _columna_costo(nombres) is not None or _columna_precio_unidad(nombres) is not None
     )
+
+
+def _es_encabezado_de_costos_por_caja(fila: tuple) -> bool:
+    """Para la hoja de costos DENTRO de un extracto de ventas: ahi no hay
+    paso de conversion, asi que solo vale una columna de costo por caja."""
+    nombres = [_norm_costos(v) for v in fila if v is not None]
+    return _columna_codigo(nombres) is not None and _columna_costo(nombres) is not None
 
 
 def _norm_costos(valor: object) -> str:
     """Como normalizar_encabezado pero colapsa tambien los saltos de linea:
     la lista oficial del proveedor trae encabezados como "Precio Caja\\nDistribuidores"."""
     return re.sub(r"\s+", "_", normalizar_encabezado(valor)).strip("_")
+
+
+# Columna del codigo de producto: la lista oficial trae "Codigo SAP" junto a
+# "Codigo de Barra (EAN 13)" y "(DUN 14)". El de barras nunca cruza con el
+# codigo de producto de ventas, asi que no se usa aunque venga primero.
+_PREFERIDAS_COLUMNA_CODIGO = ("codigo", "codigo_sap")
+_PREFIJO_CODIGO_DE_BARRA = "codigo_de_barra"
+
+
+def _columna_codigo(nombres: list[str]) -> int | None:
+    """Indice de la columna del codigo de producto, o None."""
+    for preferida in _PREFERIDAS_COLUMNA_CODIGO:
+        if preferida in nombres:
+            return nombres.index(preferida)
+    return next(
+        (i for i, n in enumerate(nombres) if n.startswith("codigo") and not n.startswith(_PREFIJO_CODIGO_DE_BARRA)),
+        None,
+    )
 
 
 # El costo por caja llega como "Pc" en la hoja "precio de compras" del
@@ -232,12 +260,12 @@ def _leer_costos(libro, hoja_ventas) -> dict[int, float]:
         key=lambda h: not normalizar_encabezado(h.title).startswith("precio_de_compra"),
     )
     for hoja in candidatas:
-        encontrado = _buscar_encabezado(hoja, _es_encabezado_de_costos)
+        encontrado = _buscar_encabezado(hoja, _es_encabezado_de_costos_por_caja)
         if not encontrado:
             continue
         indice, encabezado = encontrado
         nombres = [_norm_costos(v) for v in encabezado]
-        col_codigo = next(i for i, n in enumerate(nombres) if n.startswith("codigo"))
+        col_codigo = _columna_codigo(nombres)
         col_costo = _columna_costo(nombres)
         costos: dict[int, float] = {}
         for fila in hoja.iter_rows(values_only=True, min_row=indice + 2):
@@ -289,7 +317,7 @@ def leer_lista_precios(contenido: bytes) -> ListaPrecios:
 
 def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
     nombres = [_norm_costos(v) for v in encabezado]
-    col_codigo = next(i for i, n in enumerate(nombres) if n.startswith("codigo"))
+    col_codigo = _columna_codigo(nombres)
     col_costo = _columna_costo(nombres)
     precio_por_unidad = col_costo is None
     if precio_por_unidad:
@@ -309,6 +337,11 @@ def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
             continue
         codigo = _codigo_producto(texto_codigo)
         costo = _a_numero(celda(fila, col_costo))
+        # El precio por unidad se guarda sin redondear: se redondea una sola
+        # vez, ya convertido a caja (_normalizar_a_costo_por_caja), para no
+        # multiplicar el error de redondeo por las unidades de la caja.
+        if costo is not None and not precio_por_unidad:
+            costo = round(costo, 4)
         if codigo is None:
             # En ventas el codigo de producto es siempre un numero: uno con
             # letras no cruzaria con ninguna venta.
@@ -323,7 +356,7 @@ def _leer_hoja_de_precios(hoja, indice: int, encabezado: tuple) -> ListaPrecios:
                     "fila": numero,
                     "nombre": valor_a_texto(celda(fila, col_nombre)) or f"Producto {codigo}",
                     "grupo": valor_a_texto(celda(fila, col_grupo)) or "SIN GRUPO",
-                    "costoCajaUsd": round(costo, 4),
+                    "costoCajaUsd": costo,
                 }
             continue
         descartadas.append({"fila": numero, "codigo": texto_codigo, "motivo": motivo})

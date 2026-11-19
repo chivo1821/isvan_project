@@ -23,54 +23,64 @@
 
 # Pendientes (al 2026-11-17)
 
-## Costo histórico por fila de venta (rama `feature/costo-historico`)
+## Costo histórico por fila de venta (en `develop`)
 
 Pedido del cliente (2026-11-18): que una lista de precios nueva NO recalcule
 el costo de los meses cerrados. Antes el margen histórico se calculaba siempre
 con el costo vigente del producto.
 
-- **Hecho (2026-11-18, sin commit):**
+- **Hecho (2026-11-18 / 2026-11-19):**
   - `Venta.costoCajaUsd` nuevo (migración
-    `20261118120000_costo_historico_venta`, ya aplicada en la base local).
-  - `confirmar_carga` sella en cada fila el costo vigente al confirmar.
+    `20261118120000_costo_historico_venta`, ya aplicada en local y en Neon).
+  - Regla compartida en `backend/app/services/costo_historico.py`:
+    `confirmar_carga` y el backfill sellan en orden de prioridad: costo propio
+    del archivo > sello heredado de la fila que reemplaza (mismo día y
+    producto, para que re-subir un periodo sin hoja de costos no altere días
+    ya vendidos) > costo vigente al confirmar > `NULL`.
   - Consultas (`indicadores_venta.SUMAS` y `productos_del_periodo`;
     `gastos.py` las hereda): `COALESCE(v."costoCajaUsd", vp."costoCajaUsd")`
     — las filas viejas sin sello se comportan exactamente como antes.
   - `backend/scripts/sellar_costos_historicos.py`: backfill idempotente que
-    reproduce la línea de tiempo (cargas + listas en orden de subida).
+    reproduce la línea de tiempo (cargas + listas en orden de entrada) y solo
+    llena filas en `NULL` (no pisa sellos puestos por `confirmar_carga`).
+    `--dry-run` ejecuta lo mismo en transacción y hace rollback.
     Resultado en local: 34.266 filas selladas, 2.865 sin costo (productos
-    que nunca tuvieron costo cargado), márgenes por mes idénticos a antes
-    (en la base local los costos nunca cambiaron entre cargas).
-  - Pruebas nuevas: `backend/tests/` (conftest con base desechable +
-    `test_costo_historico.py`, 6 OK). Ojo: pytest se instaló en el venv pero
-    NO está en requirements.txt.
+    que nunca tuvieron costo cargado).
+  - Pruebas nuevas: `backend/tests/` (`conftest.py` con base desechable +
+    `test_costo_historico.py`, 11 OK). Dependencia de pruebas en
+    `backend/requirements-dev.txt` (aparte de `requirements.txt` para no
+    subir `pytest` a Vercel) y configuración en `backend/pytest.ini`.
   - Parser de listas (`ventas_import.py`): acepta la lista oficial de Tío
     Rico (hoja "Tralog", encabezados con saltos de línea). El costo se toma
     de "Precio Caja Distribuidores" — NUNCA de "Precio Caja $. Cliente",
     que es el precio al cliente final (confirmado con el cliente el
-    2026-11-18).
+    2026-11-18). Prioriza "Código" / "Código SAP" y nunca toma "Código de
+    Barra" como código de producto.
   - Tercer formato soportado (2026-11-18): la exportación con "Precio Un
     Distribuidores" (precio por UNIDAD, no por caja). El parser lo marca con
-    `ListaPrecios.precio_por_unidad=True` y la API
+    `ListaPrecios.precio_por_unidad=True` sin redondear todavía y la API
     (`_normalizar_a_costo_por_caja` en `indicadores.py`) lo convierte a
-    costo por caja multiplicando por `unidadesPorCaja` conocida en ventas;
-    lo que no tiene conversión va a `descartadas` (nunca se inventa un
-    factor). Verificado con la lista real: los 36 productos convertidos
-    cuadraron al centavo con la misma lista en formato por caja.
+    costo por caja multiplicando por `unidadesPorCaja` conocida en ventas y
+    redondeando una sola vez; lo que no tiene conversión va a `descartadas`
+    (nunca se inventa un factor). Dentro de un extracto de ventas
+    (`_leer_costos`), una hoja con solo precio por unidad se ignora.
+  - Puerto de desarrollo en `8010` (evita choque con SIGAT/Docker en `8000`)
+    y `scripts/stop-dev.ps1` actualizado para cerrar solo los árboles de
+    procesos que escuchan en `3000` y `8010`.
 - **Prueba en vivo con la lista real (noviembre 2026, 37 productos):** 36
   cambiaron de costo (aumentos de 25–50 %, una rebaja), 1 producto nuevo.
   Los meses cerrados NO se movieron; la única variación (jun–sep) vino de
   1.714 filas de 11 productos que NUNCA habían tenido costo y ahora estiman
   con el vigente — el mismo comportamiento que tenía el sistema viejo, y se
   siguen reportando en "venta sin costo" hasta tener dato de su época.
-- **Pase a producción, EN ESTE ORDEN:**
-  1. `prisma migrate deploy` contra Neon (columna aditiva; el código viejo
-     la ignora, así que va ANTES del deploy).
-  2. Merge a develop + push (Vercel despliega el backend nuevo).
+- **Pase a producción (pendiente):**
+  1. ~~`prisma migrate deploy` contra Neon~~ (ya aplicada).
+  2. Push de `develop` (Vercel despliega el backend nuevo).
   3. Backfill contra Neon: `sellar_costos_historicos.py --dry-run` primero y
      luego real, con `--database-url` apuntando a Neon.
   4. Verificar en producción los indicadores de un par de meses antes y
-     después del backfill (no deberían moverse si no hubo cambio de lista).
+     después del backfill (si ya se aplicó una lista nueva, meses anteriores
+     deberían volver a su costo histórico).
 
 
 ## Fix de CPU en Vercel — TERMINADO (2026-11-17)

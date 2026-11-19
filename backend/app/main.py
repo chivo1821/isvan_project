@@ -51,7 +51,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     # La cookie de sesion (ver app/core/auth.py) viaja en llamadas
-    # cross-origin (frontend en :3000, backend en :8000 en dev) — sin esto
+    # cross-origin (frontend en :3000, backend en :8010 en dev) — sin esto
     # el navegador no la manda ni el backend la deja pasar. Solo funciona
     # con una lista explicita de origenes (no "*"), que es lo que ya usamos.
     allow_credentials=True,
@@ -71,7 +71,7 @@ async def cabeceras_de_seguridad(request: Request, call_next):
     """Cabeceras que pidio el escaneo de OWASP ZAP: que el navegador no
     adivine el tipo de una respuesta (nosniff) y que otro sitio no pueda
     incrustar las respuestas de la API (CORP). same-site, no same-origin: en
-    desarrollo el frontend (:3000) y la API (:8000) son el mismo sitio, pero
+    desarrollo el frontend (:3000) y la API (:8010) son el mismo sitio, pero
     no el mismo origen."""
     respuesta = await call_next(request)
     respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -161,7 +161,7 @@ ROUTERS_POR_ROL = {
 # (/api/backend/despachos) o la recorta antes de reenviarla (/despachos), asi
 # que cada router queda registrado en ambas variantes -- funciona sin
 # importar cual de las dos use, y no rompe el desarrollo local (donde el
-# frontend llama directo a localhost:8000 sin prefijo).
+# frontend llama directo a localhost:8010 sin prefijo).
 for _router in ROUTERS_PUBLICOS:
     app.include_router(_router)
     app.include_router(_router, prefix="/api/backend")

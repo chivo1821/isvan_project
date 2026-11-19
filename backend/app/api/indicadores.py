@@ -33,6 +33,7 @@ from app.core.ubicacion import fuera_de_venezuela, sin_ubicacion
 from app.schemas import GuardarFeriadosRequest, GuardarMetasRequest, en_utc
 from app.services import cartera
 from app.services import censo_clientes
+from app.services import costo_historico
 from app.services import cuadro_metas
 from app.services import indicadores_venta as iv
 from app.services.ventas_import import ExtractoVentas, ListaPrecios, leer_extracto, leer_lista_precios
@@ -853,16 +854,22 @@ def confirmar_carga(carga_id: str):
         )
         reemplazadas = cur.rowcount
         _aplicar_dimensiones(cur, carga["empresa"], carga["dimensiones"])
-        # Se sella en cada fila el costo que rige al confirmar (el que trae
-        # este archivo o el que ya estaba si no trae hoja de costos): desde
-        # aqui el margen de este periodo NO cambia aunque despues se suba
-        # una lista de precios nueva.
+        # Se sella en cada fila su costo (regla completa en
+        # services/costo_historico.py): desde aqui el margen de este periodo
+        # NO cambia aunque despues se suba una lista de precios nueva.
+        # Primero el vigente (que ya incluye el que trae este archivo)...
         cur.execute(
             'UPDATE "Venta" v SET "costoCajaUsd" = vp."costoCajaUsd" '
             'FROM "VentaProducto" vp '
             'WHERE v."cargaId" = %(id)s AND vp."empresa" = v."empresa" '
             '  AND vp."codigo" = v."codigoProducto"',
             {"id": carga_id},
+        )
+        # ...y si el archivo no trae costo para un producto, los dias que
+        # reemplaza conservan el sello que ya tenian.
+        costo_historico.heredar_sellos_reemplazados(
+            cur, carga_id, list(costo_historico.costos_propios(carga["dimensiones"]["productos"])),
+            solo_vacios=False,
         )
         cur.execute(
             'UPDATE "VentaCarga" SET "estado" = \'CONFIRMADA\', "confirmadaEn" = now() WHERE "id" = %s',
@@ -948,14 +955,8 @@ def revertir_carga(carga_id: str):
         # siguen confirmadas (la ultima manda, como al confirmar). Las listas
         # de precios entran en el mismo orden: si no, una carga vieja
         # volveria a pisar el costo de una lista subida despues.
-        cur.execute(
-            'SELECT "dimensiones" AS "datos", FALSE AS "esLista", "confirmadaEn" AS "en" FROM "VentaCarga" '
-            'WHERE "empresa" = %(empresa)s AND "estado" = \'CONFIRMADA\' '
-            'UNION ALL SELECT "productos", TRUE, "subidaEn" FROM "ListaPrecioCarga" WHERE "empresa" = %(empresa)s '
-            'ORDER BY "en"',
-            {"empresa": carga["empresa"]},
-        )
-        for aplicada in cur.fetchall():
+        # Las filas restauradas conservan el sello que ya tenian: no se tocan.
+        for aplicada in costo_historico.eventos_de_costo(cur, carga["empresa"]):
             if aplicada["esLista"]:
                 _aplicar_lista_precios(cur, carga["empresa"], aplicada["datos"])
             else:
