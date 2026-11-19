@@ -6,7 +6,7 @@
 //
 // Sesion (ver backend/app/core/auth.py): la cookie httpOnly la maneja el
 // navegador solo en Client Components (de ahi "credentials: include", para
-// que viaje en la llamada cross-origin :3000 -> :8000). Los Server
+// que viaje en la llamada cross-origin :3000 -> :8010). Los Server
 // Components corren en Node y no tienen acceso al "cookie jar" del
 // navegador -- hay que leer la cookie de la request entrante (next/headers)
 // y reenviarla a mano como header Cookie.

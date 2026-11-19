@@ -1,0 +1,4 @@
+# Solo para desarrollo y CI: NO se instala en Vercel (que lee requirements.txt).
+#   backend\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
+-r requirements.txt
+pytest>=9,<10

@@ -28,7 +28,7 @@ su propio peso, cargado por Excel o a mano.
 ## Arquitectura
 
 ```
-Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8000)  <-- psycopg -->  Postgres (Neon en prod)
+Next.js (puerto 3000)  <-- fetch -->  FastAPI (puerto 8010)  <-- psycopg -->  Postgres (Neon en prod)
 ```
 
 - **Lecturas**: cada página (Server Component) hace `fetch` server-side a la

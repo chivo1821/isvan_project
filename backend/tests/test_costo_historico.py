@@ -285,3 +285,153 @@ def test_lista_con_precio_por_unidad_se_convierte_a_costo_por_caja(cliente_api, 
         "fila": 3, "codigo": "930002",
         "motivo": "precio por unidad y no se sabe cuantas unidades trae la caja",
     }]
+
+
+# ---------- 6. Re-subir un periodo sin costos no le cambia el costo ----------
+
+
+def _producto_sin_costo(codigo: int) -> dict:
+    return {"codigo": codigo, "nombre": "Pote 1L", "grupo": "HELADOS", "codigoProveedor": None,
+            "unidadesPorCaja": None, "litrosPorUnidad": None, "costoCajaUsd": None}
+
+
+def test_reconfirmar_sin_costo_hereda_el_sello_de_lo_que_reemplaza(cliente_api, usuario, db):
+    """El extracto diario repite los dias anteriores: si entre medio subio una
+    lista nueva, los dias ya vendidos conservan su costo y solo los nuevos
+    toman el vigente. Si el archivo SI trae costo, manda el archivo."""
+    admin = usuario()
+    api = cliente_api(admin)
+    producto = 910010
+    _crear_producto(db, producto, 10)
+
+    carga_a = _crear_carga(db, admin["id"], productos=[_producto_sin_costo(producto)])
+    venta_a = _crear_venta(db, carga_a, producto, cajas="1", fecha=date(2026, 8, 5))
+    db.commit()
+    assert api.post(f"/indicadores/cargas/{carga_a}/confirmar").status_code == 200
+    assert _sello(db, venta_a) == 10
+
+    _crear_producto(db, producto, 20)  # sube una lista nueva
+    db.commit()
+
+    carga_b = _crear_carga(db, admin["id"], productos=[_producto_sin_costo(producto)])
+    repetida = _crear_venta(db, carga_b, producto, cajas="1", fecha=date(2026, 8, 5))
+    nueva = _crear_venta(db, carga_b, producto, cajas="1", fecha=date(2026, 8, 6))
+    db.commit()
+    assert api.post(f"/indicadores/cargas/{carga_b}/confirmar").status_code == 200
+    assert _sello(db, repetida) == 10  # el dia ya vendido conserva su costo
+    assert _sello(db, nueva) == 20     # el dia nuevo toma el vigente
+
+    carga_c = _crear_carga(db, admin["id"], productos=[{**_producto_sin_costo(producto), "costoCajaUsd": 15}])
+    con_costo = _crear_venta(db, carga_c, producto, cajas="1", fecha=date(2026, 8, 5))
+    db.commit()
+    assert api.post(f"/indicadores/cargas/{carga_c}/confirmar").status_code == 200
+    assert _sello(db, con_costo) == 15  # el archivo trae costo: manda el archivo
+
+
+def test_backfill_hereda_y_no_pisa_sellos_existentes(usuario, db):
+    admin = usuario()
+    producto = 910011
+    _crear_producto(db, producto, 20)
+
+    carga1 = _crear_carga(db, admin["id"], estado="CONFIRMADA", confirmada_en=datetime(2026, 7, 31, 12),
+                          productos=[{**_producto_sin_costo(producto), "costoCajaUsd": 10}])
+    julio = _crear_venta(db, carga1, producto, cajas="1", fecha=date(2026, 7, 10))
+    db.execute(
+        'INSERT INTO "ListaPrecioCarga" ("id", "empresa", "archivo", "productos", "subidaEn") '
+        "VALUES (%s, 'TRALOG', 'lista_agosto.xlsx', %s, %s)",
+        (f"vlist-{uuid.uuid4().hex[:10]}", Jsonb([{"codigo": producto, "nombre": "Pote 1L",
+                                                   "grupo": "HELADOS", "costoCajaUsd": 20}]),
+         datetime(2026, 8, 5, 12)),
+    )
+    # Agosto re-sube el 10 de julio (sin costos) y trae dias nuevos.
+    carga2 = _crear_carga(db, admin["id"], estado="CONFIRMADA", confirmada_en=datetime(2026, 8, 10, 12),
+                          productos=[_producto_sin_costo(producto)])
+    julio_resubido = _crear_venta(db, carga2, producto, cajas="1", fecha=date(2026, 7, 10))
+    db.execute('UPDATE "Venta" SET "reemplazadaPorCargaId" = %s WHERE id = %s', (carga2, julio))
+    agosto = _crear_venta(db, carga2, producto, cajas="1", fecha=date(2026, 8, 3))
+    ya_sellada = _crear_venta(db, carga2, producto, cajas="1", costo=7, fecha=date(2026, 8, 4))
+    db.commit()
+
+    modulo = _modulo_backfill()
+    with db.cursor() as cur:
+        resumen = modulo.sellar_empresa(cur, "TRALOG")
+    db.commit()
+
+    assert _sello(db, julio) == 10
+    assert _sello(db, julio_resubido) == 10  # heredado, no el 20 de la lista
+    assert _sello(db, agosto) == 20
+    assert _sello(db, ya_sellada) == 7       # un sello existente no se pisa
+    assert resumen["filasSelladas"] >= 3
+
+    # Idempotente: la segunda corrida no sella nada nuevo.
+    with db.cursor() as cur:
+        assert modulo.sellar_empresa(cur, "TRALOG")["filasSelladas"] == 0
+    db.rollback()
+
+
+# ---------- 7. Casos del parser ----------
+
+
+def _libro(*hojas: tuple[str, list[list]]) -> bytes:
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for titulo, filas in hojas:
+        ws = wb.create_sheet(titulo)
+        for fila in filas:
+            ws.append(fila)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def test_extracto_con_hoja_de_precio_por_unidad_no_revienta():
+    """Dentro de un extracto no hay conversion a caja: una hoja con solo
+    precio por unidad se ignora (antes daba TypeError)."""
+    import io
+
+    import openpyxl
+
+    from app.services.ventas_import import _leer_costos
+
+    contenido = _libro(
+        ("data", [["Fecha", "Divisas"]]),
+        ("lista", [["Codigo SAP", "Descripcion", "Precio Un Distribuidores S/IVA"], [123, "X", 1.5]]),
+    )
+    libro = openpyxl.load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
+    try:
+        assert _leer_costos(libro, libro["data"]) == {}
+    finally:
+        libro.close()
+
+
+def test_precio_por_unidad_se_redondea_una_sola_vez():
+    from app.api.indicadores import _normalizar_a_costo_por_caja
+    from app.services.ventas_import import leer_lista_precios
+
+    lista = leer_lista_precios(_libro(("lista", [["Codigo", "Precio Un Distribuidor"], [1, 2.7333333]])))
+    assert lista.precio_por_unidad
+    assert lista.productos[1]["costoCajaUsd"] == 2.7333333  # sin redondear todavia
+
+    class Cursor:
+        def execute(self, *_):
+            pass
+
+        def fetchall(self):
+            return [{"codigo": 1, "und": 24}]
+
+    _normalizar_a_costo_por_caja(Cursor(), "TRALOG", lista)
+    assert lista.productos[1]["costoCajaUsd"] == 65.6  # y no 2.7333 x 24 = 65.5992
+
+
+def test_codigo_de_barra_no_se_toma_como_codigo_de_producto():
+    from app.services.ventas_import import leer_lista_precios
+
+    lista = leer_lista_precios(_libro(("Tralog", [
+        ["Código de Barra (EAN 13)", "Código SAP", "Descripción SAP", "Precio Caja Distribuidores"],
+        ["7591107151830", "64360805", "MAGNUM WHITE ALMOND", 32.805],
+    ])))
+    assert list(lista.productos) == [64360805]
