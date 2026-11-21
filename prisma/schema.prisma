@@ -192,6 +192,7 @@ model Usuario {
   // App movil: las jornadas de campo y la ultima posicion conocida.
   jornadas              Jornada[]
   ultimaPosicion        UltimaPosicion?
+  demandasNoAtendidas   DemandaNoAtendida[]      @relation("DemandaNoAtendidaVendedor")
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
@@ -227,10 +228,11 @@ model Almacen {
   lng            Float
   esFrigorifico  Boolean @default(true)
 
-  despachosOrigen   Despacho[]         @relation("DespachoOrigen")
-  vehiculos         Vehiculo[]
-  rutas             Ruta[]
-  distanciasCliente DistanciaCliente[]
+  despachosOrigen     Despacho[]           @relation("DespachoOrigen")
+  vehiculos           Vehiculo[]
+  rutas               Ruta[]
+  distanciasCliente   DistanciaCliente[]
+  demandasNoAtendidas DemandaNoAtendida[]
 }
 
 model Vehiculo {
@@ -312,6 +314,8 @@ model Cliente {
   rutaVenta              String?
   tipoVenta              String?
   listaPrecioCodigo      String?
+
+  demandasNoAtendidas DemandaNoAtendida[]
 
   @@unique([empresa, codigo])
 }
@@ -1366,11 +1370,12 @@ model CuentaBancariaEmpresa {
 // tablas existentes siguen usando hasta convertirlo tabla por tabla.
 
 model Organizacion {
-  id       String          @id @default(cuid())
-  nombre   String
-  activa   Boolean         @default(true)
-  creadaEn DateTime        @default(now())
-  empresas EmpresaFiscal[]
+  id                  String              @id @default(cuid())
+  nombre              String
+  activa              Boolean             @default(true)
+  creadaEn            DateTime            @default(now())
+  empresas            EmpresaFiscal[]
+  demandasNoAtendidas DemandaNoAtendida[]
 }
 
 model EmpresaFiscal {
@@ -1396,9 +1401,10 @@ model EmpresaFiscal {
   creadaEn               DateTime     @default(now())
   actualizadaEn          DateTime     @default(now())
 
-  usuarios     UsuarioEmpresa[]
-  productos    Producto[]
-  listasPrecio ListaPrecio[]
+  usuarios            UsuarioEmpresa[]
+  productos           Producto[]
+  listasPrecio        ListaPrecio[]
+  demandasNoAtendidas DemandaNoAtendida[]
 
   @@unique([organizacionId, codigo])
 }
@@ -1483,7 +1489,8 @@ model Producto {
   creadoEn        DateTime      @default(now())
   actualizadoEn   DateTime      @default(now())
 
-  precios ListaPrecioItem[]
+  precios             ListaPrecioItem[]
+  demandasNoAtendidas DemandaNoAtendida[]
 
   @@unique([empresaId, codigo])
 }
@@ -1614,11 +1621,41 @@ model Pedido {
   anuladoEn         DateTime?
   motivoAnulacion   String?
 
-  items PedidoItem[]
+  items               PedidoItem[]
+  demandasNoAtendidas DemandaNoAtendida[]
 
   @@unique([empresaId, numero])
   @@index([empresaId, estado])
   @@index([clienteId])
+}
+
+model DemandaNoAtendida {
+  id               String        @id @default(cuid())
+  organizacionId   String        @default("org-principal")
+  organizacion     Organizacion  @relation(fields: [organizacionId], references: [id])
+  empresaId        String
+  empresa          EmpresaFiscal @relation(fields: [empresaId], references: [id])
+  almacenId        String
+  almacen          Almacen       @relation(fields: [almacenId], references: [id])
+  clienteId        String
+  cliente          Cliente       @relation(fields: [clienteId], references: [id])
+  vendedorId       String?
+  vendedor         Usuario?      @relation("DemandaNoAtendidaVendedor", fields: [vendedorId], references: [id], onDelete: SetNull)
+  productoId       String
+  producto         Producto      @relation(fields: [productoId], references: [id])
+  pedidoId         String?
+  pedido           Pedido?       @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  cajasSolicitadas Decimal       @db.Decimal(14, 3)
+  cajasDisponibles Decimal       @db.Decimal(14, 3)
+  cajasFaltantes   Decimal       @db.Decimal(14, 3)
+  motivo           String
+  fecha            DateTime      @default(now()) @db.Timestamptz
+
+  @@index([empresaId, fecha])
+  @@index([vendedorId, fecha])
+  @@index([productoId, fecha])
+  @@index([clienteId])
+  @@index([pedidoId])
 }
 
 model PedidoItem {

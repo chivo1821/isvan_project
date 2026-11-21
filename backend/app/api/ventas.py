@@ -12,10 +12,10 @@ from decimal import Decimal
 import openpyxl
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.db import get_connection
-from app.core.fechas import ahora_utc
+from app.core.fechas import ahora_utc, dias_caracas_en_utc
 from app.core.permisos import es_vendedor, requiere_permiso, rutas_del_vendedor
 from app.services import bitacora, cartera, correlativo, empresas, inventario, tareas
 from app.services import ventas as sv
@@ -30,6 +30,11 @@ class Renglon(BaseModel):
     descuentoPct: Decimal = Field(default=Decimal("0"), ge=0, le=100)
 
 
+class DemandaItemDatos(BaseModel):
+    productoId: str
+    cajasSolicitadas: Decimal = Field(gt=0, le=Decimal("100000"))
+
+
 class PedidoDatos(BaseModel):
     # Lo puede mandar quien crea el pedido (la app, sin senal) para no duplicarlo.
     id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
@@ -38,7 +43,15 @@ class PedidoDatos(BaseModel):
     almacenId: str
     origen: str = Field(default="WEB", pattern="^(WEB|APP|PORTAL)$")
     notas: str | None = Field(default=None, max_length=500)
-    items: list[Renglon] = Field(min_length=1, max_length=300)
+    ajustarStock: bool = False
+    items: list[Renglon] = Field(default_factory=list, max_length=300)
+    demandaNoAtendida: list[DemandaItemDatos] = Field(default_factory=list, max_length=300)
+
+    @model_validator(mode="after")
+    def _al_menos_un_renglon(self):
+        if not self.items and not self.demandaNoAtendida:
+            raise ValueError("El pedido debe incluir al menos un item o demanda no atendida")
+        return self
 
 
 class Anulacion(BaseModel):
@@ -106,11 +119,38 @@ def _pedido(cur, pedido_id: str, usuario: dict, bloquear: bool = False) -> tuple
     return pedido, cur.fetchall()
 
 
-def _pedido_json(pedido: dict, items: list[dict]) -> dict:
+def _demanda_json(f: dict) -> dict:
+    from app.schemas import en_utc
+
+    salida = {
+        **f,
+        "cajasSolicitadas": float(f["cajasSolicitadas"]),
+        "cajasDisponibles": float(f["cajasDisponibles"]),
+        "cajasFaltantes": float(f["cajasFaltantes"]),
+    }
+    if salida.get("productoCodigo") is not None:
+        salida["productoCodigo"] = int(salida["productoCodigo"])
+    if salida.get("fecha") is not None:
+        salida["fecha"] = en_utc(salida["fecha"])
+    return salida
+
+
+def _demandas_de_pedido(cur, pedido_id: str) -> list[dict]:
+    cur.execute(
+        'SELECT d."id", d."productoId", p."codigo" AS "productoCodigo", p."nombre" AS "productoNombre", '
+        'd."cajasSolicitadas", d."cajasDisponibles", d."cajasFaltantes", d."motivo", d."fecha" '
+        'FROM "DemandaNoAtendida" d JOIN "Producto" p ON p."id" = d."productoId" '
+        'WHERE d."pedidoId" = %s ORDER BY p."nombre"',
+        (pedido_id,),
+    )
+    return [_demanda_json(f) for f in cur.fetchall()]
+
+
+def _pedido_json(pedido: dict, items: list[dict], demandas: list[dict] | None = None) -> dict:
     from app.schemas import en_utc
 
     total = sum((sv.subtotal_item(i["cajas"], i["precioCajaUsd"], i["descuentoPct"]) for i in items), Decimal(0))
-    return {
+    salida = {
         **{k: (en_utc(v) if k.endswith("En") and v is not None else v) for k, v in pedido.items()},
         "subtotalUsd": float(total),
         "items": [
@@ -119,6 +159,10 @@ def _pedido_json(pedido: dict, items: list[dict]) -> dict:
             for i in items
         ],
     }
+    if demandas is not None:
+        salida["demandaNoAtendida"] = demandas
+        salida["demandaNoAtendidaTotal"] = len(demandas)
+    return salida
 
 
 @router.get("/pedidos")
@@ -155,32 +199,186 @@ def crear_pedido(data: PedidoDatos, usuario: dict = Depends(requiere_permiso("ve
         cur.execute('SELECT "id" FROM "Pedido" WHERE "id" = %s', (pedido_id,))
         if cur.fetchone():
             # Reenvio del mismo pedido (la app sin senal): se devuelve el que ya esta.
-            return _pedido_json(*_pedido(cur, pedido_id, usuario))
+            return _pedido_json(*_pedido(cur, pedido_id, usuario), demandas=_demandas_de_pedido(cur, pedido_id))
         cliente = _cliente(cur, data.clienteId, empresa, usuario)
         cur.execute('SELECT 1 FROM "Almacen" WHERE "id" = %s', (data.almacenId,))
         if not cur.fetchone():
             raise HTTPException(400, "Almacen desconocido")
+
+        # Validar productos y consultar disponibilidad antes de insertar.
+        disponibles: dict[str, Decimal] = {}
+        for pid in {r.productoId for r in data.items} | {d.productoId for d in data.demandaNoAtendida}:
+            sv._producto(cur, pid, empresa["id"])
+            disponibles[pid] = max(Decimal("0"), inventario.disponible(cur, data.almacenId, pid))
+
+        vendedor_id = usuario["id"] if es_vendedor(usuario) else None
         numero = correlativo.formatear("PED", correlativo.siguiente(cur, empresa["id"], "PEDIDO"))
         cur.execute(
             'INSERT INTO "Pedido" ("id", "organizacionId", "empresaId", "numero", "clienteId", "almacenId", "vendedorId", '
             '"origen", "listaPrecioCodigo", "notas", "creadoPorId") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
             (pedido_id, empresa["organizacionId"], empresa["id"], numero, cliente["id"], data.almacenId,
-             usuario["id"] if es_vendedor(usuario) else None, data.origen, cliente.get("listaPrecioCodigo"),
-             data.notas, usuario["id"]),
+             vendedor_id, data.origen, cliente.get("listaPrecioCodigo"), data.notas, usuario["id"]),
         )
+
+        solicitadas_items: dict[str, Decimal] = {}
+        restante = dict(disponibles)
         for r in data.items:
-            sv._producto(cur, r.productoId, empresa["id"])
+            solicitadas_items[r.productoId] = solicitadas_items.get(r.productoId, Decimal("0")) + r.cajas
+            if data.ajustarStock:
+                cajas_item = min(r.cajas, restante[r.productoId])
+                restante[r.productoId] -= cajas_item
+                if cajas_item <= 0:
+                    continue
+            else:
+                cajas_item = r.cajas
             precio = r.precioCajaUsd if r.precioCajaUsd is not None and not es_vendedor(usuario) else _precio(
                 cur, cliente, empresa["id"], r.productoId
             )
             cur.execute(
                 'INSERT INTO "PedidoItem" ("id", "pedidoId", "productoId", "cajas", "precioCajaUsd", "descuentoPct") '
                 "VALUES (%s, %s, %s, %s, %s, %s)",
-                (f"pi-{uuid.uuid4().hex[:16]}", pedido_id, r.productoId, r.cajas, precio, r.descuentoPct),
+                (f"pi-{uuid.uuid4().hex[:16]}", pedido_id, r.productoId, cajas_item, precio, r.descuentoPct),
             )
+
+        # Demanda no atendida: automatica (cuando items excede disponible) y/o
+        # explicita en data.demandaNoAtendida, deduplicada por productoId.
+        solicitadas_explicitas: dict[str, Decimal] = {}
+        for d in data.demandaNoAtendida:
+            solicitadas_explicitas[d.productoId] = solicitadas_explicitas.get(d.productoId, Decimal("0")) + d.cajasSolicitadas
+
+        candidatos_demanda: dict[str, Decimal] = {}
+        for pid, cajas_sol in solicitadas_items.items():
+            if cajas_sol > disponibles[pid]:
+                candidatos_demanda[pid] = cajas_sol
+        for pid, cajas_sol in solicitadas_explicitas.items():
+            prev = candidatos_demanda.get(pid, Decimal("0"))
+            candidatos_demanda[pid] = max(prev, cajas_sol)
+
+        for pid, cajas_sol in candidatos_demanda.items():
+            cajas_disp = disponibles[pid]
+            if cajas_sol <= cajas_disp:
+                continue
+            cajas_faltantes = cajas_sol - cajas_disp
+            motivo = "SIN_STOCK" if cajas_disp <= 0 else "STOCK_PARCIAL"
+            cur.execute(
+                'INSERT INTO "DemandaNoAtendida" '
+                '("id", "organizacionId", "empresaId", "almacenId", "clienteId", "vendedorId", "productoId", '
+                '"pedidoId", "cajasSolicitadas", "cajasDisponibles", "cajasFaltantes", "motivo") '
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    f"dna-{uuid.uuid4().hex[:16]}", empresa["organizacionId"], empresa["id"], data.almacenId,
+                    cliente["id"], vendedor_id, pid, pedido_id, cajas_sol, cajas_disp, cajas_faltantes, motivo,
+                ),
+            )
+
         bitacora.registrar(cur, usuario["id"], "Pedido", pedido_id, "crear", None, {"numero": numero})
         conn.commit()
-        return _pedido_json(*_pedido(cur, pedido_id, usuario))
+        return _pedido_json(*_pedido(cur, pedido_id, usuario), demandas=_demandas_de_pedido(cur, pedido_id))
+
+
+def _consultar_demanda_no_atendida(
+    cur,
+    *,
+    usuario: dict,
+    empresa_id: str | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    vendedor_id: str | None = None,
+    producto_id: str | None = None,
+) -> dict:
+    if desde and hasta and hasta < desde:
+        raise HTTPException(400, "La fecha final no puede ser anterior a la inicial")
+    condiciones: list[str] = []
+    params: list = []
+    if empresa_id:
+        empresas.exigir(cur, usuario, empresa_id)
+        condiciones.append('d."empresaId" = %s')
+        params.append(empresa_id)
+    else:
+        permitidas = [e["id"] for e in empresas.del_usuario(cur, usuario)]
+        if not permitidas:
+            return {
+                "items": [],
+                "resumen": {
+                    "totalRegistros": 0,
+                    "totalCajasSolicitadas": 0.0,
+                    "totalCajasDisponibles": 0.0,
+                    "totalCajasFaltantes": 0.0,
+                    "sinStock": 0,
+                    "stockParcial": 0,
+                    "productosDistintos": 0,
+                },
+            }
+        condiciones.append('d."empresaId" = ANY(%s)')
+        params.append(permitidas)
+    if desde:
+        inicio, _ = dias_caracas_en_utc(desde, desde)
+        condiciones.append('d."fecha" >= %s')
+        params.append(inicio)
+    if hasta:
+        _, fin = dias_caracas_en_utc(hasta, hasta)
+        condiciones.append('d."fecha" < %s')
+        params.append(fin)
+    vendedor_filtro = usuario["id"] if es_vendedor(usuario) else vendedor_id
+    if vendedor_filtro:
+        condiciones.append('d."vendedorId" = %s')
+        params.append(vendedor_filtro)
+    if producto_id:
+        condiciones.append('d."productoId" = %s')
+        params.append(producto_id)
+    where_sql = f'WHERE {" AND ".join(condiciones)}' if condiciones else ""
+    cur.execute(
+        'SELECT d."id", d."organizacionId", d."empresaId", ef."codigo" AS "empresaCodigo", '
+        'ef."razonSocial" AS "empresaNombre", d."almacenId", a."nombre" AS "almacenNombre", '
+        'd."clienteId", c."codigo" AS "clienteCodigo", '
+        'COALESCE(c."razonSocial", c."nombre") AS "clienteNombre", '
+        'd."vendedorId", u."nombre" AS "vendedorNombre", '
+        'd."productoId", p."codigo" AS "productoCodigo", p."nombre" AS "productoNombre", p."grupo" AS "productoGrupo", '
+        'd."pedidoId", ped."numero" AS "pedidoNumero", '
+        'd."cajasSolicitadas", d."cajasDisponibles", d."cajasFaltantes", d."motivo", d."fecha" '
+        'FROM "DemandaNoAtendida" d '
+        'JOIN "EmpresaFiscal" ef ON ef."id" = d."empresaId" '
+        'JOIN "Almacen" a ON a."id" = d."almacenId" '
+        'JOIN "Cliente" c ON c."id" = d."clienteId" '
+        'JOIN "Producto" p ON p."id" = d."productoId" '
+        'LEFT JOIN "Usuario" u ON u."id" = d."vendedorId" '
+        'LEFT JOIN "Pedido" ped ON ped."id" = d."pedidoId" '
+        f'{where_sql} '
+        'ORDER BY d."fecha" DESC, d."id" DESC LIMIT 1000',
+        params,
+    )
+    filas = [_demanda_json(f) for f in cur.fetchall()]
+    resumen = {
+        "totalRegistros": len(filas),
+        "totalCajasSolicitadas": round(sum(f["cajasSolicitadas"] for f in filas), 3),
+        "totalCajasDisponibles": round(sum(f["cajasDisponibles"] for f in filas), 3),
+        "totalCajasFaltantes": round(sum(f["cajasFaltantes"] for f in filas), 3),
+        "sinStock": sum(1 for f in filas if f["motivo"] == "SIN_STOCK"),
+        "stockParcial": sum(1 for f in filas if f["motivo"] == "STOCK_PARCIAL"),
+        "productosDistintos": len({f["productoId"] for f in filas}),
+    }
+    return {"items": filas, "resumen": resumen}
+
+
+@router.get("/demanda-no-atendida")
+def listar_demanda_no_atendida(
+    empresaId: str | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    vendedorId: str | None = None,
+    productoId: str | None = None,
+    usuario: dict = Depends(requiere_permiso("ventas.pedidos.ver")),
+):
+    with get_connection() as conn, conn.cursor() as cur:
+        return _consultar_demanda_no_atendida(
+            cur,
+            usuario=usuario,
+            empresa_id=empresaId,
+            desde=desde,
+            hasta=hasta,
+            vendedor_id=vendedorId,
+            producto_id=productoId,
+        )
 
 
 @router.get("/pedidos/{pedido_id}")
