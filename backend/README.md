@@ -63,14 +63,29 @@ Desde la raíz del proyecto:
 npm run dev:api
 ```
 
-Equivalente manual: `backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000 --app-dir backend`.
+Equivalente manual: `backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8010 --app-dir backend`.
 
-Swagger interactivo en `http://localhost:8000/docs`.
+Swagger interactivo en `http://localhost:8010/docs`. (Es el 8010 y no el 8000
+a propósito: en el 8000 Docker Desktop publica la API de SIGAT, y como
+Windows resuelve `localhost` primero a IPv6, el front terminaba hablando con
+SIGAT.)
 
 Para frontend + backend juntos: `npm run dev:all` desde la raíz (ver README
-principal). Para cerrar todo: `npm run stop` (cierra por puerto 3000/8000,
-con respaldo por si `uvicorn --reload` deja un proceso hijo huérfano en
+principal). Para cerrar todo: `npm run stop` (cierra lo que escucha en
+3000/8010 y sus procesos hijos, por si `uvicorn --reload` deja uno huérfano en
 Windows — ver [`scripts/stop-dev.ps1`](../scripts/stop-dev.ps1)).
+
+## Pruebas
+
+```bash
+backend\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
+cd backend && .venv\Scripts\python.exe -m pytest tests
+```
+
+Crean una base desechable en un Postgres **local** (con PostGIS y pgRouting)
+y le aplican todas las migraciones de `prisma/migrations`. Toman el servidor
+de `PRUEBAS_POSTGRES_URL` o, si no está, del `DATABASE_URL` del `.env`; si
+ese apunta a otro host (Neon), se niegan a correr.
 
 ## Análisis de rutas (red vial en la base)
 

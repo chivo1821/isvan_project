@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
-    "dev:api": "backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000 --app-dir backend",
+    "dev:api": "backend\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8010 --app-dir backend",
     "dev:all": "concurrently -n next,api -c blue,green \"npm run dev\" \"npm run dev:api\"",
     "dev:admin": "concurrently -n next,api -c blue,green \"npm run dev:admin:web\" \"npm run dev:admin:api\"",
     "dev:admin:web": "next dev -p 3001",
@@ -20,6 +20,7 @@
     "@hookform/resolvers": "^5.7.1",
     "@prisma/client": "^7.9.1",
     "@tanstack/react-table": "^8.21.3",
+    "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

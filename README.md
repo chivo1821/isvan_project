@@ -55,7 +55,7 @@ Copia `.env.example` a `.env` en la raíz del proyecto y completa:
 | Variable | Para qué |
 |---|---|
 | `DATABASE_URL` | Cadena de conexión de Postgres (local o Neon) |
-| `NEXT_PUBLIC_API_URL` | URL del backend FastAPI (`http://localhost:8000` en dev) |
+| `NEXT_PUBLIC_API_URL` | URL del backend FastAPI (`http://localhost:8010` en dev) |
 | `ALLOWED_ORIGINS` | Orígenes permitidos por CORS (el dominio del frontend) |
 | `COOKIE_SECURE` | `false` en dev (HTTP), `true` en producción (HTTPS) — la cookie de sesión lo exige |
 | `CORREO_MODO` | Cómo salen los correos del portal (códigos, avisos de pago): `smtp`, `resend` o `consola` (no envía; los deja en `backend/media/correos-dev.log`). Ver `backend/app/services/correo.py` |
@@ -112,7 +112,7 @@ npm run dev:all
 ```
 
 Abre [http://localhost:3000](http://localhost:3000). Swagger de la API en
-`http://localhost:8000/docs`. Para cerrar todo: `npm run stop`.
+`http://localhost:8010/docs`. Para cerrar todo: `npm run stop`.
 
 Más detalle del backend (estructura de carpetas, endpoints, jobs) en
 [`backend/README.md`](backend/README.md).
