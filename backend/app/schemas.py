@@ -314,6 +314,87 @@ class LoginRequest(BaseModel):
     password: str
 
 
+# ---------- App movil de campo ----------
+
+Dispositivo = Optional[Annotated[str, Field(max_length=120)]]
+
+
+class LoginMovilRequest(LoginRequest):
+    dispositivo: Dispositivo = None
+
+
+class LoginMotorizadoMovilRequest(LoginMotorizadoRequest):
+    dispositivo: Dispositivo = None
+
+
+class RegistroMotorizadoMovilRequest(RegistroMotorizadoRequest):
+    dispositivo: Dispositivo = None
+
+
+class SesionMovil(BaseModel):
+    """El token va en la respuesta: la app lo guarda en el almacen seguro
+    del telefono y lo manda como Authorization: Bearer."""
+
+    token: str
+    usuario: Usuario
+    expiraEn: Instante
+
+
+class Jornada(BaseModel):
+    id: str
+    iniciadaEn: Instante
+    terminadaEn: Optional[Instante] = None
+    cierre: Optional[str] = None
+    vehiculoId: Optional[str] = None
+
+
+class EstadoJornada(BaseModel):
+    jornada: Optional[Jornada] = None
+    # Cada cuanto manda puntos y lotes la app (lo decide el servidor, para
+    # poder ajustarlo sin publicar otra version).
+    segundosEntrePuntos: int
+    metrosEntrePuntos: int
+    segundosEntreEnvios: int
+
+
+class PuntoUbicacion(BaseModel):
+    lat: Annotated[float, Field(ge=-90, le=90)]
+    lng: Annotated[float, Field(ge=-180, le=180)]
+    precisionM: Optional[Annotated[float, Field(ge=0)]] = None
+    velocidad: Optional[float] = None
+    rumbo: Optional[float] = None
+    bateria: Optional[Annotated[float, Field(ge=0, le=1)]] = None
+    # La hora del telefono cuando se tomo el punto (milisegundos desde 1970,
+    # como la da Android). El servidor la corrige con `enviadoEn`.
+    tomadaEnMs: int
+
+
+class LotePosiciones(BaseModel):
+    jornadaId: str
+    # La hora del telefono al enviar el lote, en el mismo reloj que los
+    # puntos: la diferencia contra el reloj del servidor es el desfase que se
+    # le corrige a cada punto.
+    enviadoEnMs: int
+    puntos: Annotated[list[PuntoUbicacion], Field(min_length=1, max_length=200)]
+
+
+class LoteRecibido(BaseModel):
+    recibidos: int
+    nuevos: int
+    # Si la jornada ya estaba cerrada (por ejemplo, la cerro el cierre
+    # automatico), la app deja de mandar.
+    jornadaAbierta: bool
+
+
+class MarcaParada(BaseModel):
+    """Opcional en llegada, entrega y no entregado (la web no lo manda). La
+    app lo manda cuando la marca se hizo sin senal y sale despues."""
+
+    haceSegundos: Optional[Annotated[int, Field(ge=0)]] = None
+    lat: Optional[Annotated[float, Field(ge=-90, le=90)]] = None
+    lng: Optional[Annotated[float, Field(ge=-180, le=180)]] = None
+
+
 class CambiarPasswordRequest(BaseModel):
     passwordActual: str
     passwordNueva: ClaveNueva
@@ -619,6 +700,33 @@ class AvisoRuta(BaseModel):
     rutaId: Optional[str] = None
 
 
+class ClienteNoEntregado(BaseModel):
+    codigo: str
+    nombre: str
+    direccion: Optional[str] = None
+    ciudad: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class NoEntregado(BaseModel):
+    """Una parada que salio de la ruta sin entregarse (ver
+    app/services/reversos.py): REPARTIDOR = "No se pudo entregar" en la
+    calle; DESPACHO o RUTA = la saco el coordinador."""
+
+    despachoId: str
+    numero: str
+    numeroDocumento: str
+    tipoDocumento: Optional[str] = None
+    ordenEnRuta: Optional[int] = None
+    alcance: str
+    motivo: str
+    fecha: Instante
+    llegadaEn: Optional[Instante] = None
+    usuario: str
+    cliente: ClienteNoEntregado
+
+
 class Ruta(BaseModel):
     id: str
     numero: str
@@ -646,6 +754,8 @@ class Ruta(BaseModel):
     despachos: list[Despacho] = []
     puntos: list[RutaPunto] = []
     avisos: list[AvisoRuta] = []
+    # Paradas que salieron de la ruta sin entregarse, con su motivo.
+    noEntregados: list[NoEntregado] = []
 
 
 class RutasConRelaciones(BaseModel):

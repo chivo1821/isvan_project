@@ -92,3 +92,15 @@ def get_connection() -> Iterator[psycopg.Connection]:
     conexion vuelve al pool en vez de cerrarse."""
     with _pool().connection() as conn:
         yield conn
+
+
+def con_organizacion(cur, organizacion_id: str) -> None:
+    """Fija la organizacion activa para la transaccion actual (RLS).
+
+    Usa set_config(..., true) (equivalente a SET LOCAL) para que la politica
+    de Row-Level Security aisle consultas y escrituras a esa organizacion sin
+    contaminar la conexion cuando vuelva al pool.
+    """
+    if not isinstance(organizacion_id, str) or not organizacion_id.strip():
+        raise ValueError("organizacion_id debe ser un texto no vacio")
+    cur.execute("SELECT set_config('app.organizacion_id', %s, true)", (organizacion_id,))

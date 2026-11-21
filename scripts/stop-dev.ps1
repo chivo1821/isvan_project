@@ -1,13 +1,13 @@
-# Cierra los servidores locales de desarrollo (Next.js en :3000, FastAPI/uvicorn en :8010).
+# Cierra los servidores locales de desarrollo (Next.js en :3000/:3001, FastAPI/uvicorn en :8010/:8001).
 # Uso: npm run stop
 #
-# La API de desarrollo usa el 8010 y NO el 8000: en el 8000 publica Docker
-# Desktop la API de SIGAT, que no se debe tocar desde aqui.
+# La API de desarrollo usa el 8010 (o 8001 en dev:admin) y NO el 8000: en el
+# 8000 publica Docker Desktop la API de SIGAT, que no se debe tocar desde aqui.
 #
 # Solo se cierran los procesos que escuchan en estos puertos y sus
 # descendientes. Nunca todos los python/node de la maquina.
 
-$puertos = 3000, 8010
+$puertos = 3000, 3001, 8001, 8010
 
 function Get-Escuchando {
     Get-NetTCPConnection -LocalPort $puertos -State Listen -ErrorAction SilentlyContinue
@@ -51,5 +51,5 @@ if ($final) {
     Write-Output "Atencion: siguen escuchando estos puertos:"
     $final | Format-Table LocalPort, OwningProcess
 } else {
-    Write-Output "Listo. Puertos 3000 y 8010 liberados."
+    Write-Output "Listo. Puertos 3000/3001 y 8010/8001 liberados."
 }

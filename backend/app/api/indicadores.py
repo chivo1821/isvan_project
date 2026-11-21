@@ -578,6 +578,32 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
         for s in cur.fetchall()
     ]
     cur.execute(
+        f'SELECT v."fecha", {iv.SUMAS["documentos"]} AS "documentos", COUNT(*) AS "filas" '
+        'FROM "Venta" v '
+        'JOIN "VentaCarga" c ON c."id" = v."cargaId" '
+        'WHERE c."empresa" = %(empresa)s '
+        '  AND v."empresa" = %(empresa)s '
+        '  AND c."origen" = \'SISTEMA\' '
+        '  AND c."estado" = \'CONFIRMADA\' '
+        '  AND v."reemplazadaPorCargaId" IS NULL '
+        '  AND v."fecha" = ANY(%(dias)s) '
+        'GROUP BY v."fecha" '
+        'ORDER BY v."fecha"',
+        {"empresa": empresa, "dias": dias},
+    )
+    en_sistema = cur.fetchall()
+    fechas_facturadas_en_sistema = (
+        {
+            "fechas": [r["fecha"].isoformat() for r in en_sistema],
+            "desde": en_sistema[0]["fecha"].isoformat(),
+            "hasta": en_sistema[-1]["fecha"].isoformat(),
+            "documentos": sum(r["documentos"] for r in en_sistema),
+            "filas": sum(r["filas"] for r in en_sistema),
+        }
+        if en_sistema
+        else None
+    )
+    cur.execute(
         f'SELECT v."fecha", COUNT(*) AS "filas", COALESCE(SUM(v."montoUsd"), 0) AS "ventaNeta", '
         'MAX(c."archivo") AS "archivo", BOOL_OR(v."fecha" = ANY(%(dias)s)) AS "enArchivo" '
         f'{iv.FUENTE_VIGENTE} '
@@ -670,6 +696,7 @@ def _validar(cur, empresa: str, extracto: ExtractoVentas) -> dict:
         "notasEntrega": len({f.num_doc for f in filas if f.cod_tipo_doc == "NE"}),
         "clientes": len(extracto.clientes),
         "solapes": solapes,
+        "fechasFacturadasEnSistema": fechas_facturadas_en_sistema,
         "cobertura": {
             "diasEnArchivo": len(dias),
             "diasNuevos": len(dias) - len(reemplazados),
@@ -842,12 +869,38 @@ def confirmar_carga(carga_id: str):
     periodo y actualiza clientes y productos con lo que trae el archivo."""
     with get_connection() as conn, conn.cursor() as cur:
         carga = _carga_para_actualizar(cur, carga_id, "PENDIENTE")
+        # Si alguna fecha de esta carga ya tiene ventas facturadas en el
+        # sistema administrativo (VentaCarga.origen = 'SISTEMA'), se frena
+        # aqui: un extracto Excel no puede pisar ni duplicar dias facturados
+        # en el sistema.
+        cur.execute(
+            'SELECT DISTINCT v."fecha" '
+            'FROM "Venta" v '
+            'JOIN "VentaCarga" c ON c."id" = v."cargaId" '
+            'WHERE c."empresa" = %(empresa)s '
+            '  AND v."empresa" = %(empresa)s '
+            '  AND c."origen" = \'SISTEMA\' '
+            '  AND c."estado" = \'CONFIRMADA\' '
+            '  AND v."reemplazadaPorCargaId" IS NULL '
+            '  AND v."fecha" IN (SELECT DISTINCT n."fecha" FROM "Venta" n WHERE n."cargaId" = %(id)s) '
+            'ORDER BY v."fecha"',
+            {"id": carga_id, "empresa": carga["empresa"]},
+        )
+        fechas_sistema = [r["fecha"] for r in cur.fetchall()]
+        if fechas_sistema:
+            fechas_texto = ", ".join(f.isoformat() for f in fechas_sistema)
+            raise HTTPException(
+                409,
+                f"No se puede confirmar la carga: las fechas {fechas_texto} ya tienen ventas facturadas en el sistema administrativo",
+            )
         # El archivo nuevo manda en los DIAS que trae, no en todo su rango:
         # si viene con huecos (marzo y agosto, sin abril a julio), lo que ya
         # estaba cargado en esos dias se conserva.
         cur.execute(
             'UPDATE "Venta" v SET "reemplazadaPorCargaId" = %(id)s FROM "VentaCarga" c '
-            'WHERE c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' AND v."empresa" = %(empresa)s '
+            'WHERE c."id" = v."cargaId" AND c."estado" = \'CONFIRMADA\' '
+            '  AND c."origen" <> \'SISTEMA\' '
+            '  AND v."empresa" = %(empresa)s '
             '  AND v."reemplazadaPorCargaId" IS NULL '
             '  AND v."fecha" IN (SELECT DISTINCT n."fecha" FROM "Venta" n WHERE n."cargaId" = %(id)s)',
             {"id": carga_id, "empresa": carga["empresa"]},

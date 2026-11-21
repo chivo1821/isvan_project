@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { PestanasArea } from "@/components/layout/pestanas-area";
 import { Topbar } from "@/components/layout/topbar";
 import { VigilanteSesion } from "@/components/shared/vigilante-sesion";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -11,7 +12,16 @@ import { getUsuarioActual } from "@/lib/session";
 /** Pantallas solo para ADMIN, además del dashboard ("/"): las cifras del
  * negocio y los módulos de vendedor, cobranzas y supervisor (un DESPACHOS
  * no entra a ellos). El despachador sí es de la operación. */
-const RUTAS_SOLO_ADMIN = ["/indicadores", "/delivery", "/censo", "/vendedor", "/cobranzas", "/supervisor", "/gastos"];
+const RUTAS_SOLO_ADMIN = [
+  "/indicadores",
+  "/delivery",
+  "/censo",
+  "/vendedor",
+  "/cobranzas",
+  "/supervisor",
+  "/gastos",
+  "/administrativo",
+];
 
 function esSoloAdmin(ruta: string) {
   return ruta === "/" || RUTAS_SOLO_ADMIN.some((r) => enModulo(ruta, r));
@@ -50,7 +60,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
           estira el contenido y toda la página se corre de lado. */}
       <SidebarInset className="min-w-0">
         <Topbar user={usuarioActual} />
-        <div className="controles-tactiles flex-1 space-y-6 p-4 sm:p-6">{children}</div>
+        <div className="controles-tactiles flex-1 space-y-6 p-4 sm:p-6">
+          <PestanasArea rol={usuarioActual.rol} />
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

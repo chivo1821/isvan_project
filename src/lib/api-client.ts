@@ -13,6 +13,12 @@
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
+// A donde llaman los Server Components. Instalado en contenedores (ver
+// deploy/README.md) el navegador usa una ruta relativa ("/api/backend", por
+// el proxy) que en Node no sirve: ahi va la direccion interna de la API. En
+// Vercel y en desarrollo no esta definida y es la misma URL de siempre.
+const API_BASE = typeof window === "undefined" ? (process.env.API_URL_INTERNA ?? API_URL) : API_URL;
+
 async function cookieHeader(): Promise<HeadersInit> {
   if (typeof window !== "undefined") return {};
   const { cookies } = await import("next/headers");
@@ -96,7 +102,7 @@ async function handle<T>(res: Response, path: string): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
     credentials: "include",
     headers: await cookieHeader(),
@@ -105,7 +111,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(await cookieHeader()) },
@@ -118,7 +124,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 // Para multipart/form-data (ej. carga de Excel) — sin Content-Type manual,
 // el navegador/runtime le agrega el boundary correcto solo.
 export async function apiPostForm<T>(path: string, formData: FormData): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     credentials: "include",
     headers: await cookieHeader(),
@@ -129,7 +135,7 @@ export async function apiPostForm<T>(path: string, formData: FormData): Promise<
 }
 
 export async function apiDelete<T = void>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",
     credentials: "include",
     headers: await cookieHeader(),
@@ -139,7 +145,7 @@ export async function apiDelete<T = void>(path: string): Promise<T> {
 }
 
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(await cookieHeader()) },
@@ -150,7 +156,7 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(await cookieHeader()) },

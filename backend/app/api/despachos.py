@@ -839,7 +839,7 @@ def reversar_despacho(despacho_id: str, data: ReversarRutaRequest, usuario: dict
 
         # Ya con la ruta bloqueada: que siga en ella y sin entregar.
         cur.execute(
-            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
+            'SELECT "id", "numero", "estado", "llegadaEn", "ordenEnRuta" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
             (despacho_id, ruta["id"]),
         )
         despacho = cur.fetchone()

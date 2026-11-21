@@ -98,3 +98,40 @@ def ids_rutas_visibles(cur, usuario: dict) -> list[str] | None:
 
     cur.execute('SELECT "id" FROM "Ruta" WHERE %s IN ("vehiculoId", "vehiculoApoyoId")', (vehiculo_id,))
     return [r["id"] for r in cur.fetchall()]
+
+
+# ---------- Permisos de los modulos del sistema administrativo ----------
+# Los modulos de hoy siguen cerrados por rol. Los nuevos piden un permiso
+# ("ventas.facturar"): ADMIN los tiene todos; los demas, los de su rol
+# (RolPermiso) mas los sueltos del usuario (UsuarioPermiso).
+
+
+def permisos_del_usuario(cur, usuario: dict) -> set[str]:
+    if usuario["rol"] == "ADMIN":
+        cur.execute('SELECT "codigo" FROM "Permiso"')
+        return {f["codigo"] for f in cur.fetchall()}
+    cur.execute(
+        'SELECT "permisoCodigo" AS c FROM "RolPermiso" WHERE "rol" = %s '
+        'UNION SELECT "permisoCodigo" FROM "UsuarioPermiso" WHERE "usuarioId" = %s',
+        (usuario["rol"], usuario["id"]),
+    )
+    return {f["c"] for f in cur.fetchall()}
+
+
+def tiene_permiso(cur, usuario: dict, codigo: str) -> bool:
+    return usuario["rol"] == "ADMIN" or codigo in permisos_del_usuario(cur, usuario)
+
+
+def requiere_permiso(codigo: str):
+    """Dependencia de endpoint: 403 si el usuario no tiene el permiso."""
+    from app.core.db import get_connection
+
+    def _check(usuario: dict = Depends(get_current_user)) -> dict:
+        if usuario["rol"] == "ADMIN":
+            return usuario
+        with get_connection() as conn, conn.cursor() as cur:
+            if not tiene_permiso(cur, usuario, codigo):
+                raise HTTPException(403, "No tienes permiso para realizar esta accion")
+        return usuario
+
+    return _check

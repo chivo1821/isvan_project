@@ -106,6 +106,7 @@ enum OrigenDocumento {
   EXTRACTO_VENTAS
   CXC // futuro: reporte de cuentas por cobrar del sistema administrativo
   MANUAL
+  SISTEMA // emitido por el sistema administrativo
 }
 
 enum TipoMovimientoVenta {
@@ -116,17 +117,21 @@ enum TipoMovimientoVenta {
 // ---------- Usuarios / autenticacion ----------
 
 model Usuario {
-  id           String     @id @default(cuid())
-  nombre       String
+  id             String     @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String     @default("org-principal")
+  nombre         String
   // Opcional solo para los motorizados autogestionados, que entran con
   // placa + PIN (ver backend/app/services/motorizados.py). Los demas
   // usuarios se crean siempre con correo.
-  email        String?    @unique
-  passwordHash String
-  rol          RolUsuario
-  avatarUrl    String?
-  activo       Boolean    @default(true)
-  createdAt    DateTime   @default(now())
+  email          String?    @unique
+  passwordHash   String
+  rol            RolUsuario
+  avatarUrl      String?
+  activo         Boolean    @default(true)
+  createdAt      DateTime   @default(now())
 
   // Motorizados que se registran solos (alta rotacion, moto propia): entran
   // con la placa de su moto y un PIN de 6 digitos. El telefono es para
@@ -181,41 +186,61 @@ model Usuario {
   pagosRegistrados      Pago[]                   @relation("PagoRegistradoPor")
   pagosRevisados        Pago[]                   @relation("PagoRevisadoPor")
   excepcionesDespacho   ExcepcionDespacho[]
+  empresas              UsuarioEmpresa[]
+  permisosExtra         UsuarioPermiso[]
   cargasGasto           GastoCarga[]
+  // App movil: las jornadas de campo y la ultima posicion conocida.
+  jornadas              Jornada[]
+  ultimaPosicion        UltimaPosicion?
+  demandasNoAtendidas   DemandaNoAtendida[]      @relation("DemandaNoAtendidaVendedor")
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
 // lo cual conviene para un equipo pequeno donde puede hacer falta cerrar la
 // sesion de alguien a mano. El token crudo nunca se guarda, solo su hash.
 model Sesion {
-  id        String   @id @default(cuid())
-  usuarioId String
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
-  tokenHash String   @unique
-  creadoEn  DateTime @default(now())
-  expiraEn  DateTime
+  id          String    @id @default(cuid())
+  usuarioId   String
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id])
+  tokenHash   String    @unique
+  creadoEn    DateTime  @default(now())
+  expiraEn    DateTime
+  // WEB (cookie) | MOVIL (token Bearer de la app de campo). La de la app
+  // dura mas y se renueva sola con el uso (ver app/core/auth.py).
+  origen      String    @default("WEB")
+  dispositivo String?
+  ultimoUsoEn DateTime?
 }
 
 // ---------- Almacen y flota ----------
 
 model Almacen {
-  id            String  @id @default(cuid())
-  nombre        String
-  tipo          String // "Centro de Distribucion" | "Planta" | "Tienda"
-  direccion     String
-  ciudad        String
-  lat           Float
-  lng           Float
-  esFrigorifico Boolean @default(true)
+  id             String  @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String  @default("org-principal")
+  nombre         String
+  tipo           String // "Centro de Distribucion" | "Planta" | "Tienda"
+  direccion      String
+  ciudad         String
+  lat            Float
+  lng            Float
+  esFrigorifico  Boolean @default(true)
 
-  despachosOrigen   Despacho[]         @relation("DespachoOrigen")
-  vehiculos         Vehiculo[]
-  rutas             Ruta[]
-  distanciasCliente DistanciaCliente[]
+  despachosOrigen     Despacho[]           @relation("DespachoOrigen")
+  vehiculos           Vehiculo[]
+  rutas               Ruta[]
+  distanciasCliente   DistanciaCliente[]
+  demandasNoAtendidas DemandaNoAtendida[]
 }
 
 model Vehiculo {
   id                 String         @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId     String         @default("org-principal")
   placa              String         @unique
   tipo               TipoVehiculo
   capacidadKg        Float
@@ -243,31 +268,54 @@ model Vehiculo {
 // (ISVAN / TRALOG comparten almacen y flota pero no su cartera de clientes),
 // asi que la llave de negocio es (empresa, codigo), no el codigo solo.
 model Cliente {
-  id            String  @id @default(cuid())
-  empresa       Empresa
-  codigo        String // ej. "CLI-0001", unico solo dentro de su empresa
-  nombre        String
-  tipo          String // "Tienda" | "Distribuidor" | "Consumidor final"
-  direccion     String
-  ciudad        String
-  lat           Float?
-  lng           Float?
+  id             String  @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String  @default("org-principal")
+  empresa        Empresa
+  codigo         String // ej. "CLI-0001", unico solo dentro de su empresa
+  nombre         String
+  tipo           String // "Tienda" | "Distribuidor" | "Consumidor final"
+  direccion      String
+  ciudad         String
+  lat            Float?
+  lng            Float?
   // Obligatorio: lo usan los despachadores para contactar al cliente.
-  telefono      String
-  email         String?
+  telefono       String
+  email          String?
   // Ruta comercial (de venta/reparto) a la que el negocio asigna al cliente,
   // p.ej. "R-07". No es la Ruta (viaje) de este sistema: es un dato del
   // cliente que viene del extracto de ventas y se usa como criterio de peso
   // al sugerir como agrupar despachos en un viaje (ver
   // backend/app/services/plan_rutas.py). Opcional porque hay clientes
   // cargados antes de que existiera la columna.
-  rutaComercial String?
+  rutaComercial  String?
 
   despachos         Despacho[]                  @relation("DespachoDestino")
   distanciasAlmacen DistanciaCliente[]
   paradasLiquidadas LiquidacionDeliveryParada[]
   paradasExcluidas  ParadaDeliveryExcluida[]
   censos            CensoCliente[]
+
+  // ---- Ficha fiscal y comercial (sistema administrativo, fase 0) ----
+  // Opcionales: se completan desde el extracto, la maestra y el censo, y a
+  // mano. Para facturar hacen falta rifCedula y razonSocial.
+  rifCedula              String?
+  razonSocial            String?
+  domicilioFiscal        String?
+  // Si es contribuyente especial, retiene el 75 o 100 % del IVA de cada
+  // factura y entrega su comprobante (se registra como Pago RETENCION).
+  contribuyenteEspecial  Boolean  @default(false)
+  porcentajeRetencionIva Int?
+  limiteCreditoUsd       Decimal? @db.Decimal(14, 2)
+  diasCredito            Int?
+  // Lo que hoy trae VentaCliente del extracto: ruta de venta, tipo y lista.
+  rutaVenta              String?
+  tipoVenta              String?
+  listaPrecioCodigo      String?
+
+  demandasNoAtendidas DemandaNoAtendida[]
 
   @@unique([empresa, codigo])
 }
@@ -276,6 +324,10 @@ model Cliente {
 
 model Despacho {
   id                   String         @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId       String         @default("org-principal")
   numero               String         @unique // ej. "D-0001"
   // Numero de factura/nota de entrega del documento origen (Excel o carga
   // manual). Junto con el tipo es la llave real de agrupacion e idempotencia
@@ -311,6 +363,11 @@ model Despacho {
   // entrega anterior y esta llegada, el tiempo de traslado.
   llegadaEn   DateTime?
   entregadoEn DateTime?
+  // Donde estaba el telefono al marcar (solo la app movil lo manda).
+  llegadaLat   Float?
+  llegadaLng   Float?
+  entregadoLat Float?
+  entregadoLng Float?
 
   items         DespachoItem[]
   aprobaciones  DespachoAprobacion[]
@@ -370,6 +427,9 @@ model DespachoReverso {
   // entregar): al liberarlo se borra del despacho y queda aca.
   llegadaEn      DateTime?
   fecha          DateTime       @default(now())
+  // El lugar que tenia en la ruta, para mostrarla en su sitio (en rojo) en la
+  // linea de tiempo. Vacio en los reversos de antes de 2026-11-12.
+  ordenEnRuta    Int?
 
   @@index([despachoId])
   @@index([rutaId])
@@ -383,6 +443,10 @@ model DespachoReverso {
 // Almacen Catia. Reemplaza el calculo "1 despacho = 1 tramo" de antes.
 model Ruta {
   id               String     @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId   String     @default("org-principal")
   numero           String     @unique // ej. "R-0001"
   // Opcional: una ruta se puede planificar antes de tener vehiculo (que no
   // frene la planificacion si la flota esta ocupada) y asignarselo despues.
@@ -458,11 +522,15 @@ model RutaPunto {
 // usuario VENDEDOR. Sus clientes son los VentaCliente de esas rutas, y de ahi
 // salen los despachos que puede ver y los clientes que tiene que visitar.
 model VendedorRuta {
-  id        String  @id @default(cuid())
-  usuarioId String
-  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  empresa   Empresa
-  ruta      String
+  id             String  @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String  @default("org-principal")
+  usuarioId      String
+  usuario        Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresa        Empresa
+  ruta           String
 
   @@unique([usuarioId, empresa, ruta])
   @@index([empresa, ruta])
@@ -474,6 +542,10 @@ model VendedorRuta {
 // empieza de cero sin borrar nada: basta con filtrar por `semana`.
 model Visita {
   id                String    @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId    String    @default("org-principal")
   vendedorId        String
   vendedor          Usuario   @relation(fields: [vendedorId], references: [id])
   empresa           Empresa
@@ -505,25 +577,32 @@ model Visita {
 // Venta pero no cuentan) y el ADMIN lo confirma despues de ver la
 // validacion. Revertirla la saca de los indicadores sin perder el registro.
 model VentaCarga {
-  id           String           @id @default(cuid())
-  empresa      Empresa
-  archivo      String
-  periodoDesde DateTime         @db.Date
-  periodoHasta DateTime         @db.Date
-  filas        Int
-  estado       EstadoCargaVenta @default(PENDIENTE)
-  subidaEn     DateTime         @default(now())
-  subidaPorId  String
-  subidaPor    Usuario          @relation(fields: [subidaPorId], references: [id])
-  confirmadaEn DateTime?
-  revertidaEn  DateTime?
+  id             String           @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String           @default("org-principal")
+  empresa        Empresa
+  archivo        String
+  periodoDesde   DateTime         @db.Date
+  periodoHasta   DateTime         @db.Date
+  filas          Int
+  estado         EstadoCargaVenta @default(PENDIENTE)
+  subidaEn       DateTime         @default(now())
+  subidaPorId    String
+  subidaPor      Usuario          @relation(fields: [subidaPorId], references: [id])
+  confirmadaEn   DateTime?
+  revertidaEn    DateTime?
   // La validacion que se le mostro al ADMIN antes de confirmar, para poder
   // revisarla despues desde el historial.
-  resumen      Json
+  // EXTRACTO: subida por el administrador. SISTEMA: la carga permanente donde
+  // escribe el sistema administrativo al emitir (una por empresa).
+  origen         String           @default("EXTRACTO")
+  resumen        Json
   // Clientes y productos tal como vienen en el archivo. Se aplican a
   // VentaCliente/VentaProducto recien al confirmar: una carga pendiente no
   // debe tocar los datos que ya se usan.
-  dimensiones  Json
+  dimensiones    Json
 
   ventas Venta[] @relation("VentasDeLaCarga")
 
@@ -534,14 +613,18 @@ model VentaCarga {
 // logistica: el extracto trae clientes que no estan en el maestro de
 // despacho; el cruce entre ambos es por (empresa, codigo).
 model VentaCliente {
-  id          String  @id @default(cuid())
-  empresa     Empresa
-  codigo      String
-  nombre      String
-  tipo        String // TRADICIONAL | MODERNO | DISTRIBUIDORES
+  id             String  @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String  @default("org-principal")
+  empresa        Empresa
+  codigo         String
+  nombre         String
+  tipo           String // TRADICIONAL | MODERNO | DISTRIBUIDORES
   // Texto, no numero: conviven los formatos "R1".."R8" y "10", "11", "77".
-  ruta        String
-  listaPrecio String?
+  ruta           String
+  listaPrecio    String?
 
   @@unique([empresa, codigo])
   @@index([empresa, ruta])
@@ -551,6 +634,10 @@ model VentaCliente {
 // (columna "Pc" de la hoja "precio de compras"), nunca por unidad.
 model VentaProducto {
   id              String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId  String   @default("org-principal")
   empresa         Empresa
   codigo          BigInt
   nombre          String
@@ -569,14 +656,18 @@ model VentaProducto {
 // volver a aplicarla, en orden con las cargas, cuando se revierte una carga
 // de ventas (ver revertir_carga en backend/app/api/indicadores.py).
 model ListaPrecioCarga {
-  id          String   @id @default(cuid())
-  empresa     Empresa
-  archivo     String
+  id             String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String   @default("org-principal")
+  empresa        Empresa
+  archivo        String
   // [{codigo, nombre, grupo, costoCajaUsd}]
-  productos   Json
-  subidaEn    DateTime @default(now())
-  subidaPorId String?
-  subidaPor   Usuario? @relation("ListasPrecioSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
+  productos      Json
+  subidaEn       DateTime @default(now())
+  subidaPorId    String?
+  subidaPor      Usuario? @relation("ListasPrecioSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
 
   @@index([empresa, subidaEn])
 }
@@ -590,12 +681,16 @@ model ListaPrecioCarga {
 // vendedor, solo cliente y ruta (ver VentaCliente.ruta), asi que la ruta es
 // el nivel mas fino que el dato soporta.
 model MetaVenta {
-  id       String   @id @default(cuid())
-  empresa  Empresa
-  ruta     String
+  id             String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String   @default("org-principal")
+  empresa        Empresa
+  ruta           String
   // Primer dia del mes, como el resto de los periodos del modulo.
-  mes      DateTime @db.Date
-  montoUsd Decimal  @db.Decimal(20, 2)
+  mes            DateTime @db.Date
+  montoUsd       Decimal  @db.Decimal(20, 2)
 
   actualizadoEn    DateTime @default(now()) @updatedAt
   actualizadoPorId String?
@@ -609,12 +704,16 @@ model MetaVenta {
 // app/services/cuadro_metas.py). Aparte de MetaVenta (USD): el cliente
 // maneja las dos y no siempre las carga juntas.
 model MetaLitros {
-  id      String   @id @default(cuid())
-  empresa Empresa
-  ruta    String
+  id             String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String   @default("org-principal")
+  empresa        Empresa
+  ruta           String
   // Primer dia del mes, como MetaVenta.
-  mes     DateTime @db.Date
-  litros  Decimal  @db.Decimal(14, 2)
+  mes            DateTime @db.Date
+  litros         Decimal  @db.Decimal(14, 2)
 
   actualizadoEn    DateTime @default(now()) @updatedAt
   actualizadoPorId String?
@@ -635,6 +734,10 @@ model DiaFeriado {
 // Una fila del extracto: un producto dentro de un documento.
 model Venta {
   id                    BigInt              @id @default(autoincrement())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId        String              @default("org-principal")
   empresa               Empresa
   cargaId               String
   carga                 VentaCarga          @relation("VentasDeLaCarga", fields: [cargaId], references: [id], onDelete: Cascade)
@@ -680,6 +783,10 @@ model Venta {
 // sin tope (hastaKm = null) y atrapa todo lo que quede por encima.
 model TabuladorDelivery {
   id               String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId   String   @default("org-principal")
   orden            Int      @unique
   hastaKm          Float?
   montoUsd         Decimal  @db.Decimal(10, 2)
@@ -709,6 +816,10 @@ model DistanciaCliente {
 // cambiar el tabulador despues no altera una liquidacion hecha.
 model LiquidacionDelivery {
   id              String    @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId  String    @default("org-principal")
   repartidorId    String
   repartidor      Usuario   @relation("LiquidacionesDelivery", fields: [repartidorId], references: [id])
   desde           DateTime  @db.Date
@@ -867,6 +978,10 @@ model RutaCalculada {
 // de ellas para listar y filtrar sin abrir el JSON.
 model Censo {
   id               String      @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId   String      @default("org-principal")
   formulario       String
   version          String
   usuarioId        String
@@ -959,14 +1074,18 @@ model CensoCliente {
 // empresa. Cada carga es una foto completa: vale la ultima de cada empresa
 // (ver backend/app/services/maestra_import.py).
 model MaestraCarga {
-  id          String   @id @default(cuid())
-  empresa     Empresa
-  archivo     String
-  filas       Int
-  resumen     Json
-  subidaEn    DateTime @default(now())
-  subidaPorId String?
-  subidaPor   Usuario? @relation("MaestrasSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
+  id             String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String   @default("org-principal")
+  empresa        Empresa
+  archivo        String
+  filas          Int
+  resumen        Json
+  subidaEn       DateTime @default(now())
+  subidaPorId    String?
+  subidaPor      Usuario? @relation("MaestrasSubidasPor", fields: [subidaPorId], references: [id], onDelete: SetNull)
 
   clientes MaestraCliente[]
 
@@ -974,12 +1093,16 @@ model MaestraCarga {
 }
 
 model MaestraCliente {
-  id      String       @id @default(cuid())
-  cargaId String
-  carga   MaestraCarga @relation(fields: [cargaId], references: [id], onDelete: Cascade)
-  empresa Empresa
+  id             String       @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String       @default("org-principal")
+  cargaId        String
+  carga          MaestraCarga @relation(fields: [cargaId], references: [id], onDelete: Cascade)
+  empresa        Empresa
   // Sin ceros a la izquierda, como en ventas.
-  codigo  String
+  codigo         String
 
   razonSocial  String
   // "5", "12"... ("77" son los dados de baja: fuera de "por censar").
@@ -1040,6 +1163,10 @@ model Configuracion {
 // nunca puede entrar a la API interna.
 model CuentaPortal {
   id                 String             @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId     String             @default("org-principal")
   email              String             @unique
   passwordHash       String
   nombre             String
@@ -1116,21 +1243,25 @@ model TasaCambio {
 
 // Un documento por cobrar (FA/NE) o a favor del cliente (DV/DN, negativo).
 model DocumentoCobro {
-  id            String          @id @default(cuid())
-  empresa       Empresa
-  tipoDoc       String // FA | NE | DV | DN
-  numero        String
-  codigoCliente String
-  fecha         DateTime        @db.Date
+  id             String          @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String          @default("org-principal")
+  empresa        Empresa
+  tipoDoc        String // FA | NE | DV | DN
+  numero         String
+  codigoCliente  String
+  fecha          DateTime        @db.Date
   // Solo si el origen lo trae (CXC); si no, vence a fecha + dias de tolerancia.
-  vencimiento   DateTime?       @db.Date
-  montoUsd      Decimal         @db.Decimal(20, 2)
-  montoBs       Decimal         @db.Decimal(20, 2)
-  origen        OrigenDocumento
+  vencimiento    DateTime?       @db.Date
+  montoUsd       Decimal         @db.Decimal(20, 2)
+  montoBs        Decimal         @db.Decimal(20, 2)
+  origen         OrigenDocumento
   // false si ya no esta en su origen (se revirtio la carga); se conserva
   // por los pagos que lo referencian.
-  vigente       Boolean         @default(true)
-  actualizadoEn DateTime        @default(now())
+  vigente        Boolean         @default(true)
+  actualizadoEn  DateTime        @default(now())
 
   aplicaciones PagoAplicacion[]
 
@@ -1141,6 +1272,10 @@ model DocumentoCobro {
 
 model Pago {
   id                 String        @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId     String        @default("org-principal")
   numero             String        @unique // ej. "P-000123"
   empresa            Empresa
   codigoCliente      String
@@ -1209,18 +1344,469 @@ model ExcepcionDespacho {
 
 // Donde pagan los clientes (se muestra en el portal).
 model CuentaBancariaEmpresa {
-  id          String   @id @default(cuid())
-  empresa     Empresa
-  bancoCodigo String
-  tipo        String // PAGO_MOVIL | TRANSFERENCIA
+  id             String   @id @default(cuid())
+  // Dueno de la fila (ver Organizacion). Sin llave foranea a proposito: con
+  // una sola organizacion el valor por defecto alcanza y ninguna escritura
+  // existente cambia; el aislamiento entre organizaciones va con RLS.
+  organizacionId String   @default("org-principal")
+  empresa        Empresa
+  bancoCodigo    String
+  tipo           String // PAGO_MOVIL | TRANSFERENCIA
   // Telefono (pago movil) o cuenta de 20 digitos (transferencia).
-  numero      String
-  rif         String
-  titular     String
-  activa      Boolean  @default(true)
-  creadaEn    DateTime @default(now())
+  numero         String
+  rif            String
+  titular        String
+  activa         Boolean  @default(true)
+  creadaEn       DateTime @default(now())
 
   @@index([empresa])
+}
+
+// ---------- Sistema administrativo: base multiempresa (fase 0) ----------
+//
+// Organizacion: el cliente que compra el sistema. EmpresaFiscal: cada RIF
+// que factura dentro de ella. Hoy hay una organizacion ("org-principal") con
+// ISVAN y TRALOG; su `codigo` es el mismo valor del enum Empresa, que las
+// tablas existentes siguen usando hasta convertirlo tabla por tabla.
+
+model Organizacion {
+  id                  String              @id @default(cuid())
+  nombre              String
+  activa              Boolean             @default(true)
+  creadaEn            DateTime            @default(now())
+  empresas            EmpresaFiscal[]
+  demandasNoAtendidas DemandaNoAtendida[]
+}
+
+model EmpresaFiscal {
+  id                     String       @id @default(cuid())
+  organizacionId         String
+  organizacion           Organizacion @relation(fields: [organizacionId], references: [id])
+  // El mismo valor del enum Empresa ("ISVAN", "TRALOG") para enlazar con
+  // las tablas que todavia lo usan.
+  codigo                 String
+  rif                    String?
+  razonSocial            String
+  nombreComercial        String?
+  domicilioFiscal        String?
+  telefono               String?
+  // La Providencia SNAT/2026/00093 lo pide en la factura.
+  correo                 String?
+  contribuyenteEspecial  Boolean      @default(false)
+  // Agente de retencion de IVA: retiene 75 o 100 % del IVA a sus proveedores.
+  agenteRetencionIva     Boolean      @default(false)
+  porcentajeRetencionIva Int?
+  agenteRetencionIslr    Boolean      @default(false)
+  activa                 Boolean      @default(true)
+  creadaEn               DateTime     @default(now())
+  actualizadaEn          DateTime     @default(now())
+
+  usuarios            UsuarioEmpresa[]
+  productos           Producto[]
+  listasPrecio        ListaPrecio[]
+  demandasNoAtendidas DemandaNoAtendida[]
+
+  @@unique([organizacionId, codigo])
+}
+
+// A que empresas entra cada usuario. Un usuario sin filas aca entra a todas
+// las de su organizacion (asi siguen funcionando los usuarios de hoy).
+model UsuarioEmpresa {
+  usuarioId String
+  usuario   Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresaId String
+  empresa   EmpresaFiscal @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, empresaId])
+}
+
+// Catalogo de permisos de los modulos nuevos ("ventas.facturar"). Los
+// modulos de hoy siguen cerrados por rol (ROUTERS_POR_ROL en main.py).
+model Permiso {
+  codigo      String           @id
+  modulo      String
+  descripcion String
+  roles       RolPermiso[]
+  usuarios    UsuarioPermiso[]
+}
+
+// Los permisos que trae cada rol (plantilla). ADMIN los tiene todos sin
+// necesidad de filas.
+model RolPermiso {
+  rol           RolUsuario
+  permisoCodigo String
+  permiso       Permiso    @relation(fields: [permisoCodigo], references: [codigo], onDelete: Cascade)
+
+  @@id([rol, permisoCodigo])
+}
+
+// Permisos sueltos para un usuario, ademas de los de su rol.
+model UsuarioPermiso {
+  usuarioId     String
+  usuario       Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  permisoCodigo String
+  permiso       Permiso @relation(fields: [permisoCodigo], references: [codigo], onDelete: Cascade)
+
+  @@id([usuarioId, permisoCodigo])
+}
+
+// ---------- Catalogo (fase 0) ----------
+
+// Alicuotas con vigencia: un cambio de tasa no reescribe los documentos
+// viejos (cada documento guarda el porcentaje con que se emitio).
+model Impuesto {
+  id             String    @id @default(cuid())
+  organizacionId String    @default("org-principal")
+  // IVA_GENERAL | IVA_REDUCIDO | IVA_ADICIONAL | EXENTO
+  codigo         String
+  nombre         String
+  porcentaje     Decimal   @db.Decimal(6, 2)
+  vigenteDesde   DateTime  @db.Date
+  vigenteHasta   DateTime? @db.Date
+
+  @@unique([organizacionId, codigo, vigenteDesde])
+}
+
+// El producto que se vende. Se llena desde VentaProducto (el extracto) y se
+// mantiene aca despues del corte. El codigo es numerico porque es el mismo
+// del sistema de ventas y Venta.codigoProducto es BigInt.
+model Producto {
+  id              String        @id @default(cuid())
+  organizacionId  String        @default("org-principal")
+  empresaId       String
+  empresa         EmpresaFiscal @relation(fields: [empresaId], references: [id])
+  codigo          BigInt
+  nombre          String
+  grupo           String?
+  codigoProveedor String?
+  unidadesPorCaja Int           @default(1)
+  litrosPorUnidad Decimal?      @db.Decimal(12, 4)
+  pesoCajaKg      Decimal?      @db.Decimal(10, 3)
+  impuestoCodigo  String        @default("IVA_GENERAL")
+  requiereFrio    Boolean       @default(true)
+  manejaLote      Boolean       @default(true)
+  activo          Boolean       @default(true)
+  creadoEn        DateTime      @default(now())
+  actualizadoEn   DateTime      @default(now())
+
+  precios             ListaPrecioItem[]
+  demandasNoAtendidas DemandaNoAtendida[]
+
+  @@unique([empresaId, codigo])
+}
+
+// Listas de precio en USD. El codigo es el de VentaCliente.listaPrecio
+// (el cliente la trae en Cliente.listaPrecioCodigo).
+model ListaPrecio {
+  id             String            @id @default(cuid())
+  organizacionId String            @default("org-principal")
+  empresaId      String
+  empresa        EmpresaFiscal     @relation(fields: [empresaId], references: [id])
+  codigo         String
+  nombre         String
+  activa         Boolean           @default(true)
+  items          ListaPrecioItem[]
+
+  @@unique([empresaId, codigo])
+}
+
+model ListaPrecioItem {
+  id               String      @id @default(cuid())
+  listaId          String
+  lista            ListaPrecio @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  productoId       String
+  producto         Producto    @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  precioCajaUsd    Decimal     @db.Decimal(14, 4)
+  actualizadoEn    DateTime    @default(now())
+  actualizadoPorId String?
+
+  @@unique([listaId, productoId])
+}
+
+// ---------- Numeracion, bitacora y cola de tareas (fase 0) ----------
+
+// El siguiente numero de cada tipo de documento por empresa. Se toma con
+// SELECT ... FOR UPDATE dentro de la misma transaccion que crea el
+// documento: sin saltos y sin choques entre usuarios (ver
+// app/services/correlativo.py). core/numero.py sigue para despachos y rutas.
+model Correlativo {
+  empresaId String
+  // FA | NE | NC | ND | PEDIDO
+  tipo      String
+  serie     String @default("")
+  siguiente BigInt @default(1)
+
+  @@id([empresaId, tipo, serie])
+}
+
+// Quien hizo que y cuando, con el antes y el despues. Solo se agregan filas:
+// un trigger de la migracion rechaza UPDATE y DELETE.
+model Bitacora {
+  id             BigInt   @id @default(autoincrement())
+  organizacionId String   @default("org-principal")
+  fecha          DateTime @default(now())
+  usuarioId      String?
+  entidad        String
+  entidadId      String
+  accion         String
+  antes          Json?
+  despues        Json?
+
+  @@index([entidad, entidadId])
+  @@index([fecha])
+}
+
+// Cola de trabajos en segundo plano (emitir en la imprenta digital, PDFs,
+// correos). Se toman con FOR UPDATE SKIP LOCKED (ver app/services/tareas.py).
+model Tarea {
+  id             String    @id @default(cuid())
+  organizacionId String    @default("org-principal")
+  tipo           String
+  datos          Json
+  // Evita encolar dos veces lo mismo (p. ej. "emitir:<documentoId>").
+  claveUnica     String?   @unique
+  // PENDIENTE | EN_CURSO | HECHA | FALLIDA
+  estado         String    @default("PENDIENTE")
+  intentos       Int       @default(0)
+  maxIntentos    Int       @default(5)
+  ejecutarDesde  DateTime  @default(now())
+  ultimoError    String?
+  creadaEn       DateTime  @default(now())
+  terminadaEn    DateTime?
+
+  @@index([estado, ejecutarDesde])
+}
+
+// ---------- Sistema administrativo: ventas e inventario (fase 1) ----------
+
+enum EstadoPedido {
+  BORRADOR
+  CONFIRMADO
+  FACTURADO
+  ANULADO
+}
+
+enum TipoDocumentoVenta {
+  FA // factura
+  NE // nota de entrega
+  NC // nota de credito
+  ND // nota de debito
+}
+
+enum EstadoDocumentoVenta {
+  BORRADOR
+  EN_EMISION // en la cola de la imprenta digital
+  EMITIDA
+  RECHAZADA // la imprenta lo rechazo: se corrige y se emite otro
+}
+
+// Un pedido del cliente. El id lo puede generar quien lo crea (la app del
+// vendedor sin senal): reenviar el mismo pedido no lo duplica.
+model Pedido {
+  id                String       @id
+  organizacionId    String       @default("org-principal")
+  empresaId         String
+  numero            String
+  clienteId         String
+  almacenId         String
+  vendedorId        String?
+  // WEB | APP | PORTAL
+  origen            String       @default("WEB")
+  estado            EstadoPedido @default(BORRADOR)
+  listaPrecioCodigo String?
+  notas             String?
+  creadoPorId       String
+  creadoEn          DateTime     @default(now())
+  confirmadoEn      DateTime?
+  anuladoEn         DateTime?
+  motivoAnulacion   String?
+
+  items               PedidoItem[]
+  demandasNoAtendidas DemandaNoAtendida[]
+
+  @@unique([empresaId, numero])
+  @@index([empresaId, estado])
+  @@index([clienteId])
+}
+
+model DemandaNoAtendida {
+  id               String        @id @default(cuid())
+  organizacionId   String        @default("org-principal")
+  organizacion     Organizacion  @relation(fields: [organizacionId], references: [id])
+  empresaId        String
+  empresa          EmpresaFiscal @relation(fields: [empresaId], references: [id])
+  almacenId        String
+  almacen          Almacen       @relation(fields: [almacenId], references: [id])
+  clienteId        String
+  cliente          Cliente       @relation(fields: [clienteId], references: [id])
+  vendedorId       String?
+  vendedor         Usuario?      @relation("DemandaNoAtendidaVendedor", fields: [vendedorId], references: [id], onDelete: SetNull)
+  productoId       String
+  producto         Producto      @relation(fields: [productoId], references: [id])
+  pedidoId         String?
+  pedido           Pedido?       @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  cajasSolicitadas Decimal       @db.Decimal(14, 3)
+  cajasDisponibles Decimal       @db.Decimal(14, 3)
+  cajasFaltantes   Decimal       @db.Decimal(14, 3)
+  motivo           String
+  fecha            DateTime      @default(now()) @db.Timestamptz
+
+  @@index([empresaId, fecha])
+  @@index([vendedorId, fecha])
+  @@index([productoId, fecha])
+  @@index([clienteId])
+  @@index([pedidoId])
+}
+
+model PedidoItem {
+  id            String  @id @default(cuid())
+  pedidoId      String
+  pedido        Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  productoId    String
+  cajas         Decimal @db.Decimal(14, 3)
+  precioCajaUsd Decimal @db.Decimal(14, 4)
+  descuentoPct  Decimal @default(0) @db.Decimal(5, 2)
+}
+
+// Factura, nota de entrega, nota de credito o de debito. Emitida no se
+// edita: se corrige con una nota. Guarda la ficha fiscal del cliente, la
+// tasa y los porcentajes con que salio.
+model DocumentoVenta {
+  id                            String               @id @default(cuid())
+  organizacionId                String               @default("org-principal")
+  empresaId                     String
+  tipo                          TipoDocumentoVenta
+  // Numero interno (Correlativo); null hasta que se emite.
+  numero                        String?
+  // El que asigna la imprenta digital al emitir.
+  numeroControl                 String?
+  estado                        EstadoDocumentoVenta @default(BORRADOR)
+  pedidoId                      String?
+  documentoAfectadoId           String?
+  documentoAfectado             DocumentoVenta?      @relation("NotasDelDocumento", fields: [documentoAfectadoId], references: [id])
+  notas                         DocumentoVenta[]     @relation("NotasDelDocumento")
+  motivo                        String?
+  // NC: si la mercancia vuelve al inventario.
+  devuelveInventario            Boolean              @default(false)
+  clienteId                     String
+  almacenId                     String?
+  clienteRif                    String?
+  clienteRazonSocial            String?
+  clienteDomicilio              String?
+  clienteContribuyenteEspecial  Boolean              @default(false)
+  clientePorcentajeRetencionIva Int?
+  fechaEmision                  DateTime?            @db.Date
+  vencimiento                   DateTime?            @db.Date
+  tasa                          Decimal?             @db.Decimal(20, 8)
+  fechaTasa                     DateTime?            @db.Date
+  pagoEnDivisas                 Boolean              @default(false)
+  igtfPorcentaje                Decimal              @default(0) @db.Decimal(5, 2)
+  baseImponibleUsd              Decimal              @default(0) @db.Decimal(20, 2)
+  exentoUsd                     Decimal              @default(0) @db.Decimal(20, 2)
+  ivaUsd                        Decimal              @default(0) @db.Decimal(20, 2)
+  igtfUsd                       Decimal              @default(0) @db.Decimal(20, 2)
+  totalUsd                      Decimal              @default(0) @db.Decimal(20, 2)
+  baseImponibleBs               Decimal              @default(0) @db.Decimal(20, 2)
+  exentoBs                      Decimal              @default(0) @db.Decimal(20, 2)
+  ivaBs                         Decimal              @default(0) @db.Decimal(20, 2)
+  igtfBs                        Decimal              @default(0) @db.Decimal(20, 2)
+  totalBs                       Decimal              @default(0) @db.Decimal(20, 2)
+  // Desglose por alicuota: [{codigo, porcentaje, baseUsd, ivaUsd, baseBs, ivaBs}]
+  impuestos                     Json?
+  emisorFiscal                  String?
+  respuestaEmisor               Json?
+  errorEmision                  String?
+  creadoPorId                   String
+  creadoEn                      DateTime             @default(now())
+  emitidoEn                     DateTime?
+
+  items DocumentoVentaItem[]
+
+  @@unique([empresaId, tipo, numero])
+  @@index([empresaId, fechaEmision])
+  @@index([clienteId])
+  @@index([pedidoId])
+}
+
+model DocumentoVentaItem {
+  id                 String         @id @default(cuid())
+  documentoId        String
+  documento          DocumentoVenta @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  productoId         String
+  codigoProducto     BigInt
+  descripcion        String
+  cajas              Decimal        @db.Decimal(14, 3)
+  unidadesPorCaja    Int
+  precioCajaUsd      Decimal        @db.Decimal(14, 4)
+  descuentoPct       Decimal        @default(0) @db.Decimal(5, 2)
+  impuestoCodigo     String
+  porcentajeImpuesto Decimal        @db.Decimal(6, 2)
+  subtotalUsd        Decimal        @db.Decimal(20, 2)
+}
+
+// Un lote de un producto. Los productos sin lote usan uno llamado
+// "SIN-LOTE" (asi toda existencia tiene lote y la llave es simple).
+model Lote {
+  id          String    @id @default(cuid())
+  productoId  String
+  numero      String
+  vencimiento DateTime? @db.Date
+  creadoEn    DateTime  @default(now())
+
+  @@unique([productoId, numero])
+}
+
+// Existencia por almacen, producto y lote. Se mueve solo con
+// MovimientoInventario (ver app/services/inventario.py), en la misma
+// transaccion.
+model Existencia {
+  id         String  @id @default(cuid())
+  almacenId  String
+  productoId String
+  loteId     String
+  cajas      Decimal @default(0) @db.Decimal(14, 3)
+
+  @@unique([almacenId, productoId, loteId])
+  @@index([productoId])
+}
+
+// Cada entrada o salida. Solo se agregan filas.
+model MovimientoInventario {
+  id               BigInt   @id @default(autoincrement())
+  organizacionId   String   @default("org-principal")
+  empresaId        String
+  almacenId        String
+  productoId       String
+  loteId           String
+  // ENTRADA | SALIDA_VENTA | DEVOLUCION | TRASLADO_SALIDA | TRASLADO_ENTRADA | AJUSTE
+  tipo             String
+  // Con signo: positivo entra, negativo sale.
+  cajas            Decimal  @db.Decimal(14, 3)
+  documentoVentaId String?
+  ajusteId         String?
+  referencia       String?
+  usuarioId        String?
+  fecha            DateTime @default(now())
+
+  @@index([productoId, fecha])
+  @@index([documentoVentaId])
+}
+
+// Ajuste de inventario: lo propone uno y lo aprueba otro con permiso.
+model AjusteInventario {
+  id             String    @id @default(cuid())
+  organizacionId String    @default("org-principal")
+  empresaId      String
+  almacenId      String
+  // PROPUESTO | APROBADO | RECHAZADO
+  estado         String    @default("PROPUESTO")
+  motivo         String
+  // [{productoId, loteId, cajas}] con signo
+  items          Json
+  propuestoPorId String
+  resueltoPorId  String?
+  creadoEn       DateTime  @default(now())
+  resueltoEn     DateTime?
 }
 
 // ---------- Gastos (estado de resultados) ----------
@@ -1274,4 +1860,69 @@ model Gasto {
 
   @@index([empresa, fecha])
   @@index([cargaId])
+}
+
+// ---------- App movil de campo ----------
+//
+// La jornada del repartidor: desde que pulsa «Iniciar jornada» en la app
+// hasta «Terminar jornada». Mientras esta abierta, la app manda su ubicacion
+// en segundo plano (pedido del cliente, 2026-11-10). Una que nadie cierra se
+// cierra sola (ver app/services/jornadas.py).
+model Jornada {
+  id          String     @id @default(cuid())
+  usuarioId   String
+  usuario     Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  vehiculoId  String?
+  iniciadaEn  DateTime   @default(now())
+  terminadaEn DateTime?
+  // MANUAL | AUTOMATICO
+  cierre      String?
+  posiciones  Posicion[]
+
+  @@index([usuarioId, iniciadaEn])
+}
+
+// Cada punto que manda la app. `tomadaEn` es la hora del telefono corregida
+// con el reloj del servidor al recibir el lote. La llave es la hora cruda del
+// telefono (`tomadaTelefonoMs`): la corregida cambia unos milisegundos entre
+// un envio y su reintento (depende de la red), la cruda no. Asi reenviar un
+// lote no duplica.
+model Posicion {
+  id               BigInt   @id @default(autoincrement())
+  usuarioId        String
+  jornadaId        String
+  jornada          Jornada  @relation(fields: [jornadaId], references: [id], onDelete: Cascade)
+  rutaId           String?
+  lat              Float
+  lng              Float
+  precisionM       Float?
+  // m/s y grados, como los da el GPS.
+  velocidad        Float?
+  rumbo            Float?
+  // 0..1
+  bateria          Float?
+  tomadaEn         DateTime
+  tomadaTelefonoMs BigInt
+  recibidaEn       DateTime @default(now())
+
+  @@unique([usuarioId, tomadaTelefonoMs])
+  @@index([jornadaId, tomadaEn])
+  @@index([rutaId, tomadaEn])
+}
+
+// La ultima posicion de cada usuario, para el mapa de seguimiento sin
+// recorrer Posicion.
+model UltimaPosicion {
+  usuarioId  String   @id
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  jornadaId  String
+  rutaId     String?
+  lat        Float
+  lng        Float
+  precisionM Float?
+  velocidad  Float?
+  rumbo      Float?
+  bateria    Float?
+  tomadaEn   DateTime
+  recibidaEn DateTime @default(now())
 }
