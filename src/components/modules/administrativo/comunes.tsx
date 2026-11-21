@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangleIcon, PowerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { ArrowLeftIcon, ArrowRightIcon, CheckCircle2Icon, FileUpIcon, LandmarkIcon, SendIcon, SmartphoneIcon, Wand2Icon, XIcon } from "lucide-react";
 import { apiGet, apiPost, mensajeDeError } from "@/lib/api-client";
 import { BANCOS, bancoDeCuenta, formatCuenta } from "@/lib/bancos";

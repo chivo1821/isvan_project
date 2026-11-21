@@ -17,13 +17,21 @@ from datetime import timedelta
 from functools import lru_cache
 
 import bcrypt
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc
 
 SESSION_COOKIE_NAME = "sesion_id"
 SESSION_TTL = timedelta(hours=12)
+# La app de campo (token Bearer): un repartidor no puede volver a escribir la
+# clave cada 12 horas en la calle. Dura 30 dias y se renueva sola con el uso,
+# como mucho una vez por hora para no escribir en cada peticion. Se revoca
+# borrando la fila (el ADMIN lo hace desde Usuarios si se pierde el telefono).
+SESSION_TTL_MOVIL = timedelta(days=30)
+RENOVAR_SESION_MOVIL = timedelta(hours=1)
+ORIGEN_WEB = "WEB"
+ORIGEN_MOVIL = "MOVIL"
 
 # En prod (HTTPS) la cookie debe ir con Secure; en dev local (HTTP) no puede
 # llevarlo o el navegador la descarta. COOKIE_SECURE=true en el .env de prod.
@@ -59,39 +67,69 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def crear_sesion(cur, usuario_id: str) -> str:
-    """Crea la fila en Sesion y devuelve el token crudo (va en la cookie);
-    solo su hash queda en la BD."""
+def crear_sesion(cur, usuario_id: str, origen: str = ORIGEN_WEB, dispositivo: str | None = None) -> str:
+    """Crea la fila en Sesion y devuelve el token crudo (va en la cookie, o
+    en el cuerpo de la respuesta para la app); solo su hash queda en la BD."""
     token = secrets.token_urlsafe(32)
-    expira_en = ahora_utc() + SESSION_TTL
+    ahora = ahora_utc()
+    expira_en = ahora + (SESSION_TTL_MOVIL if origen == ORIGEN_MOVIL else SESSION_TTL)
     cur.execute(
-        'INSERT INTO "Sesion" ("id", "usuarioId", "tokenHash", "expiraEn") VALUES (%s, %s, %s, %s)',
-        (f"ses-{uuid.uuid4().hex[:16]}", usuario_id, _hash_token(token), expira_en),
+        'INSERT INTO "Sesion" ("id", "usuarioId", "tokenHash", "expiraEn", "origen", "dispositivo", "ultimoUsoEn") '
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (
+            f"ses-{uuid.uuid4().hex[:16]}", usuario_id, _hash_token(token), expira_en, origen,
+            dispositivo[:120] if dispositivo else None, ahora,
+        ),
     )
     return token
+
+
+def token_de_la_peticion(sesion_id: str | None, authorization: str | None) -> str | None:
+    """El token de la cookie (web) o del encabezado Authorization: Bearer
+    (app de campo)."""
+    if sesion_id:
+        return sesion_id
+    if authorization and authorization[:7].lower() == "bearer ":
+        return authorization[7:].strip() or None
+    return None
 
 
 def eliminar_sesion(cur, token: str) -> None:
     cur.execute('DELETE FROM "Sesion" WHERE "tokenHash" = %s', (_hash_token(token),))
 
 
-def get_current_user(sesion_id: str | None = Cookie(default=None)) -> dict:
+def get_current_user(
+    sesion_id: str | None = Cookie(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
     """Dependencia FastAPI: resuelve el usuario autenticado a partir de la
-    cookie de sesion. 401 si no hay cookie, la sesion no existe, expiro, o el
-    usuario esta inactivo."""
-    if not sesion_id:
+    cookie de sesion (web) o del token Bearer (app de campo). 401 si no hay
+    ninguno, la sesion no existe, expiro, o el usuario esta inactivo."""
+    token = token_de_la_peticion(sesion_id, authorization)
+    if not token:
         raise HTTPException(401, "No autenticado")
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            'SELECT u.* FROM "Sesion" s JOIN "Usuario" u ON u."id" = s."usuarioId" '
+            'SELECT u.*, s."id" AS "_sesionId", s."origen" AS "_sesionOrigen", s."ultimoUsoEn" AS "_sesionUso" '
+            'FROM "Sesion" s JOIN "Usuario" u ON u."id" = s."usuarioId" '
             'WHERE s."tokenHash" = %s AND s."expiraEn" > now() AND u."activo" = true',
-            (_hash_token(sesion_id),),
+            (_hash_token(token),),
         )
         usuario = cur.fetchone()
+        if usuario and usuario["_sesionOrigen"] == ORIGEN_MOVIL:
+            ahora = ahora_utc()
+            if usuario["_sesionUso"] is None or ahora - usuario["_sesionUso"] > RENOVAR_SESION_MOVIL:
+                cur.execute(
+                    'UPDATE "Sesion" SET "ultimoUsoEn" = %s, "expiraEn" = %s WHERE "id" = %s',
+                    (ahora, ahora + SESSION_TTL_MOVIL, usuario["_sesionId"]),
+                )
+                conn.commit()
 
     if not usuario:
         raise HTTPException(401, "Sesion invalida o expirada")
+    for clave in ("_sesionId", "_sesionOrigen", "_sesionUso"):
+        usuario.pop(clave, None)
     return usuario
 
 

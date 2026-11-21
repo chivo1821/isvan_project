@@ -223,3 +223,61 @@ def test_ajuste_con_aprobacion(tienda, cliente_api, usuario):
     assert api.post(f"/inventario/ajustes/{ajuste.json()['id']}/aprobar").json()["estado"] == "APROBADO"
     despues = next(e for e in api.get("/inventario/existencias?empresaId=emp-tralog").json() if e["productoId"] == p["id"])
     assert despues["cajas"] == existencia["cajas"] - 1
+
+
+def test_enlazar_sella_costo_historico_desde_venta_producto(tienda, db):
+    """Al emitir un DocumentoVenta del sistema, ventas.py:_enlazar sella en
+    Venta.costoCajaUsd el costo vigente en VentaProducto (y deja NULL si no
+    tiene costo), sin verse afectado por cambios posteriores del costo."""
+    api, p, exento = tienda["api"], tienda["producto"], tienda["exento"]
+
+    db.execute(
+        'INSERT INTO "VentaProducto" ("id", "empresa", "codigo", "nombre", "grupo", "costoCajaUsd") '
+        "VALUES ('vp-f1-sellado', 'TRALOG', %s, %s, 'TIO RICO', 6.7500) "
+        'ON CONFLICT ("empresa", "codigo") DO UPDATE SET "costoCajaUsd" = EXCLUDED."costoCajaUsd"',
+        (p["codigo"], p["nombre"]),
+    )
+    db.execute(
+        'INSERT INTO "VentaProducto" ("id", "empresa", "codigo", "nombre", "grupo", "costoCajaUsd") '
+        "VALUES ('vp-f1-sincosto', 'TRALOG', %s, %s, 'SIN GRUPO', NULL) "
+        'ON CONFLICT ("empresa", "codigo") DO UPDATE SET "costoCajaUsd" = NULL',
+        (exento["codigo"], exento["nombre"]),
+    )
+    db.commit()
+
+    pedido = api.post("/ventas/pedidos", json={
+        "empresaId": "emp-tralog", "clienteId": "cli-f1", "almacenId": "alm-catia",
+        "items": [{"productoId": p["id"], "cajas": 2}, {"productoId": exento["id"], "cajas": 1}],
+    })
+    assert pedido.status_code == 201, pedido.text
+    ped_id = pedido.json()["id"]
+    assert api.post(f"/ventas/pedidos/{ped_id}/confirmar").status_code == 200
+    doc_id = api.post(f"/ventas/pedidos/{ped_id}/facturar", json={"tipo": "FA"}).json()["documentoId"]
+    _emitir_cola()
+
+    doc = api.get(f"/ventas/documentos/{doc_id}").json()
+    assert doc["estado"] == "EMITIDA", doc.get("errorEmision")
+
+    filas = db.execute(
+        'SELECT v."codigoProducto", v."costoCajaUsd", c."origen" '
+        'FROM "Venta" v JOIN "VentaCarga" c ON c."id" = v."cargaId" '
+        'WHERE v."empresa" = \'TRALOG\' AND v."numDoc" = %s',
+        (doc["numero"],),
+    ).fetchall()
+    por_codigo = {f["codigoProducto"]: f for f in filas}
+    assert por_codigo[p["codigo"]]["origen"] == "SISTEMA"
+    assert por_codigo[p["codigo"]]["costoCajaUsd"] == Decimal("6.7500")
+    assert por_codigo[exento["codigo"]]["origen"] == "SISTEMA"
+    assert por_codigo[exento["codigo"]]["costoCajaUsd"] is None
+
+    # Cambiar el costo vigente en VentaProducto despues de emitir no altera la venta ya sellada
+    db.execute(
+        'UPDATE "VentaProducto" SET "costoCajaUsd" = 12.0000 WHERE "empresa" = \'TRALOG\' AND "codigo" = %s',
+        (p["codigo"],),
+    )
+    db.commit()
+    sellada = db.execute(
+        'SELECT "costoCajaUsd" FROM "Venta" WHERE "empresa" = \'TRALOG\' AND "numDoc" = %s AND "codigoProducto" = %s',
+        (doc["numero"], p["codigo"]),
+    ).fetchone()
+    assert sellada["costoCajaUsd"] == Decimal("6.7500")

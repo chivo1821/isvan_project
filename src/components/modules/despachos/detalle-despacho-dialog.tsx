@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { AprobacionDespachoActions } from "@/components/modules/despachos/aprobacion-actions";
 import {
   Dialog,

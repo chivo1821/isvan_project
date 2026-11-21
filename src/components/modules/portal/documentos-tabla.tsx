@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ESTADO_DOCUMENTO_META, nombreDocumento, type Documento } from "@/lib/cobranzas";

@@ -4,11 +4,13 @@ import { useState, useSyncExternalStore } from "react";
 import { ArrowDownIcon, MapIcon, NavigationIcon, PhoneIcon } from "lucide-react";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { ParadaAcciones, type MarcasParada } from "@/components/modules/despachador/parada-acciones";
+import { TarjetaNoEntregada } from "@/components/shared/no-entregado";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contarParadas, documentoDespacho, textoParadas } from "@/lib/constants";
-import type { Cliente, Despacho, EstadoRuta, RutaPunto } from "@/lib/mock-data";
+import type { Cliente, Despacho, EstadoRuta, NoEntregado, RutaPunto } from "@/lib/mock-data";
+import { conNoEntregadas } from "@/lib/no-entregados";
 import { cn } from "@/lib/utils";
 
 type Parada = Despacho & { destinoCliente: Cliente };
@@ -53,6 +55,7 @@ export function ViajeEnCurso({
   enCaminoDesde,
   puntos,
   paradas: paradasDelServidor,
+  noEntregados = [],
 }: {
   rutaId: string;
   estadoRuta: EstadoRuta;
@@ -60,6 +63,8 @@ export function ViajeEnCurso({
   enCaminoDesde?: string;
   puntos: RutaPunto[];
   paradas: Parada[];
+  /** Las que salieron sin entregarse: siguen en la lista, en rojo, con su motivo. */
+  noEntregados?: NoEntregado[];
 }) {
   // Las marcas recién puestas se guardan como una capa encima de lo que
   // manda el servidor, en vez de copiar las paradas a estado: así, cuando
@@ -143,6 +148,7 @@ export function ViajeEnCurso({
                 <SeguimientoDetalleMap
                   ruta={puntos}
                   paradas={paradas}
+                  noEntregados={noEntregados}
                   className="h-72 lg:h-[32rem]"
                   arrastreConUnDedo={false}
                 />
@@ -163,7 +169,11 @@ export function ViajeEnCurso({
             <CardTitle>Paradas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {paradas.map((d, index) => {
+            {conNoEntregadas(paradas, noEntregados).map((item, index) => {
+              if (item.tipo === "no") {
+                return <TarjetaNoEntregada key={`no-${item.parada.despachoId}`} parada={item.parada} numero={index + 1} />;
+              }
+              const d = item.parada;
               const esSiguiente = d.id === siguiente?.id;
               const entregada = d.estado === "ENTREGADO";
               const { lat, lng, telefono } = d.destinoCliente;

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent } from "@/components/ui/card";

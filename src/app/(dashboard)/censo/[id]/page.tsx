@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { ArrowLeftIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { DetalleDeCenso } from "@/components/modules/censo/detalle-censo";

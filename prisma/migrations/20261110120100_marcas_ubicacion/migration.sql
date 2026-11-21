@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Despacho" ADD COLUMN     "entregadoLat" DOUBLE PRECISION,
+ADD COLUMN     "entregadoLng" DOUBLE PRECISION,
+ADD COLUMN     "llegadaLat" DOUBLE PRECISION,
+ADD COLUMN     "llegadaLng" DOUBLE PRECISION;

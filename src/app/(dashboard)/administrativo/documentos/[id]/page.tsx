@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { ArrowLeftIcon } from "lucide-react";
 import { DocumentoVista } from "@/components/modules/administrativo/documentos";
 import { Button } from "@/components/ui/button";

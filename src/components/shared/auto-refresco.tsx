@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet } from "@/lib/api-client";
 
-// Cada cuanto se pregunta si hubo cambios. Preguntar es barato (~100 bytes),
-// asi que se puede hacer seguido; lo caro, recargar los datos de la pagina,
-// solo pasa cuando la huella cambia.
-const INTERVALO_MS = 5_000;
+// Cada cuanto se pregunta si hubo cambios. Preguntar pesa poco (~100 bytes),
+// pero cada pregunta enciende la API en Vercel y gasta CPU del plan: cada
+// 5 s, una pestaña abierta todo el dia se comia buena parte de las 4 horas
+// del mes (aviso de Vercel, 2026-11-12). Lo caro, recargar los datos de la
+// pagina, solo pasa cuando la huella cambia.
+const INTERVALO_MS = 30_000;
 
 /**
  * Refresca la pagina sola cuando cambian sus datos, sin recargarla entera.

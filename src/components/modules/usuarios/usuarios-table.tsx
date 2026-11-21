@@ -6,6 +6,7 @@ import { AsignarVehiculoDialog } from "@/components/modules/usuarios/asignar-veh
 import { PermisoExcepciones } from "@/components/modules/usuarios/permiso-excepciones";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
 import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
+import { SesionesMovilesDialog } from "@/components/modules/usuarios/sesiones-moviles-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -131,6 +132,9 @@ export function UsuariosTable({
                         )}
                         {u.rol === "VENDEDOR" && <AsignarRutasDialog usuario={u} />}
                         {!u.autogestionado && <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />}
+                        {(u.rol === "REPARTIDOR" || u.rol === "VENDEDOR") && (
+                          <SesionesMovilesDialog usuarioId={u.id} usuarioNombre={u.nombre} />
+                        )}
                       </div>
                     </TableCell>
                   )}

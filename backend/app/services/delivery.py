@@ -163,13 +163,25 @@ def guardar_distancias_de_ruta(cur, ruta_id: str) -> None:
 # quedaba con la fecha del dia siguiente.
 _FECHA_ENTREGA = "(d.\"entregadoEn\" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Caracas')::date"
 
+# Quien tenia la jornada abierta en la app con esa moto cuando se entrego:
+# es quien hizo la entrega, aunque la moto este asignada a otro (o a dos).
+# Sin jornada (entregas de antes de la app, o marcadas desde la web) se usa
+# el repartidor asignado a la moto, como siempre.
+_REPARTIDOR_DE_LA_JORNADA = (
+    '(SELECT j."usuarioId" FROM "Jornada" j WHERE j."vehiculoId" = v."id" '
+    'AND j."iniciadaEn" <= MAX(d."entregadoEn") '
+    'AND (j."terminadaEn" IS NULL OR j."terminadaEn" >= MAX(d."entregadoEn")) '
+    'ORDER BY j."iniciadaEn" DESC LIMIT 1)'
+)
+
 _PARADAS = f"""
     SELECT r."id" AS "rutaId", r."numero" AS "rutaNumero", r."origenId",
            cl."id" AS "clienteId", cl."codigo" AS "clienteCodigo", cl."nombre" AS "clienteNombre",
            cl."ciudad", cl."empresa",
            v."id" AS "vehiculoId", v."placa",
-           {CONDUCTOR_DEL_VEHICULO} AS "conductor",
-           {REPARTIDOR_DEL_VEHICULO} AS "repartidorId",
+           COALESCE((SELECT uj."nombre" FROM "Usuario" uj WHERE uj."id" = {_REPARTIDOR_DE_LA_JORNADA}),
+                    {CONDUCTOR_DEL_VEHICULO}) AS "conductor",
+           COALESCE({_REPARTIDOR_DE_LA_JORNADA}, {REPARTIDOR_DEL_VEHICULO}) AS "repartidorId",
            MAX(d."entregadoEn") AS "entregadoEn",
            MAX({_FECHA_ENTREGA}) AS "fecha",
            COUNT(d."id") AS "despachos",

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { notFound } from "next/navigation";
 import { BanknoteIcon, CalendarClockIcon, ExternalLinkIcon, HandCoinsIcon, PackageIcon, TruckIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";

@@ -383,17 +383,23 @@ def _enlazar(cur, doc: dict, items: list[dict], cliente: dict) -> None:
             (f"vp-{uuid.uuid4().hex[:12]}", empresa_codigo, p["codigo"], p["nombre"], p["grupo"] or "SIN GRUPO",
              p["codigoProveedor"], p["unidadesPorCaja"], p["litrosPorUnidad"]),
         )
+        cur.execute(
+            'SELECT "costoCajaUsd" FROM "VentaProducto" WHERE "empresa" = %s AND "codigo" = %s',
+            (empresa_codigo, p["codigo"]),
+        )
+        vp = cur.fetchone()
+        costo_caja = vp["costoCajaUsd"] if vp else None
         cajas = Decimal(it["cajas"])
         unidades = int((cajas * p["unidadesPorCaja"]).to_integral_value())
         litros = (Decimal(p["litrosPorUnidad"]) * unidades) if p["litrosPorUnidad"] is not None else CERO
         monto_usd = Decimal(it["subtotalUsd"])
         cur.execute(
             'INSERT INTO "Venta" ("empresa", "cargaId", "fecha", "numDoc", "codTipoDoc", "tipoMovimiento", '
-            '"codigoCliente", "codigoProducto", "cajas", "unidades", "litros", "montoBs", "montoUsd") '
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            '"codigoCliente", "codigoProducto", "cajas", "unidades", "litros", "montoBs", "montoUsd", "costoCajaUsd") '
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (empresa_codigo, carga_id, doc["fechaEmision"], doc["numero"], cod_tipo, tipo_venta, cliente["codigo"],
              p["codigo"], signo * cajas, signo * unidades, signo * litros, signo * redondear(monto_usd * doc["tasa"]),
-             signo * monto_usd),
+             signo * monto_usd, costo_caja),
         )
     cur.execute('UPDATE "VentaCarga" SET "filas" = "filas" + %s WHERE "id" = %s', (len(items), carga_id))
 

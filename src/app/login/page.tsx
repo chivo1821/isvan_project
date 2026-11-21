@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { IceCreamConeIcon, LogInIcon, UserPlusIcon } from "lucide-react";
 import { LoginForm } from "@/components/modules/auth/login-form";
 import { LoginMotorizado } from "@/components/modules/auth/login-motorizado";

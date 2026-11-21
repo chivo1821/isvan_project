@@ -29,6 +29,7 @@ from app.api import (
     inventario,
     maestra,
     motorizados,
+    movil,
     portal,
     portal_auth,
     reportes,
@@ -149,6 +150,7 @@ ROUTERS_PROTEGIDOS = [
     ventas.router,
     inventario.router,
     gastos.router,
+    movil.router,
 ]
 
 # Lista blanca de los roles de un solo modulo: los unicos routers a los que

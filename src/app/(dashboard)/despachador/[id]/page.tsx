@@ -52,6 +52,7 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
         }
         puntos={ruta.puntos}
         paradas={ruta.despachos}
+        noEntregados={ruta.noEntregados}
       />
 
       {/* Al final y no arriba: es para una emergencia, y arriba quedaba a un

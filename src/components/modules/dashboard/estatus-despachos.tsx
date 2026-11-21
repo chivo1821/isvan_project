@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ListIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FiltroMultiple, type OpcionFiltro } from "@/components/modules/indicadores/barra-filtros";
 import { DespachosVendedorLista } from "@/components/modules/vendedor/despachos-vendedor";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,10 +32,27 @@ const AYUDA: Record<CategoriaDespacho, string> = {
 
 const ORDEN: CategoriaDespacho[] = ["pendiente", "cargado", "en_camino", "entregado", "otro"];
 
+// Los clientes que no están en ventas no tienen ruta de venta.
+const SIN_RUTA = "__sin_ruta__";
+const rutaDe = (d: DespachoLista) => d.rutaVenta ?? SIN_RUTA;
+
+/** Las rutas de venta de los despachos, en orden numérico (2 antes que 10). */
+function opcionesDeRuta(despachos: DespachoLista[]): OpcionFiltro[] {
+  const rutas = [...new Set(despachos.map(rutaDe))];
+  rutas.sort((a, b) => (a === SIN_RUTA ? 1 : b === SIN_RUTA ? -1 : a.localeCompare(b, "es", { numeric: true })));
+  return rutas.map((r) => ({ valor: r, etiqueta: r === SIN_RUTA ? "Sin ruta de venta" : r }));
+}
+
 /** Cuántos despachos hay en cada estatus, por empresa, y la lista de cada
  * uno con lo mismo que ve el vendedor en "Mis despachos". */
-export function EstatusDespachos({ despachos }: { despachos: DespachoLista[] }) {
+export function EstatusDespachos({ despachos: todos }: { despachos: DespachoLista[] }) {
   const [abierto, setAbierto] = useState<CategoriaDespacho | "todos" | null>(null);
+  // Por la ruta de venta del cliente: la tienen todos los despachos, también
+  // los que todavía no están en un viaje.
+  const [rutas, setRutas] = useState<string[]>([]);
+  const opcionesRuta = opcionesDeRuta(todos);
+  const despachos = rutas.length === 0 ? todos : todos.filter((d) => rutas.includes(rutaDe(d)));
+  const elegidas = rutas.map((r) => (r === SIN_RUTA ? "sin ruta de venta" : `ruta ${r}`)).join(", ");
 
   const conteo = new Map<string, number>();
   for (const d of despachos) {
@@ -51,7 +69,14 @@ export function EstatusDespachos({ despachos }: { despachos: DespachoLista[] }) 
       <CardHeader>
         <CardTitle>Estatus de los despachos</CardTitle>
         <CardDescription>Lo abierto, y lo entregado en los últimos 30 días</CardDescription>
-        <CardAction>
+        <CardAction className="flex flex-wrap items-center justify-end gap-2">
+          <FiltroMultiple
+            etiqueta="Ruta"
+            todos="Todas las rutas"
+            opciones={opcionesRuta}
+            seleccion={rutas}
+            onCambiar={setRutas}
+          />
           <Button variant="ghost" size="sm" onClick={() => setAbierto("todos")}>
             <ListIcon />
             Ver todos
@@ -123,19 +148,24 @@ export function EstatusDespachos({ despachos }: { despachos: DespachoLista[] }) 
               {abierto && abierto !== "todos" ? CATEGORIA_ESTATUS_META[abierto].label : "Todos los despachos"}
             </DialogTitle>
             <DialogDescription>
-              Lo mismo que ve el vendedor en «Mis despachos», de todos los clientes. El nombre del cliente abre el
-              despacho.
+              Lo mismo que ve el vendedor en «Mis despachos», de{" "}
+              {rutas.length === 0 ? "todos los clientes" : `los clientes de: ${elegidas}`}. El nombre
+              del cliente abre el despacho.
             </DialogDescription>
           </DialogHeader>
           {abierto && (
             <DespachosVendedorLista
-              key={abierto}
+              key={`${abierto}|${rutas.join(",")}`}
               despachos={despachos}
               filtroInicial={abierto}
               etiquetas={CATEGORIA_ESTATUS_META}
               enlace={(d) => `/despachos/${d.id}`}
               mostrarOtros={n("otro") > 0}
-              vacio="No hay despachos abiertos ni entregados en los últimos 30 días."
+              vacio={
+                rutas.length === 0
+                  ? "No hay despachos abiertos ni entregados en los últimos 30 días."
+                  : "No hay despachos de esas rutas abiertos ni entregados en los últimos 30 días."
+              }
             />
           )}
         </DialogContent>

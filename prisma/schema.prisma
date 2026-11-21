@@ -189,18 +189,26 @@ model Usuario {
   empresas              UsuarioEmpresa[]
   permisosExtra         UsuarioPermiso[]
   cargasGasto           GastoCarga[]
+  // App movil: las jornadas de campo y la ultima posicion conocida.
+  jornadas              Jornada[]
+  ultimaPosicion        UltimaPosicion?
 }
 
 // Sesiones respaldadas en BD (no JWT): revocar una sesion es borrar la fila,
 // lo cual conviene para un equipo pequeno donde puede hacer falta cerrar la
 // sesion de alguien a mano. El token crudo nunca se guarda, solo su hash.
 model Sesion {
-  id        String   @id @default(cuid())
-  usuarioId String
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
-  tokenHash String   @unique
-  creadoEn  DateTime @default(now())
-  expiraEn  DateTime
+  id          String    @id @default(cuid())
+  usuarioId   String
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id])
+  tokenHash   String    @unique
+  creadoEn    DateTime  @default(now())
+  expiraEn    DateTime
+  // WEB (cookie) | MOVIL (token Bearer de la app de campo). La de la app
+  // dura mas y se renueva sola con el uso (ver app/core/auth.py).
+  origen      String    @default("WEB")
+  dispositivo String?
+  ultimoUsoEn DateTime?
 }
 
 // ---------- Almacen y flota ----------
@@ -351,6 +359,11 @@ model Despacho {
   // entrega anterior y esta llegada, el tiempo de traslado.
   llegadaEn   DateTime?
   entregadoEn DateTime?
+  // Donde estaba el telefono al marcar (solo la app movil lo manda).
+  llegadaLat   Float?
+  llegadaLng   Float?
+  entregadoLat Float?
+  entregadoLng Float?
 
   items         DespachoItem[]
   aprobaciones  DespachoAprobacion[]
@@ -410,6 +423,9 @@ model DespachoReverso {
   // entregar): al liberarlo se borra del despacho y queda aca.
   llegadaEn      DateTime?
   fecha          DateTime       @default(now())
+  // El lugar que tenia en la ruta, para mostrarla en su sitio (en rojo) en la
+  // linea de tiempo. Vacio en los reversos de antes de 2026-11-12.
+  ordenEnRuta    Int?
 
   @@index([despachoId])
   @@index([rutaId])
@@ -739,6 +755,11 @@ model Venta {
   litros                Decimal             @db.Decimal(18, 6)
   montoBs               Decimal             @db.Decimal(20, 4)
   montoUsd              Decimal             @db.Decimal(20, 10)
+  // Costo por caja sellado al confirmar la carga: el que regia en ese
+  // periodo. Una lista de precios nueva NO toca los meses ya cerrados.
+  // NULL en las ventas anteriores al backfill; las consultas caen al costo
+  // vigente del producto con COALESCE (ver SUMAS en indicadores_venta.py).
+  costoCajaUsd          Decimal?            @db.Decimal(14, 4)
 
   @@index([empresa, fecha])
   @@index([empresa, codigoCliente])
@@ -1802,4 +1823,69 @@ model Gasto {
 
   @@index([empresa, fecha])
   @@index([cargaId])
+}
+
+// ---------- App movil de campo ----------
+//
+// La jornada del repartidor: desde que pulsa «Iniciar jornada» en la app
+// hasta «Terminar jornada». Mientras esta abierta, la app manda su ubicacion
+// en segundo plano (pedido del cliente, 2026-11-10). Una que nadie cierra se
+// cierra sola (ver app/services/jornadas.py).
+model Jornada {
+  id          String     @id @default(cuid())
+  usuarioId   String
+  usuario     Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  vehiculoId  String?
+  iniciadaEn  DateTime   @default(now())
+  terminadaEn DateTime?
+  // MANUAL | AUTOMATICO
+  cierre      String?
+  posiciones  Posicion[]
+
+  @@index([usuarioId, iniciadaEn])
+}
+
+// Cada punto que manda la app. `tomadaEn` es la hora del telefono corregida
+// con el reloj del servidor al recibir el lote. La llave es la hora cruda del
+// telefono (`tomadaTelefonoMs`): la corregida cambia unos milisegundos entre
+// un envio y su reintento (depende de la red), la cruda no. Asi reenviar un
+// lote no duplica.
+model Posicion {
+  id               BigInt   @id @default(autoincrement())
+  usuarioId        String
+  jornadaId        String
+  jornada          Jornada  @relation(fields: [jornadaId], references: [id], onDelete: Cascade)
+  rutaId           String?
+  lat              Float
+  lng              Float
+  precisionM       Float?
+  // m/s y grados, como los da el GPS.
+  velocidad        Float?
+  rumbo            Float?
+  // 0..1
+  bateria          Float?
+  tomadaEn         DateTime
+  tomadaTelefonoMs BigInt
+  recibidaEn       DateTime @default(now())
+
+  @@unique([usuarioId, tomadaTelefonoMs])
+  @@index([jornadaId, tomadaEn])
+  @@index([rutaId, tomadaEn])
+}
+
+// La ultima posicion de cada usuario, para el mapa de seguimiento sin
+// recorrer Posicion.
+model UltimaPosicion {
+  usuarioId  String   @id
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  jornadaId  String
+  rutaId     String?
+  lat        Float
+  lng        Float
+  precisionM Float?
+  velocidad  Float?
+  rumbo      Float?
+  bateria    Float?
+  tomadaEn   DateTime
+  recibidaEn DateTime @default(now())
 }

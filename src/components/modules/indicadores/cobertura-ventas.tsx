@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumero, formatUsd } from "@/lib/constants";
 import { finDeMes, formatFecha, formatMes, queryPagina, type CoberturaVentas as Cobertura, type Empresa } from "@/lib/indicadores";

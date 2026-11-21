@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { AjustesPlanificacionDialog } from "@/components/modules/rutas/ajustes-planificacion-dialog";

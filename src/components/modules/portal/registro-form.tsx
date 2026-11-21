@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shared/enlace";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { UserPlusIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
