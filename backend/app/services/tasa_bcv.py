@@ -29,6 +29,12 @@ URL_ACTUAL = "https://ve.dolarapi.com/v1/dolares/oficial"
 URL_HISTORICO = "https://ve.dolarapi.com/v1/historicos/dolares/oficial"
 URL_BCV = "https://www.bcv.org.ve"
 TIEMPO_MAXIMO = 10.0
+TIEMPO_MAXIMO_RESPALDO = 8.0
+# Una tasa de BCV_DIRECTO se rechaza si su fecha o su valor son sospechosos
+# (la pagina puede leerse sin verificar SSL).
+DIAS_ATRAS_MAXIMO = 10
+DIAS_ADELANTE_MAXIMO = 3
+DESVIACION_MAXIMA = Decimal("0.30")
 
 # Antes de usar la tasa se consulta la fuente automatica, como mucho cada tantos
 # minutos (por proceso): una tasa nueva se toma en cuanto se publica, sin
@@ -88,7 +94,7 @@ def _pedir_html(url: str) -> str:
         "User-Agent": "Mozilla/5.0 (compatible; GestionLogistica/1.0)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    kwargs: dict = {"timeout": TIEMPO_MAXIMO, "headers": headers, "follow_redirects": True}
+    kwargs: dict = {"timeout": TIEMPO_MAXIMO_RESPALDO, "headers": headers, "follow_redirects": True}
     if not verificar:
         kwargs["verify"] = False
     try:
@@ -389,7 +395,20 @@ def leer_respaldo() -> list[tuple[date, Decimal]]:
     return _extraer_bcv_html(html)
 
 
-def actualizar(cur) -> int:
+def _validar_respaldo(cur, tasas: list[tuple[date, Decimal]]) -> None:
+    """Defensa contra una tasa falsa venida del BCV directo."""
+    hoy = hoy_caracas()
+    ref = ultima(cur)
+    for fecha, tasa in tasas:
+        if fecha < hoy - timedelta(days=DIAS_ATRAS_MAXIMO) or fecha > hoy + timedelta(days=DIAS_ADELANTE_MAXIMO):
+            raise TasaNoDisponible(f"Tasa BCV directa con fecha fuera de rango ({fecha})")
+        if ref is not None:
+            base = Decimal(str(ref["tasa"]))
+            if base > 0 and abs(tasa - base) / base > DESVIACION_MAXIMA:
+                raise TasaNoDisponible(f"Tasa BCV directa {tasa} se desvia mas de 30% de la ultima guardada ({base})")
+
+
+def actualizar(cur, con_respaldo: bool = True) -> int:
     """Trae las tasas de DolarApi (o del respaldo BCV_DIRECTO si falla) y guarda
     las fechas que falten o que tenian otra tasa automatica. Nunca pisa tasas
     MANUAL. Devuelve cuantas filas cambio."""
@@ -404,6 +423,9 @@ def actualizar(cur) -> int:
     except TasaNoDisponible as e:
         error_primario = str(e)
 
+    if not tasas and not con_respaldo:
+        raise TasaNoDisponible(f"DolarApi no disponible ({error_primario})")
+
     if not tasas:
         _log.warning("Fuente primaria DolarApi no disponible (%s); intentando respaldo BCV", error_primario)
         try:
@@ -413,6 +435,7 @@ def actualizar(cur) -> int:
             raise TasaNoDisponible(f"DolarApi ({error_primario}) y respaldo BCV ({e}) no respondieron") from e
         if not tasas:
             raise TasaNoDisponible(f"DolarApi ({error_primario}) y respaldo BCV no devolvieron tasas")
+        _validar_respaldo(cur, tasas)
 
     ahora = ahora_utc()
     cur.executemany(
@@ -461,7 +484,7 @@ def tasa_actual(cur) -> dict:
     if _ultima_consulta is None or ahora - _ultima_consulta > timedelta(minutes=MINUTOS_ENTRE_CONSULTAS):
         _ultima_consulta = ahora
         try:
-            actualizar(cur)
+            actualizar(cur, con_respaldo=False)
             cur.connection.commit()
         except TasaNoDisponible as e:
             _log.warning("%s", e)

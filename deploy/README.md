@@ -73,3 +73,25 @@ sistema: el navegador sube las fotos directo, con un enlace firmado.
 
 - La red vial para calcular rutas: `backend/scripts/cargar_red_vial.py`.
 - Usuarios, almacenes, vehículos y la configuración inicial.
+
+### Row-Level Security (RLS) multi-organización
+
+Las 35 tablas con `organizacionId` tienen políticas `ENABLE/FORCE ROW LEVEL SECURITY` basadas en `current_setting('app.current_org_id', true)` (con `'org-principal'` como valor por defecto cuando la variable de sesión no está fijada).
+
+**Importante:** en PostgreSQL, RLS **solo tiene efecto** si el rol configurado en `DATABASE_URL` tiene los atributos `NOSUPERUSER` y `NOBYPASSRLS`:
+
+- El `POSTGRES_USER` inicial de la imagen oficial de Docker es `SUPERUSER` (ignora RLS aunque la tabla tenga `FORCE ROW LEVEL SECURITY`).
+- Los roles propietarios que crea Neon por defecto tienen `BYPASSRLS`.
+- Hoy ningún endpoint HTTP invoca todavía `con_organizacion(org_id)` (toda la operación corre sobre `'org-principal'`). Cuando se habilite multi-organización en la API, `DATABASE_URL` de la aplicación (`api`/`tareas`) debe usar un rol de aplicación sin privilegios de bypass, dejando el rol propietario solo para `migrar`:
+
+```sql
+-- Ejecutar como superusuario / propietario del esquema tras correr las migraciones:
+CREATE ROLE app_logistica LOGIN PASSWORD 'cambiar-en-produccion' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+GRANT CONNECT ON DATABASE logistica TO app_logistica;
+GRANT USAGE ON SCHEMA public TO app_logistica;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_logistica;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_logistica;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_logistica;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_logistica;
+```
+

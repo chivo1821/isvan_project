@@ -576,7 +576,9 @@ def catalogo_vendedor(
         reservas_por_prod: dict[str, Decimal] = {}
         if almacen_id and productos:
             existencias_por_prod = {e["productoId"]: e for e in inventario.existencias(cur, empresaId, almacen_id)}
-            reservas_por_prod = inventario.reservado(cur, almacen_id, [p["id"] for p in productos])
+            sin_existencia = [p["id"] for p in productos if p["id"] not in existencias_por_prod]
+            if sin_existencia:
+                reservas_por_prod = inventario.reservado(cur, almacen_id, sin_existencia)
 
         resultado = []
         for p in productos:
@@ -585,13 +587,13 @@ def catalogo_vendedor(
                 lotes = [l for l in ex["lotes"] if l["cajas"] > 0]
                 cajas_fisicas = float(ex["cajas"])
                 reservado = float(ex["reservado"])
-                disponible = float(ex["disponible"])
+                disponible = max(0.0, float(ex["disponible"]))
             else:
                 lotes = []
                 cajas_fisicas = 0.0
                 res_dec = reservas_por_prod.get(p["id"], Decimal("0"))
                 reservado = float(res_dec)
-                disponible = float(Decimal("0") - res_dec)
+                disponible = 0.0
             vencimientos = [l["vencimiento"] for l in lotes if l["cajas"] > 0 and l["vencimiento"] is not None]
             proximo_vencimiento = min(vencimientos) if vencimientos else None
             precio_dec = precios.get(p["id"])

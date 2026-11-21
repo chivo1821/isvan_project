@@ -333,3 +333,48 @@ def test_respaldo_bcv_reintenta_sin_verificacion_ssl(monkeypatch):
         {"url": tasa_bcv.URL_BCV, "verify": True},
         {"url": tasa_bcv.URL_BCV, "verify": False},
     ]
+
+
+def _fake_bcv_con(monkeypatch, fecha_iso: str, tasa: str) -> None:
+    html = f'<div id="dolar"><strong>{tasa}</strong></div><div class="fechasValor">Fecha Valor: {fecha_iso}</div>'
+
+    def fake_get(url: str, **kwargs):
+        if url == tasa_bcv.URL_BCV:
+            return _RespuestaFake(url, text=html)
+        raise httpx.ConnectError("caido", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+
+def test_respaldo_rechaza_fecha_futura(db, monkeypatch):
+    futura = (tasa_bcv.hoy_caracas() + tasa_bcv.timedelta(days=10)).isoformat()
+    _fake_bcv_con(monkeypatch, futura, "54,12")
+    with db.cursor() as cur:
+        with pytest.raises(tasa_bcv.TasaNoDisponible):
+            tasa_bcv.actualizar(cur)
+    assert db.execute('SELECT count(*) AS n FROM "TasaCambio"').fetchone()["n"] == 0
+
+
+def test_respaldo_rechaza_desviacion_mayor_30(db, monkeypatch):
+    hoy = tasa_bcv.hoy_caracas()
+    db.execute(
+        'INSERT INTO "TasaCambio" ("fecha", "tasa", "fuente", "registradoEn") VALUES (%s, 50, \'DOLARAPI\', now())',
+        (hoy - tasa_bcv.timedelta(days=1),),
+    )
+    db.commit()
+    _fake_bcv_con(monkeypatch, hoy.isoformat(), "80,00")
+    with db.cursor() as cur:
+        with pytest.raises(tasa_bcv.TasaNoDisponible):
+            tasa_bcv.actualizar(cur)
+
+
+def test_sin_respaldo_no_consulta_bcv(db, monkeypatch):
+    def fake_get(url: str, **kwargs):
+        if url == tasa_bcv.URL_BCV:
+            raise AssertionError("no debio consultar el BCV")
+        raise httpx.ConnectError("caido", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    with db.cursor() as cur:
+        with pytest.raises(tasa_bcv.TasaNoDisponible):
+            tasa_bcv.actualizar(cur, con_respaldo=False)

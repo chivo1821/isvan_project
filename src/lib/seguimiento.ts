@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { apiGet } from "@/lib/api-client";
 
 /** GET /rutas/seguimiento/repartidores: quién está con la jornada abierta en
@@ -92,11 +92,58 @@ export function useSondeo<T>(
 // backend/app/api/rutas.py, cuantos_sin_senal).
 const SONDEO_SIN_SENAL_MS = 60_000;
 
+let sinSenalValor = 0;
+let sinSenalIntervalo: number | null = null;
+const sinSenalOyentes = new Set<() => void>();
+
+async function pedirSinSenal() {
+  if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+  try {
+    const res = await apiGet<CuantosSinSenal>("/rutas/seguimiento/sin-senal");
+    const nuevo = res?.sinSenal ?? 0;
+    if (nuevo !== sinSenalValor) {
+      sinSenalValor = nuevo;
+      for (const fn of sinSenalOyentes) fn();
+    }
+  } catch {
+    // Un fallo de red no borra lo último que se vio.
+  }
+}
+
+function alVolverSinSenal() {
+  if (document.visibilityState === "visible") void pedirSinSenal();
+}
+
+function suscribirSinSenal(oyente: () => void): () => void {
+  sinSenalOyentes.add(oyente);
+  if (sinSenalOyentes.size === 1 && typeof window !== "undefined") {
+    void pedirSinSenal();
+    sinSenalIntervalo = window.setInterval(pedirSinSenal, SONDEO_SIN_SENAL_MS);
+    document.addEventListener("visibilitychange", alVolverSinSenal);
+  }
+  return () => {
+    sinSenalOyentes.delete(oyente);
+    if (sinSenalOyentes.size === 0 && sinSenalIntervalo !== null) {
+      window.clearInterval(sinSenalIntervalo);
+      sinSenalIntervalo = null;
+      document.removeEventListener("visibilitychange", alVolverSinSenal);
+    }
+  };
+}
+
+function suscribirInactivo(): () => void {
+  return () => {};
+}
+
 /** Cuántos repartidores con la jornada abierta dejaron de enviar su
- * ubicación: se ve en el menú desde cualquier pantalla. */
+ * ubicación: se ve en el menú desde cualquier pantalla. Un único sondeo
+ * compartido aunque lo monten la barra lateral y las pestañas del área. */
 export function useSinSenal(activo: boolean): number {
-  const datos = useSondeo<CuantosSinSenal | null>("/rutas/seguimiento/sin-senal", null, SONDEO_SIN_SENAL_MS, activo, true);
-  return datos?.sinSenal ?? 0;
+  return useSyncExternalStore(
+    activo ? suscribirSinSenal : suscribirInactivo,
+    () => (activo ? sinSenalValor : 0),
+    () => 0
+  );
 }
 
 /** "hace 3 min", "hace 1 h 10 min". */

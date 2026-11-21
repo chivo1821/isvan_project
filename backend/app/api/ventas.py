@@ -206,10 +206,20 @@ def crear_pedido(data: PedidoDatos, usuario: dict = Depends(requiere_permiso("ve
             raise HTTPException(400, "Almacen desconocido")
 
         # Validar productos y consultar disponibilidad antes de insertar.
-        disponibles: dict[str, Decimal] = {}
-        for pid in {r.productoId for r in data.items} | {d.productoId for d in data.demandaNoAtendida}:
+        pids = list({r.productoId for r in data.items} | {d.productoId for d in data.demandaNoAtendida})
+        for pid in pids:
             sv._producto(cur, pid, empresa["id"])
-            disponibles[pid] = max(Decimal("0"), inventario.disponible(cur, data.almacenId, pid))
+        cur.execute(
+            'SELECT "productoId", COALESCE(SUM("cajas"), 0) AS c FROM "Existencia" '
+            'WHERE "almacenId" = %s AND "productoId" = ANY(%s) GROUP BY 1',
+            (data.almacenId, pids),
+        )
+        fisicas = {f["productoId"]: Decimal(f["c"]) for f in cur.fetchall()}
+        reservadas = inventario.reservado(cur, data.almacenId, pids) if pids else {}
+        disponibles = {
+            pid: max(Decimal("0"), fisicas.get(pid, Decimal("0")) - reservadas.get(pid, Decimal("0")))
+            for pid in pids
+        }
 
         vendedor_id = usuario["id"] if es_vendedor(usuario) else None
         numero = correlativo.formatear("PED", correlativo.siguiente(cur, empresa["id"], "PEDIDO"))
@@ -396,6 +406,8 @@ def confirmar_pedido(
         pedido, items = _pedido(cur, pedido_id, usuario, bloquear=True)
         if pedido["estado"] != "BORRADOR":
             raise HTTPException(409, "Solo se confirma un pedido en borrador")
+        if not items:
+            raise HTTPException(409, "El pedido no tiene renglones; solo registra demanda no atendida")
         sv.exigir_modulo(cur, pedido["empresaId"])
         cur.execute('SELECT * FROM "Cliente" WHERE "id" = %s', (pedido["clienteId"],))
         cliente = cur.fetchone()

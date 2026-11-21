@@ -1235,7 +1235,7 @@ model CodigoCorreo {
 model TasaCambio {
   fecha           DateTime @id @db.Date
   tasa            Decimal  @db.Decimal(20, 8)
-  fuente          String // DOLARAPI | MANUAL
+  fuente          String // DOLARAPI | BCV_DIRECTO | MANUAL
   registradoEn    DateTime @default(now())
   registradoPorId String?
   registradoPor   Usuario? @relation("TasaRegistradaPor", fields: [registradoPorId], references: [id], onDelete: SetNull)

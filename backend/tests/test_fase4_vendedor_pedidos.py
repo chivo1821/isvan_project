@@ -418,3 +418,30 @@ def test_consultar_demanda_no_atendida_filtros_y_roles(escenario_vendedor):
 
     # Repartidor rechazado
     assert e["api_rep"].get("/ventas/demanda-no-atendida?empresaId=emp-tralog").status_code == 403
+
+
+def test_confirmar_pedido_sin_renglones_rechaza_409(escenario_vendedor):
+    e = escenario_vendedor
+    anon, h1 = e["anon"], e["headers_ven1"]
+    r = anon.post(
+        "/ventas/pedidos",
+        headers=h1,
+        json={
+            "empresaId": "emp-tralog",
+            "clienteId": e["cli_r3"],
+            "almacenId": "alm-catia",
+            "origen": "APP",
+            "items": [],
+            "demandaNoAtendida": [
+                {"productoId": e["prod_cero"]["id"], "cajasSolicitadas": 5},
+            ],
+        },
+    )
+    assert r.status_code == 201, r.text
+    ped = r.json()
+    assert ped["items"] == []
+    assert ped["demandaNoAtendidaTotal"] == 1
+    conf = anon.post(f"/ventas/pedidos/{ped['id']}/confirmar", headers=h1)
+    assert conf.status_code == 409
+    assert "solo registra demanda no atendida" in conf.json()["detail"]
+

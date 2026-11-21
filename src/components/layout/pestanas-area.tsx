@@ -11,9 +11,12 @@ import { cn } from "@/lib/utils";
  * los submenús del menú lateral. Un área de una sola sección no lleva. */
 export function PestanasArea({ rol }: { rol: RolUsuario }) {
   const pathname = usePathname();
-  // La API deja ver las posiciones a DESPACHOS y APROBADOR (y al ADMIN).
-  const sinSenal = useSinSenal(rol === "ADMIN" || rol === "DESPACHOS" || rol === "APROBADOR");
   const actual = ubicar(pathname, areasDe(rol));
+  // La API deja ver las posiciones a DESPACHOS y APROBADOR (y al ADMIN).
+  const tieneSeguimiento = Boolean(actual?.area.secciones.some((s) => s.href === "/seguimiento"));
+  const sinSenal = useSinSenal(
+    tieneSeguimiento && (rol === "ADMIN" || rol === "DESPACHOS" || rol === "APROBADOR")
+  );
   if (!actual || actual.area.secciones.length < 2) return null;
 
   return (
