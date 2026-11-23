@@ -40,7 +40,11 @@ export function ListaGastos({ datos, filtros }: { datos: Lista; filtros: Filtros
                 <TableHead>Categoría</TableHead>
                 <TableHead>Descripción</TableHead>
                 <TableHead>Proveedor</TableHead>
+                <TableHead>Tipo doc.</TableHead>
+                <TableHead>N° doc. prov.</TableHead>
                 <TableHead>Referencia</TableHead>
+                <TableHead>Banco</TableHead>
+                <TableHead>Retención</TableHead>
                 <TableHead className="text-right">Bs</TableHead>
                 <TableHead className="text-right">Tasa</TableHead>
                 <TableHead className="text-right">USD</TableHead>
@@ -62,7 +66,13 @@ export function ListaGastos({ datos, filtros }: { datos: Lista; filtros: Filtros
                       {g.proveedor ?? "—"}
                     </span>
                   </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{g.tipoDocumento ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {g.numeroDocumentoProveedor ?? "—"}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{g.referencia ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{g.banco ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{g.retencion ?? "—"}</TableCell>
                   <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {g.montoBs != null ? formatBs(g.montoBs) : "—"}
                   </TableCell>

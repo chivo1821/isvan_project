@@ -33,12 +33,16 @@ const NOMBRE_COLUMNA: Record<string, string> = {
   categoria: "Categoría",
   descripcion: "Descripción",
   proveedor: "Proveedor",
+  tipo_documento: "Tipo de Documento",
+  numero_documento_proveedor: "Numero Documento Proveedor",
   referencia: "Referencia",
   monto_usd: "Monto USD",
   monto_bs: "Monto Bs",
   monto: "Monto",
   moneda: "Moneda",
   tasa: "Tasa",
+  banco: "Banco",
+  retencion: "Retención",
 };
 
 /** Como las cargas de ventas: primero se ve qué se cargaría y recién al

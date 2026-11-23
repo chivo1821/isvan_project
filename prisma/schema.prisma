@@ -1847,16 +1847,20 @@ model Gasto {
   empresa     Empresa
   fecha       DateTime   @db.Date
   categoria   String
-  descripcion String?
-  proveedor   String?
-  referencia  String?
+  descripcion              String?
+  proveedor                String?
+  tipoDocumento            String?
+  numeroDocumentoProveedor String?
+  referencia               String?
   // El monto en USD es el que cuenta en el resultado. Si el Excel lo trae en
   // Bs, se convierte con la tasa BCV de esa fecha (la guardada en tasa).
-  montoUsd    Decimal    @db.Decimal(20, 2)
-  montoBs     Decimal?   @db.Decimal(20, 2)
+  montoUsd                 Decimal    @db.Decimal(20, 2)
+  montoBs                  Decimal?   @db.Decimal(20, 2)
   // USD | BS: en que moneda venia en el Excel.
-  moneda      String
-  tasa        Decimal?   @db.Decimal(20, 8)
+  moneda                   String
+  tasa                     Decimal?   @db.Decimal(20, 8)
+  banco                    String?
+  retencion                String?
 
   @@index([empresa, fecha])
   @@index([cargaId])

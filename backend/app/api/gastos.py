@@ -89,12 +89,14 @@ def cargar(
             )
             with cur.copy(
                 'COPY "Gasto" ("id", "cargaId", "empresa", "fecha", "categoria", "descripcion", "proveedor", '
-                '"referencia", "montoUsd", "montoBs", "moneda", "tasa") FROM STDIN'
+                '"tipoDocumento", "numeroDocumentoProveedor", "referencia", "montoUsd", "montoBs", "moneda", '
+                '"tasa", "banco", "retencion") FROM STDIN'
             ) as copy:
                 for f in propias:
                     copy.write_row((
                         f"gasto-{uuid.uuid4().hex[:16]}", carga_id, f.empresa, f.fecha, f.categoria, f.descripcion,
-                        f.proveedor, f.referencia, f.montoUsd, f.montoBs, f.moneda, f.tasa,
+                        f.proveedor, f.tipoDocumento, f.numeroDocumentoProveedor, f.referencia, f.montoUsd,
+                        f.montoBs, f.moneda, f.tasa, f.banco, f.retencion,
                     ))
             cargas.append(carga_id)
         conn.commit()
@@ -173,7 +175,8 @@ def listar(
         totales = cur.fetchone()
         cur.execute(
             'SELECT g."id", g."empresa"::text AS "empresa", g."fecha", g."categoria", g."descripcion", g."proveedor", '
-            'g."referencia", g."montoUsd", g."montoBs", g."moneda", g."tasa", g."cargaId" '
+            'g."tipoDocumento", g."numeroDocumentoProveedor", g."referencia", g."montoUsd", g."montoBs", g."moneda", '
+            'g."tasa", g."banco", g."retencion", g."cargaId" '
             f'{fuente} ORDER BY g."fecha" DESC, g."montoUsd" DESC LIMIT {LIMITE_LISTA}',
             params,
         )
@@ -211,13 +214,24 @@ def plantilla():
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja.title = "gastos"
-    hoja.append(["Fecha", "Empresa", "Categoría", "Descripción", "Proveedor", "Referencia", "Monto USD", "Monto Bs",
-                 "Tasa"])
-    hoja.append([date(2026, 11, 3), "ISVAN", "Nómina", "Quincena 1 de noviembre", "", "", 1250.00, None, None])
-    hoja.append([date(2026, 11, 5), "ISVAN", "Combustible", "Gasoil camión 2", "Estación Las Mercedes", "F-1022",
-                 None, 18500.00, None])
-    hoja.append([date(2026, 11, 6), "TRALOG", "Alquiler", "Galpón", "Inversiones XYZ", "", 900.00, None, None])
-    for columna, ancho in zip("ABCDEFGHI", (12, 10, 16, 32, 24, 12, 12, 12, 10)):
+    hoja.append([
+        "Fecha", "Empresa", "Categoría", "Descripción", "Proveedor",
+        "Tipo de Documento", "Numero Documento Proveedor", "Referencia",
+        "Monto USD", "Monto Bs", "Tasa", "Banco", "Retención",
+    ])
+    hoja.append([
+        date(2026, 11, 3), "TRALOG", "Nómina", "Quincena 1 de noviembre", "",
+        "", "", "", 1250.00, None, None, "", "",
+    ])
+    hoja.append([
+        date(2026, 11, 5), "TRALOG", "Combustible", "Gasoil camión 2", "Estación Las Mercedes",
+        "", "", "F-1022", None, 18500.00, None, "", "",
+    ])
+    hoja.append([
+        date(2026, 11, 6), "TRALOG", "Alquiler", "Galpón", "Inversiones XYZ",
+        "", "", "", 900.00, None, None, "", "",
+    ])
+    for columna, ancho in zip("ABCDEFGHIJKLM", (12, 10, 16, 32, 24, 18, 26, 14, 12, 12, 10, 18, 16)):
         hoja.column_dimensions[columna].width = ancho
     salida = io.BytesIO()
     libro.save(salida)
