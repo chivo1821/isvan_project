@@ -445,3 +445,96 @@ def test_confirmar_pedido_sin_renglones_rechaza_409(escenario_vendedor):
     assert conf.status_code == 409
     assert "solo registra demanda no atendida" in conf.json()["detail"]
 
+
+def test_clientes_pedido_filtrado_por_rutas_y_roles(escenario_vendedor):
+    e = escenario_vendedor
+    anon, h1, h2 = e["anon"], e["headers_ven1"], e["headers_ven2"]
+
+    # ven1 solo tiene R3 en TRALOG: debe ver cli_r3 y no cli_r5
+    r1 = anon.get("/vendedor/clientes-pedido", headers=h1)
+    assert r1.status_code == 200, r1.text
+    ids1 = {c["clienteId"] for c in r1.json()}
+    assert e["cli_r3"] in ids1
+    assert e["cli_r5"] not in ids1
+
+    cli = next(c for c in r1.json() if c["clienteId"] == e["cli_r3"])
+    assert cli["empresaId"] == "emp-tralog"
+    assert cli["empresa"] == "TRALOG"
+    assert cli["rutaVenta"] == "R3"
+    assert cli["listaPrecioCodigo"] == "L1"
+    assert cli["almacenId"] == "alm-catia"
+    assert cli["moduloVentasActivo"] is True
+
+    # ven2 solo tiene R5: debe ver cli_r5 y no cli_r3
+    r2 = anon.get("/vendedor/clientes-pedido", headers=h2)
+    assert r2.status_code == 200, r2.text
+    ids2 = {c["clienteId"] for c in r2.json()}
+    assert e["cli_r5"] in ids2
+    assert e["cli_r3"] not in ids2
+
+    # ADMIN ve ambos y puede filtrar por empresa
+    radm = e["api_adm"].get("/vendedor/clientes-pedido?empresa=TRALOG")
+    assert radm.status_code == 200, radm.text
+    ids_adm = {c["clienteId"] for c in radm.json()}
+    assert e["cli_r3"] in ids_adm
+    assert e["cli_r5"] in ids_adm
+
+    # REPARTIDOR rechazado 403
+    assert e["api_rep"].get("/vendedor/clientes-pedido").status_code == 403
+
+
+def test_catalogo_version_determinista_y_cambia_con_stock_o_pedido(escenario_vendedor):
+    e = escenario_vendedor
+    anon, h1 = e["anon"], e["headers_ven1"]
+
+    v0_resp = anon.get("/vendedor/catalogo/version?empresaId=emp-tralog&almacenId=alm-catia", headers=h1)
+    assert v0_resp.status_code == 200, v0_resp.text
+    assert len(v0_resp.content) < 80
+    v0 = v0_resp.json()["version"]
+    assert isinstance(v0, str) and len(v0) > 0
+
+    # Llamada repetida sin cambios devuelve exactamente la misma version
+    v0_rep = anon.get("/vendedor/catalogo/version?empresaId=emp-tralog&almacenId=alm-catia", headers=h1)
+    assert v0_rep.status_code == 200
+    assert v0_rep.json()["version"] == v0
+
+    # 1) Cambia cuando entra stock en Existencia
+    assert e["api_adm"].post(
+        "/inventario/entradas",
+        json={
+            "empresaId": "emp-tralog",
+            "almacenId": "alm-catia",
+            "referencia": "reposicion-version",
+            "items": [
+                {"productoId": e["prod_cero"]["id"], "lote": "L-VER-1", "vencimiento": "2027-10-01", "cajas": 2},
+            ],
+        },
+    ).status_code == 201
+    v1_resp = anon.get("/vendedor/catalogo/version?empresaId=emp-tralog&almacenId=alm-catia", headers=h1)
+    assert v1_resp.status_code == 200
+    v1 = v1_resp.json()["version"]
+    assert v1 != v0
+
+    # 2) Cambia cuando se confirma un Pedido
+    ped = anon.post(
+        "/ventas/pedidos",
+        headers=h1,
+        json={
+            "empresaId": "emp-tralog",
+            "clienteId": e["cli_r3"],
+            "almacenId": "alm-catia",
+            "items": [{"productoId": e["prod_cero"]["id"], "cajas": 1}],
+        },
+    )
+    assert ped.status_code == 201, ped.text
+    assert anon.post(f"/ventas/pedidos/{ped.json()['id']}/confirmar", headers=h1).status_code == 200
+
+    v2_resp = anon.get("/vendedor/catalogo/version?empresaId=emp-tralog&almacenId=alm-catia", headers=h1)
+    assert v2_resp.status_code == 200
+    v2 = v2_resp.json()["version"]
+    assert v2 != v1
+
+    # REPARTIDOR rechazado 403
+    assert e["api_rep"].get("/vendedor/catalogo/version?empresaId=emp-tralog").status_code == 403
+
+
