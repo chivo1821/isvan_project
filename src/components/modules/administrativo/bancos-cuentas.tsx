@@ -307,7 +307,7 @@ function CuentaModal({
         });
         toast.success("Cuenta actualizada correctamente");
       } else {
-        const saldoNum = Number(saldoInicial.replace(",", ".")) || 0;
+        const saldoNum = Number(saldoInicial.replace(/\./g, "").replace(",", ".")) || 0;
         await apiPost("/bancos/cuentas", {
           empresaId,
           nombre: nombre.trim(),
@@ -460,9 +460,24 @@ function CuentaModal({
                   <Label htmlFor="cta-rif">RIF o Cédula</Label>
                   <Input
                     id="cta-rif"
-                    placeholder="J-12345678-9"
+                    placeholder="J-123456789"
+                    maxLength={11}
                     value={rif}
-                    onChange={(e) => setRif(e.target.value)}
+                    onChange={(e) => {
+                      const raw = e.target.value.toUpperCase().replace(/[^VEJGPC0-9-]/g, "");
+                      if (!raw) {
+                        setRif("");
+                        return;
+                      }
+                      const prefijo = raw[0];
+                      if (/[VEJGPC]/.test(prefijo)) {
+                        const digitos = raw.slice(1).replace(/\D/g, "").slice(0, 9);
+                        setRif(digitos.length > 0 || raw.includes("-") ? `${prefijo}-${digitos}` : prefijo);
+                      } else {
+                        const digitos = raw.replace(/\D/g, "").slice(0, 9);
+                        setRif(digitos);
+                      }
+                    }}
                   />
                 </div>
               </>
@@ -474,11 +489,21 @@ function CuentaModal({
                   <Label htmlFor="cta-saldo-ini">Saldo inicial</Label>
                   <Input
                     id="cta-saldo-ini"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
+                    type="text"
+                    inputMode="decimal"
+                    className="tabular-nums"
+                    placeholder="0,00"
                     value={saldoInicial}
-                    onChange={(e) => setSaldoInicial(e.target.value)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const negativo = raw.trimStart().startsWith("-") ? "-" : "";
+                      const limpio = raw.replace(/[^0-9,]/g, "");
+                      const [enteroRaw = "", ...resto] = limpio.split(",");
+                      const enteroSinCeros = enteroRaw.replace(/^0+(?=\d)/, "");
+                      const enteroFmt = enteroSinCeros.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+                      const decimales = resto.length > 0 ? `,${resto.join("").slice(0, 2)}` : "";
+                      setSaldoInicial(`${negativo}${enteroFmt}${decimales}`);
+                    }}
                   />
                 </div>
 
