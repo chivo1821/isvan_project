@@ -39,7 +39,7 @@ export function SelectorEmpresa({ empresas, actual }: { empresas: EmpresaFiscal[
 }
 
 /** Lo que se ve cuando el módulo está apagado para la empresa. */
-export function ModuloApagado({ modulo, empresa }: { modulo: "ventas" | "inventario"; empresa: EmpresaFiscal }) {
+export function ModuloApagado({ modulo, empresa }: { modulo: "ventas" | "inventario" | "bancos"; empresa: EmpresaFiscal }) {
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
