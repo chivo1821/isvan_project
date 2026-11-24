@@ -80,11 +80,11 @@ export function UsuariosTable({
                       <span className="font-medium text-foreground">{u.nombre}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="max-w-[220px] whitespace-normal break-words text-muted-foreground">
                     {u.autogestionado ? (
                       <span>
                         {formatTelefono(u.telefono)}
-                        <span className="ml-1.5 text-xs">(motorizado, entra con placa y PIN)</span>
+                        <span className="block text-xs">(motorizado, placa y PIN)</span>
                       </span>
                     ) : (
                       u.email
@@ -123,8 +123,8 @@ export function UsuariosTable({
                     )}
                   </TableCell>
                   {esAdmin && (
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
+                    <TableCell className="whitespace-normal">
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         {/* Un motorizado anda en su moto y entra con PIN: se administra
                             en Vehículos › Choferes › Motorizados. */}
                         {u.rol === "REPARTIDOR" && !u.autogestionado && (

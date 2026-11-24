@@ -141,9 +141,10 @@ export function CargarGastosDialog({ empresaInicial }: { empresaInicial?: Empres
         <DialogHeader>
           <DialogTitle>Cargar gastos</DialogTitle>
           <DialogDescription>
-            Un Excel con una fila por gasto. Hace falta la fecha y el monto (en dólares, en bolívares o «Monto» con su
-            moneda); si trae categoría, descripción, proveedor o referencia, se guardan también. Lo que viene en
-            bolívares se pasa a dólares con la tasa del archivo o, si no la trae, con la tasa BCV de ese día.
+            Un Excel con una fila por gasto (plantilla de 13 columnas). Hace falta la fecha y el monto (en dólares, en
+            bolívares o «Monto» con su moneda); si trae categoría, descripción, proveedor, tipo y número de documento
+            del proveedor, referencia, banco o retención, se guardan también. Lo que viene en bolívares se pasa a
+            dólares con la tasa del archivo o, si no la trae, con la tasa BCV de ese día.
           </DialogDescription>
         </DialogHeader>
 

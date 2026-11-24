@@ -146,12 +146,13 @@ export function describirVehiculo(vehiculo: { placa: string; tipo: TipoVehiculo 
   return vehiculo ? `${vehiculo.placa} — ${TIPO_VEHICULO_META[vehiculo.tipo].label}` : "Sin vehículo asignado";
 }
 
-// Los strings tipo "YYYY-MM-DD" (sin hora) se interpretan como UTC medianoche
-// por el constructor de Date; forzamos hora local para que no se corran un
-// dia hacia atras al formatear en zonas horarias negativas (ej. Venezuela).
+// Los strings tipo "YYYY-MM-DD" (sin hora) no traen zona horaria: usar
+// mediodía UTC (08:00 en America/Caracas) garantiza el mismo día calendario
+// tanto en Vercel (Node en UTC) como en el navegador local (UTC-4), evitando
+// errores de hidratación (React #418) al formatear con TIMEZONE.
 function toLocalDate(value: Date | string) {
   if (value instanceof Date) return value;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00Z`) : new Date(value);
 }
 
 // Zona horaria fija (no la del servidor/navegador): sin esto, el render del
