@@ -49,6 +49,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   pedidos: "Pedidos",
   inventario: "Inventario",
   libro: "Libro de ventas",
+  bancos: "Bancos y caja",
   ISVAN: "ISVAN",
   TRALOG: "TRALOG",
 };

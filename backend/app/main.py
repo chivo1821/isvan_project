@@ -17,6 +17,7 @@ from app.api import (
     administracion,
     almacenes,
     auth,
+    bancos,
     catalogo,
     censo,
     clientes,
@@ -149,6 +150,7 @@ ROUTERS_PROTEGIDOS = [
     catalogo.router,
     ventas.router,
     inventario.router,
+    bancos.router,
     gastos.router,
     movil.router,
 ]
@@ -163,7 +165,7 @@ ROUTERS_PROTEGIDOS = [
 # app/core/permisos.py).
 ROUTERS_POR_ROL = {
     "VENDEDOR": [usuarios.router, vendedor.router, censo.router, administracion.router, catalogo.router, ventas.router],
-    "COBRANZAS": [usuarios.router, cobranzas.router, administracion.router, catalogo.router, ventas.router],
+    "COBRANZAS": [usuarios.router, cobranzas.router, administracion.router, catalogo.router, ventas.router, bancos.router],
     "SUPERVISOR": [usuarios.router, vendedor.router, censo.router, administracion.router, ventas.router],
 }
 

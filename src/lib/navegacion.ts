@@ -11,6 +11,7 @@ import {
   CarFrontIcon,
   ClipboardCheckIcon,
   HandCoinsIcon,
+  LandmarkIcon,
   LayoutDashboardIcon,
   MapPinCheckIcon,
   NavigationIcon,
@@ -125,6 +126,19 @@ export const AREAS: Area[] = [
     secciones: soloAdministrativo([
       { label: "Existencias", href: "/administrativo/inventario", claves: "lotes ajustes almacen" },
       { label: "Catálogo y precios", href: "/administrativo/catalogo", claves: "productos listas de precio" },
+    ]),
+  },
+  {
+    id: "bancos",
+    label: "Bancos y caja",
+    icon: LandmarkIcon,
+    roles: ADMIN,
+    secciones: soloAdministrativo([
+      {
+        label: "Bancos y caja",
+        href: "/administrativo/bancos",
+        claves: "cuentas tesoreria movimientos flujo de caja conciliacion",
+      },
     ]),
   },
 

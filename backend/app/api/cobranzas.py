@@ -248,8 +248,16 @@ def _avisar_cliente(cur, pago: dict, asunto: str, parrafos: list[str]) -> None:
         correo.enviar_sin_fallar(cuenta["email"], asunto, [f"Hola, {cuenta['nombre']}.", *parrafos])
 
 
+class PagoManualConTesoreriaCreate(PagoManualCreate):
+    cuentaTesoreriaId: str | None = None
+
+
+class VerificarPagoConTesoreriaRequest(VerificarPagoRequest):
+    cuentaTesoreriaId: str | None = None
+
+
 @router.post("/pagos", status_code=201)
-def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
+def registrar_pago(data: PagoManualConTesoreriaCreate, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
     """Un pago recibido por fuera del portal (efectivo, divisas, retencion,
     ajuste, o un pago movil que el cliente no reporto). Queda verificado."""
     try:
@@ -261,6 +269,7 @@ def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol(
             pago_id = pagos.registrar(
                 cur, empresa=data.empresa, codigo=data.codigoCliente, datos=datos,
                 aplicaciones=[a.model_dump() for a in data.aplicaciones], usuario_id=usuario["id"],
+                cuenta_tesoreria_id=data.cuentaTesoreriaId,
             )
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
@@ -269,12 +278,13 @@ def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol(
 
 
 @router.post("/pagos/{pago_id}/verificar")
-def verificar_pago(pago_id: str, data: VerificarPagoRequest, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
+def verificar_pago(pago_id: str, data: VerificarPagoConTesoreriaRequest, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
     with get_connection() as conn, conn.cursor() as cur:
         try:
             pago = pagos.verificar(
                 cur, pago_id, usuario["id"],
                 [a.model_dump() for a in data.aplicaciones] if data.aplicaciones is not None else None,
+                cuenta_tesoreria_id=data.cuentaTesoreriaId,
             )
         except ValueError as e:
             raise HTTPException(422, str(e)) from e

@@ -1,5 +1,6 @@
-"""Catalogo del sistema administrativo: productos, impuestos, listas de
-precio y la ficha fiscal de los clientes.
+"""Catalogo del sistema administrativo: productos (con sus 3 tipos de costo),
+impuestos, listas de precio (con calculo de margenes sobre costo o sobre venta
+y recalculo masivo desde costo) y la ficha fiscal de los clientes.
 
 Hasta el corte, el catalogo se alimenta del extracto de ventas
 (VentaProducto / VentaCliente) con /catalogo/sincronizar: copia lo nuevo y
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 import openpyxl
@@ -20,7 +21,8 @@ from pydantic import BaseModel, Field
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc, hoy_caracas
 from app.core.permisos import requiere_permiso
-from app.services import bitacora, empresas
+from app.schemas import en_utc
+from app.services import bitacora, costos_inventario, empresas
 
 router = APIRouter(prefix="/catalogo", tags=["catalogo"])
 
@@ -28,7 +30,9 @@ IMPUESTOS = ("IVA_GENERAL", "IVA_REDUCIDO", "IVA_ADICIONAL", "EXENTO")
 
 _PRODUCTO = (
     'p."id", p."empresaId", p."codigo", p."nombre", p."grupo", p."codigoProveedor", p."unidadesPorCaja", '
-    'p."litrosPorUnidad", p."pesoCajaKg", p."impuestoCodigo", p."requiereFrio", p."manejaLote", p."activo"'
+    'p."litrosPorUnidad", p."pesoCajaKg", p."impuestoCodigo", p."requiereFrio", p."manejaLote", p."activo", '
+    'p."ultimoCostoCajaUsd", p."ultimoCostoCajaBs", p."costoPromedioCajaUsd", p."costoPromedioCajaBs", '
+    'p."costoPresupuestarioCajaUsd", p."modoPresupuestario", p."porcentajePresupuestario", p."costosActualizadosEn"'
 )
 
 
@@ -49,6 +53,9 @@ class ProductoDatos(BaseModel):
 class PrecioItem(BaseModel):
     productoId: str
     precioCajaUsd: Decimal = Field(ge=0, le=Decimal("1000000"))
+    margenPct: Decimal | None = None
+    baseCostoUsada: str | None = None
+    precioFijo: bool = True
 
 
 class PreciosUpdate(BaseModel):
@@ -58,6 +65,26 @@ class PreciosUpdate(BaseModel):
 class ListaDatos(BaseModel):
     codigo: str = Field(min_length=1, max_length=40)
     nombre: str = Field(min_length=1, max_length=120)
+    baseCostoPorDefecto: str = "ULTIMO"
+    margenObjetivoPct: Decimal | None = Field(default=None, ge=0)
+    metodoMargen: str = "SOBRE_COSTO"
+
+
+class ListaConfigUpdate(BaseModel):
+    nombre: str | None = Field(default=None, min_length=1, max_length=120)
+    activa: bool | None = None
+    baseCostoPorDefecto: str | None = None
+    margenObjetivoPct: Decimal | None = Field(default=None, ge=0)
+    metodoMargen: str | None = None
+
+
+class RecalcularPreciosDatos(BaseModel):
+    baseCosto: str
+    metodoMargen: str = "SOBRE_COSTO"
+    margenPct: Decimal = Field(ge=0)
+    grupo: str | None = Field(default=None, max_length=100)
+    productoIds: list[str] | None = None
+    confirmar: bool = False
 
 
 class FichaFiscal(BaseModel):
@@ -74,12 +101,63 @@ class FichaFiscal(BaseModel):
 
 
 def _producto_json(p: dict) -> dict:
+    actualizado_costos = p.get("costosActualizadosEn")
     return {
-        **p,
+        "id": p["id"],
+        "empresaId": p["empresaId"],
         "codigo": int(p["codigo"]),
-        "litrosPorUnidad": float(p["litrosPorUnidad"]) if p["litrosPorUnidad"] is not None else None,
-        "pesoCajaKg": float(p["pesoCajaKg"]) if p["pesoCajaKg"] is not None else None,
+        "nombre": p["nombre"],
+        "grupo": p.get("grupo"),
+        "codigoProveedor": p.get("codigoProveedor"),
+        "unidadesPorCaja": int(p["unidadesPorCaja"]),
+        "litrosPorUnidad": float(p["litrosPorUnidad"]) if p.get("litrosPorUnidad") is not None else None,
+        "pesoCajaKg": float(p["pesoCajaKg"]) if p.get("pesoCajaKg") is not None else None,
+        "impuestoCodigo": p["impuestoCodigo"],
+        "requiereFrio": bool(p["requiereFrio"]),
+        "manejaLote": bool(p["manejaLote"]),
+        "activo": bool(p["activo"]),
+        "ultimoCostoCajaUsd": float(p["ultimoCostoCajaUsd"]) if p.get("ultimoCostoCajaUsd") is not None else None,
+        "ultimoCostoCajaBs": float(p["ultimoCostoCajaBs"]) if p.get("ultimoCostoCajaBs") is not None else None,
+        "costoPromedioCajaUsd": (
+            float(p["costoPromedioCajaUsd"]) if p.get("costoPromedioCajaUsd") is not None else None
+        ),
+        "costoPromedioCajaBs": float(p["costoPromedioCajaBs"]) if p.get("costoPromedioCajaBs") is not None else None,
+        "costoPresupuestarioCajaUsd": (
+            float(p["costoPresupuestarioCajaUsd"]) if p.get("costoPresupuestarioCajaUsd") is not None else None
+        ),
+        "modoPresupuestario": p.get("modoPresupuestario") or "MANUAL",
+        "porcentajePresupuestario": (
+            float(p["porcentajePresupuestario"]) if p.get("porcentajePresupuestario") is not None else None
+        ),
+        "costosActualizadosEn": (
+            en_utc(actualizado_costos).isoformat()
+            if isinstance(actualizado_costos, datetime)
+            else actualizado_costos
+        ),
     }
+
+
+def _lista_json(f: dict) -> dict:
+    return {
+        "id": f["id"],
+        "codigo": f["codigo"],
+        "nombre": f["nombre"],
+        "activa": bool(f["activa"]),
+        "productosConPrecio": int(f.get("productosConPrecio") or 0),
+        "clientes": int(f.get("clientes") or 0),
+        "baseCostoPorDefecto": f.get("baseCostoPorDefecto") or "ULTIMO",
+        "margenObjetivoPct": float(f["margenObjetivoPct"]) if f.get("margenObjetivoPct") is not None else None,
+        "metodoMargen": f.get("metodoMargen") or "SOBRE_COSTO",
+    }
+
+
+def _validar_config_lista(base_costo: str, metodo_margen: str, margen_objetivo: Decimal | None) -> None:
+    if base_costo not in costos_inventario.BASES_COSTO:
+        raise HTTPException(400, f"Base de costo invalida: usa {', '.join(costos_inventario.BASES_COSTO)}")
+    if metodo_margen not in costos_inventario.METODOS_MARGEN:
+        raise HTTPException(400, f"Metodo de margen invalido: usa {', '.join(costos_inventario.METODOS_MARGEN)}")
+    if metodo_margen == "SOBRE_VENTA" and margen_objetivo is not None and margen_objetivo >= Decimal("100"):
+        raise HTTPException(400, "En margen sobre venta el porcentaje objetivo debe ser menor que 100 %")
 
 
 def normalizar_rif_cedula(valor: str | None) -> str | None:
@@ -261,37 +339,69 @@ def sincronizar_desde_ventas(empresaId: str, usuario: dict = Depends(requiere_pe
 # ---------- Listas de precio ----------
 
 
+def _consultar_lista_con_conteos(cur, lista_id: str) -> dict:
+    cur.execute(
+        'SELECT l."id", l."codigo", l."nombre", l."activa", '
+        'l."baseCostoPorDefecto", l."margenObjetivoPct", l."metodoMargen", '
+        'count(i."id") AS "productosConPrecio", '
+        '(SELECT count(*) FROM "Cliente" c JOIN "EmpresaFiscal" e ON e."codigo" = c."empresa"::text '
+        ' WHERE e."id" = l."empresaId" AND c."listaPrecioCodigo" = l."codigo") AS "clientes" '
+        'FROM "ListaPrecio" l LEFT JOIN "ListaPrecioItem" i ON i."listaId" = l."id" '
+        'WHERE l."id" = %s GROUP BY l."id"',
+        (lista_id,),
+    )
+    return _lista_json(cur.fetchone())
+
+
 @router.get("/listas")
 def listar_listas(empresaId: str, usuario: dict = Depends(requiere_permiso("catalogo.ver"))):
     with get_connection() as conn, conn.cursor() as cur:
         empresas.exigir(cur, usuario, empresaId)
         cur.execute(
-            'SELECT l."id", l."codigo", l."nombre", l."activa", count(i."id") AS "productosConPrecio", '
+            'SELECT l."id", l."codigo", l."nombre", l."activa", '
+            'l."baseCostoPorDefecto", l."margenObjetivoPct", l."metodoMargen", '
+            'count(i."id") AS "productosConPrecio", '
             '(SELECT count(*) FROM "Cliente" c JOIN "EmpresaFiscal" e ON e."codigo" = c."empresa"::text '
             ' WHERE e."id" = l."empresaId" AND c."listaPrecioCodigo" = l."codigo") AS "clientes" '
             'FROM "ListaPrecio" l LEFT JOIN "ListaPrecioItem" i ON i."listaId" = l."id" '
             'WHERE l."empresaId" = %s GROUP BY l."id" ORDER BY l."codigo"',
             (empresaId,),
         )
-        return cur.fetchall()
+        return [_lista_json(f) for f in cur.fetchall()]
 
 
 @router.post("/listas", status_code=201)
 def crear_lista(empresaId: str, data: ListaDatos, usuario: dict = Depends(requiere_permiso("precios.editar"))):
+    base_costo = data.baseCostoPorDefecto.strip().upper()
+    metodo_margen = data.metodoMargen.strip().upper()
+    _validar_config_lista(base_costo, metodo_margen, data.margenObjetivoPct)
     with get_connection() as conn, conn.cursor() as cur:
         empresa = empresas.exigir(cur, usuario, empresaId)
         cur.execute(
-            'INSERT INTO "ListaPrecio" ("id", "organizacionId", "empresaId", "codigo", "nombre") '
-            "VALUES ('lista-' || substr(md5(%s || %s), 1, 16), %s, %s, %s, %s) "
-            'ON CONFLICT ("empresaId", "codigo") DO NOTHING RETURNING "id", "codigo", "nombre", "activa"',
-            (empresaId, data.codigo.strip(), empresa["organizacionId"], empresaId, data.codigo.strip(), data.nombre.strip()),
+            'INSERT INTO "ListaPrecio" '
+            '("id", "organizacionId", "empresaId", "codigo", "nombre", "baseCostoPorDefecto", "margenObjetivoPct", "metodoMargen") '
+            "VALUES ('lista-' || substr(md5(%s || %s), 1, 16), %s, %s, %s, %s, %s, %s, %s) "
+            'ON CONFLICT ("empresaId", "codigo") DO NOTHING '
+            'RETURNING "id", "codigo", "nombre", "activa", "baseCostoPorDefecto", "margenObjetivoPct", "metodoMargen"',
+            (
+                empresaId,
+                data.codigo.strip(),
+                empresa["organizacionId"],
+                empresaId,
+                data.codigo.strip(),
+                data.nombre.strip(),
+                base_costo,
+                costos_inventario.q2(data.margenObjetivoPct) if data.margenObjetivoPct is not None else None,
+                metodo_margen,
+            ),
         )
         lista = cur.fetchone()
         if not lista:
             raise HTTPException(409, f"Ya hay una lista con el codigo {data.codigo}")
         bitacora.registrar(cur, usuario["id"], "ListaPrecio", lista["id"], "crear", None, lista)
+        salida = _consultar_lista_con_conteos(cur, lista["id"])
         conn.commit()
-    return lista
+    return salida
 
 
 def _lista(cur, usuario: dict, lista_id: str) -> dict:
@@ -303,40 +413,114 @@ def _lista(cur, usuario: dict, lista_id: str) -> dict:
     return lista
 
 
+@router.put("/listas/{lista_id}")
+def editar_lista(
+    lista_id: str,
+    data: ListaConfigUpdate,
+    usuario: dict = Depends(requiere_permiso("precios.editar")),
+):
+    with get_connection() as conn, conn.cursor() as cur:
+        antes = _lista(cur, usuario, lista_id)
+        enviados = data.model_fields_set
+        nombre = data.nombre.strip() if "nombre" in enviados and data.nombre is not None else antes["nombre"]
+        activa = data.activa if "activa" in enviados and data.activa is not None else antes["activa"]
+        base_costo = (
+            data.baseCostoPorDefecto.strip().upper()
+            if "baseCostoPorDefecto" in enviados and data.baseCostoPorDefecto is not None
+            else (antes.get("baseCostoPorDefecto") or "ULTIMO")
+        )
+        metodo_margen = (
+            data.metodoMargen.strip().upper()
+            if "metodoMargen" in enviados and data.metodoMargen is not None
+            else (antes.get("metodoMargen") or "SOBRE_COSTO")
+        )
+        margen_obj = (
+            costos_inventario.q2(data.margenObjetivoPct)
+            if "margenObjetivoPct" in enviados and data.margenObjetivoPct is not None
+            else (None if "margenObjetivoPct" in enviados else antes.get("margenObjetivoPct"))
+        )
+        _validar_config_lista(base_costo, metodo_margen, margen_obj)
+
+        cur.execute(
+            'UPDATE "ListaPrecio" SET "nombre" = %s, "activa" = %s, '
+            '"baseCostoPorDefecto" = %s, "margenObjetivoPct" = %s, "metodoMargen" = %s '
+            'WHERE "id" = %s RETURNING *',
+            (nombre, activa, base_costo, margen_obj, metodo_margen, lista_id),
+        )
+        despues = cur.fetchone()
+        bitacora.registrar(cur, usuario["id"], "ListaPrecio", lista_id, "editar", antes, despues)
+        salida = _consultar_lista_con_conteos(cur, lista_id)
+        conn.commit()
+    return salida
+
+
 @router.get("/listas/{lista_id}/precios")
 def precios_de_lista(lista_id: str, usuario: dict = Depends(requiere_permiso("catalogo.ver"))):
-    """Todos los productos activos de la empresa con su precio en la lista
-    (null si no tiene)."""
+    """Todos los productos activos de la empresa con su precio en la lista,
+    sus 3 costos, margenes/utilidades y alertas bajoCosto / bajoMargenObjetivo."""
     with get_connection() as conn, conn.cursor() as cur:
         lista = _lista(cur, usuario, lista_id)
         cur.execute(
-            f'SELECT {_PRODUCTO}, i."precioCajaUsd" FROM "Producto" p '
+            f'SELECT {_PRODUCTO}, i."precioCajaUsd", i."margenPct", i."baseCostoUsada", i."precioFijo" '
+            'FROM "Producto" p '
             'LEFT JOIN "ListaPrecioItem" i ON i."productoId" = p."id" AND i."listaId" = %s '
             'WHERE p."empresaId" = %s AND p."activo" ORDER BY p."grupo", p."nombre"',
             (lista_id, lista["empresaId"]),
         )
         return [
-            {**_producto_json(f), "precioCajaUsd": float(f["precioCajaUsd"]) if f["precioCajaUsd"] is not None else None}
+            costos_inventario.enriquecer_precio_producto(_producto_json(f), f, lista)
             for f in cur.fetchall()
         ]
 
 
-def _guardar_precios(cur, lista: dict, precios: list[tuple[str, Decimal]], usuario_id: str) -> int:
+def _guardar_precios(
+    cur,
+    lista: dict,
+    precios: list[tuple[str, Decimal, Decimal | None, str | None, bool]],
+    usuario_id: str,
+) -> int:
     cur.execute('SELECT "id" FROM "Producto" WHERE "empresaId" = %s', (lista["empresaId"],))
     validos = {f["id"] for f in cur.fetchall()}
-    ajenos = [pid for pid, _ in precios if pid not in validos]
+    ajenos = [pid for pid, *_ in precios if pid not in validos]
     if ajenos:
         raise HTTPException(400, f"{len(ajenos)} producto(s) no son de esta empresa")
+    ahora = ahora_utc()
     cur.executemany(
-        'INSERT INTO "ListaPrecioItem" ("id", "listaId", "productoId", "precioCajaUsd", "actualizadoEn", "actualizadoPorId") '
-        "VALUES ('lpi-' || substr(md5(%s || %s), 1, 16), %s, %s, %s, %s, %s) "
-        'ON CONFLICT ("listaId", "productoId") DO UPDATE SET "precioCajaUsd" = EXCLUDED."precioCajaUsd", '
-        '"actualizadoEn" = EXCLUDED."actualizadoEn", "actualizadoPorId" = EXCLUDED."actualizadoPorId"',
-        [(lista["id"], pid, lista["id"], pid, precio, ahora_utc(), usuario_id) for pid, precio in precios],
+        'INSERT INTO "ListaPrecioItem" '
+        '("id", "listaId", "productoId", "precioCajaUsd", "margenPct", "baseCostoUsada", "precioFijo", '
+        '"actualizadoEn", "actualizadoPorId") '
+        "VALUES ('lpi-' || substr(md5(%s || %s), 1, 16), %s, %s, %s, %s, %s, %s, %s, %s) "
+        'ON CONFLICT ("listaId", "productoId") DO UPDATE SET '
+        '"precioCajaUsd" = EXCLUDED."precioCajaUsd", '
+        '"margenPct" = EXCLUDED."margenPct", '
+        '"baseCostoUsada" = EXCLUDED."baseCostoUsada", '
+        '"precioFijo" = EXCLUDED."precioFijo", '
+        '"actualizadoEn" = EXCLUDED."actualizadoEn", '
+        '"actualizadoPorId" = EXCLUDED."actualizadoPorId"',
+        [
+            (
+                lista["id"],
+                pid,
+                lista["id"],
+                pid,
+                costos_inventario.q4(precio),
+                costos_inventario.q2(margen) if margen is not None else None,
+                base_usada or "MANUAL",
+                fijo,
+                ahora,
+                usuario_id,
+            )
+            for pid, precio, margen, base_usada, fijo in precios
+        ],
     )
     bitacora.registrar(
-        cur, usuario_id, "ListaPrecio", lista["id"], "precios", None,
-        {"cambiados": len(precios), "precios": {pid: precio for pid, precio in precios[:500]}},
+        cur,
+        usuario_id,
+        "ListaPrecio",
+        lista["id"],
+        "precios",
+        None,
+        {"cambiados": len(precios), "precios": {pid: precio for pid, precio, *_ in precios[:500]}},
     )
     return len(precios)
 
@@ -345,9 +529,91 @@ def _guardar_precios(cur, lista: dict, precios: list[tuple[str, Decimal]], usuar
 def guardar_precios(lista_id: str, data: PreciosUpdate, usuario: dict = Depends(requiere_permiso("precios.editar"))):
     with get_connection() as conn, conn.cursor() as cur:
         lista = _lista(cur, usuario, lista_id)
-        n = _guardar_precios(cur, lista, [(p.productoId, p.precioCajaUsd) for p in data.precios], usuario["id"])
+        n = _guardar_precios(
+            cur,
+            lista,
+            [
+                (p.productoId, p.precioCajaUsd, p.margenPct, p.baseCostoUsada or "MANUAL", p.precioFijo)
+                for p in data.precios
+            ],
+            usuario["id"],
+        )
         conn.commit()
     return {"guardados": n}
+
+
+@router.post("/listas/{lista_id}/recalcular-precios")
+def recalcular_precios_lista(
+    lista_id: str,
+    data: RecalcularPreciosDatos,
+    usuario: dict = Depends(requiere_permiso("precios.editar")),
+):
+    base_costo = data.baseCosto.strip().upper()
+    metodo_margen = data.metodoMargen.strip().upper()
+    if base_costo not in costos_inventario.BASES_COSTO:
+        raise HTTPException(400, f"Base de costo invalida: usa {', '.join(costos_inventario.BASES_COSTO)}")
+    if metodo_margen not in costos_inventario.METODOS_MARGEN:
+        raise HTTPException(400, f"Metodo de margen invalido: usa {', '.join(costos_inventario.METODOS_MARGEN)}")
+    if metodo_margen == "SOBRE_VENTA" and data.margenPct >= Decimal("100"):
+        raise HTTPException(400, "En margen sobre venta el porcentaje debe ser menor que 100 %")
+
+    with get_connection() as conn, conn.cursor() as cur:
+        lista = _lista(cur, usuario, lista_id)
+        condiciones = ['p."empresaId" = %s', 'p."activo"']
+        params: list = [lista["empresaId"]]
+        if data.grupo and data.grupo.strip() and data.grupo.strip().upper() != "TODOS":
+            condiciones.append('p."grupo" = %s')
+            params.append(data.grupo.strip())
+        if data.productoIds:
+            condiciones.append('p."id" = ANY(%s)')
+            params.append(data.productoIds)
+
+        cur.execute(
+            f'SELECT {_PRODUCTO}, i."precioCajaUsd" '
+            'FROM "Producto" p '
+            'LEFT JOIN "ListaPrecioItem" i ON i."productoId" = p."id" AND i."listaId" = %s '
+            f'WHERE {" AND ".join(condiciones)} ORDER BY p."grupo", p."nombre"',
+            [lista_id, *params],
+        )
+
+        renglones = []
+        a_guardar: list[tuple[str, Decimal, Decimal | None, str | None, bool]] = []
+        omitidos_sin_costo = 0
+
+        for f in cur.fetchall():
+            costo_base = costos_inventario.costo_segun_base(f, base_costo)
+            if costo_base is None or costo_base <= Decimal("0"):
+                omitidos_sin_costo += 1
+                continue
+            nuevo_precio = costos_inventario.calcular_precio_desde_costo(costo_base, data.margenPct, metodo_margen)
+            utilidad = costos_inventario.calcular_utilidad_usd(nuevo_precio, costo_base)
+            renglones.append({
+                "productoId": f["id"],
+                "codigo": int(f["codigo"]),
+                "nombre": f["nombre"],
+                "grupo": f["grupo"],
+                "costoBaseUsd": float(costo_base),
+                "precioAnteriorUsd": float(f["precioCajaUsd"]) if f["precioCajaUsd"] is not None else None,
+                "nuevoPrecioUsd": float(nuevo_precio),
+                "margenPct": float(costos_inventario.q2(data.margenPct)),
+                "utilidadUsd": float(utilidad) if utilidad is not None else 0.0,
+            })
+            a_guardar.append((f["id"], nuevo_precio, data.margenPct, base_costo, False))
+
+        actualizados = 0
+        if data.confirmar and a_guardar:
+            actualizados = _guardar_precios(cur, lista, a_guardar, usuario["id"])
+            conn.commit()
+
+    return {
+        "confirmado": data.confirmar,
+        "actualizados": actualizados,
+        "omitidosSinCosto": omitidos_sin_costo,
+        "baseCosto": base_costo,
+        "metodoMargen": metodo_margen,
+        "margenPct": float(costos_inventario.q2(data.margenPct)),
+        "renglones": renglones,
+    }
 
 
 @router.post("/listas/{lista_id}/precios/excel")
@@ -368,7 +634,8 @@ async def importar_precios(
         lista = _lista(cur, usuario, lista_id)
         cur.execute('SELECT "id", "codigo" FROM "Producto" WHERE "empresaId" = %s', (lista["empresaId"],))
         por_codigo = {int(f["codigo"]): f["id"] for f in cur.fetchall()}
-        precios, problemas = [], []
+        precios: list[tuple[str, Decimal, Decimal | None, str | None, bool]] = []
+        problemas = []
         for n, fila in enumerate(filas, start=1):
             if not fila or fila[0] in (None, ""):
                 continue
@@ -384,7 +651,7 @@ async def importar_precios(
             elif codigo not in por_codigo:
                 problemas.append({"fila": n, "motivo": f"el producto {codigo} no esta en el catalogo"})
             else:
-                precios.append((por_codigo[codigo], precio))
+                precios.append((por_codigo[codigo], precio, None, "MANUAL", True))
         guardados = _guardar_precios(cur, lista, precios, usuario["id"]) if precios else 0
         conn.commit()
     return {"guardados": guardados, "problemas": problemas[:200]}

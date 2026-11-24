@@ -61,7 +61,7 @@ export function EmpresaForm({ empresa }: { empresa: EmpresaFiscal }) {
     }
   }
 
-  async function modulo(nombre: "ventas" | "inventario", activo: boolean) {
+  async function modulo(nombre: "ventas" | "inventario" | "bancos", activo: boolean) {
     try {
       await apiPut(`/empresas/${empresa.id}/modulos/${nombre}`, { activo });
       toast.success(`Módulo de ${nombre} ${activo ? "encendido" : "apagado"} para ${empresa.codigo}`);
@@ -133,7 +133,7 @@ export function EmpresaForm({ empresa }: { empresa: EmpresaFiscal }) {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <div className="flex flex-wrap gap-2">
-            {(["ventas", "inventario"] as const).map((m) => (
+            {(["ventas", "inventario", "bancos"] as const).map((m) => (
               <Button key={m} variant={empresa.modulos[m] ? "default" : "outline"} size="sm" onClick={() => modulo(m, !empresa.modulos[m])}>
                 {empresa.modulos[m] ? `Apagar ${m}` : `Encender ${m}`}
               </Button>
