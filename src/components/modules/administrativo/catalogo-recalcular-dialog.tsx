@@ -45,6 +45,7 @@ export function RecalcularPreciosDialog({
   const [previsualizando, setPrevisualizando] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [vistaPrevia, setVistaPrevia] = useState<ItemRecalculo[] | null>(null);
+  const [omitidosSinCosto, setOmitidosSinCosto] = useState<number>(0);
 
   async function ejecutar(confirmar: boolean) {
     const pct = parseFloat(margenPct.replace(",", "."));
@@ -67,7 +68,13 @@ export function RecalcularPreciosDialog({
 
       type RespuestaRecalculo =
         | (Partial<ItemRecalculo> & { id?: string; costo?: number; precioCajaUsd?: number | null; precioCalculado?: number })[]
-        | { actualizados?: number; precios?: ItemRecalculo[]; renglones?: ItemRecalculo[]; cambios?: ItemRecalculo[] };
+        | {
+            actualizados?: number;
+            omitidosSinCosto?: number;
+            precios?: ItemRecalculo[];
+            renglones?: ItemRecalculo[];
+            cambios?: ItemRecalculo[];
+          };
 
       const res = await apiPost<RespuestaRecalculo>(`/catalogo/listas/${lista.id}/recalcular-precios`, cuerpo);
 
@@ -75,13 +82,20 @@ export function RecalcularPreciosDialog({
         const count = Array.isArray(res)
           ? res.length
           : res?.actualizados ?? res?.renglones?.length ?? vistaPrevia?.length ?? 0;
-        toast.success(`Precios recalculados y aplicados a la lista (${count} productos)`);
+        const omitidos = Array.isArray(res) ? 0 : res?.omitidosSinCosto ?? 0;
+        if (count === 0 && omitidos > 0) {
+          toast.warning(`No se actualizó ningún precio (${omitidos} producto(s) sin costo en la base elegida)`);
+        } else {
+          toast.success(`Precios recalculados y aplicados a la lista (${count} productos)`);
+        }
         setAbierto(false);
         setVistaPrevia(null);
+        setOmitidosSinCosto(0);
         onPreciosActualizados();
       } else {
         // Normalizar la respuesta de vista previa: puede ser array directo o estar bajo una llave
         let items: ItemRecalculo[] = [];
+        const omitidos = Array.isArray(res) ? 0 : res?.omitidosSinCosto ?? 0;
         if (Array.isArray(res)) {
           items = res.map((r) => ({
             productoId: r.productoId ?? r.id ?? "",
@@ -101,7 +115,17 @@ export function RecalcularPreciosDialog({
           items = res.cambios;
         }
         setVistaPrevia(items);
-        toast.info(`${items.length} productos calculados para previsualización`);
+        setOmitidosSinCosto(omitidos);
+        if (items.length === 0 && omitidos > 0) {
+          toast.warning(`0 productos calculados: ${omitidos} producto(s) no tienen costo cargado en esta base`, {
+            description:
+              "Carga una entrada con costo en Inventario, define el Costo Presupuestario o pulsa «Traer del extracto» para importar el último costo.",
+          });
+        } else {
+          toast.info(
+            `${items.length} productos calculados${omitidos > 0 ? ` (${omitidos} omitidos sin costo)` : ""}`
+          );
+        }
       }
     } catch (err) {
       toast.error(confirmar ? "No se pudieron aplicar los precios" : "No se pudo generar la vista previa", {
@@ -218,7 +242,8 @@ export function RecalcularPreciosDialog({
             <div className="space-y-2 rounded-lg border border-border p-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-foreground">
-                  Vista Previa ({vistaPrevia.length} productos calculados)
+                  Vista Previa ({vistaPrevia.length} productos calculados
+                  {omitidosSinCosto > 0 ? ` · ${omitidosSinCosto} sin costo` : ""})
                 </p>
                 <span className="text-[11px] text-muted-foreground">
                   Base: {baseCosto} · Método: {metodoMargen}
@@ -227,7 +252,9 @@ export function RecalcularPreciosDialog({
 
               {vistaPrevia.length === 0 ? (
                 <p className="py-4 text-center text-muted-foreground">
-                  No se encontraron productos para recalcular en este grupo o con costos mayores a cero.
+                  {omitidosSinCosto > 0
+                    ? `${omitidosSinCosto} producto(s) omitidos porque no tienen costo cargado en la base ${baseCosto}. Registra una entrada con costo en Inventario, define el Costo Presupuestario o pulsa «Traer del extracto» en Productos.`
+                    : "No se encontraron productos para recalcular en este grupo o con costos mayores a cero."}
                 </p>
               ) : (
                 <div className="max-h-56 overflow-y-auto rounded border border-border">

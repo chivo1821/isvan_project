@@ -24,7 +24,7 @@ export default async function CatalogoPage({ searchParams }: { searchParams: Pro
         <TabsList>
           <TabsTrigger value="productos">Productos ({productos.length})</TabsTrigger>
           <TabsTrigger value="precios">Precios</TabsTrigger>
-          <TabsTrigger value="clientes">Clientes</TabsTrigger>
+          <TabsTrigger value="clientes">Ficha fiscal</TabsTrigger>
         </TabsList>
         <TabsContent value="productos" className="pt-3"><ProductosTabla empresaId={empresa.id} productos={productos} /></TabsContent>
         <TabsContent value="precios" className="pt-3"><PreciosListas empresaId={empresa.id} listas={listas} /></TabsContent>

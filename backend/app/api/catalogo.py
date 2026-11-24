@@ -286,15 +286,19 @@ def sincronizar(cur, empresa: dict) -> dict:
     cur.execute(
         """
         INSERT INTO "Producto" ("id", "organizacionId", "empresaId", "codigo", "nombre", "grupo", "codigoProveedor",
-                                "unidadesPorCaja", "litrosPorUnidad")
+                                "unidadesPorCaja", "litrosPorUnidad", "ultimoCostoCajaUsd")
         SELECT 'prod-' || substr(md5(vp."id"), 1, 16), %(org)s, %(empresa_id)s, vp."codigo", vp."nombre", vp."grupo",
-               vp."codigoProveedor", COALESCE(NULLIF(vp."unidadesPorCaja", 0), 1), vp."litrosPorUnidad"
+               vp."codigoProveedor", COALESCE(NULLIF(vp."unidadesPorCaja", 0), 1), vp."litrosPorUnidad",
+               CASE WHEN vp."costoCajaUsd" IS NOT NULL AND vp."costoCajaUsd" > 0 THEN vp."costoCajaUsd" ELSE NULL END
         FROM "VentaProducto" vp
         WHERE vp."empresa"::text = %(codigo)s
         ON CONFLICT ("empresaId", "codigo") DO UPDATE SET
             "grupo" = COALESCE("Producto"."grupo", EXCLUDED."grupo"),
-            "litrosPorUnidad" = COALESCE("Producto"."litrosPorUnidad", EXCLUDED."litrosPorUnidad")
-        WHERE "Producto"."grupo" IS NULL OR "Producto"."litrosPorUnidad" IS NULL
+            "litrosPorUnidad" = COALESCE("Producto"."litrosPorUnidad", EXCLUDED."litrosPorUnidad"),
+            "ultimoCostoCajaUsd" = COALESCE("Producto"."ultimoCostoCajaUsd", EXCLUDED."ultimoCostoCajaUsd")
+        WHERE "Producto"."grupo" IS NULL
+           OR "Producto"."litrosPorUnidad" IS NULL
+           OR ("Producto"."ultimoCostoCajaUsd" IS NULL AND EXCLUDED."ultimoCostoCajaUsd" IS NOT NULL)
         """,
         {"org": empresa["organizacionId"], "empresa_id": empresa["id"], "codigo": codigo_empresa},
     )

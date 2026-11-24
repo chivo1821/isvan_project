@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiGet, apiPost, apiPostForm, apiPut, mensajeDeError } from "@/lib/api-client";
 import { formatNumero, formatUsd } from "@/lib/constants";
@@ -333,18 +334,18 @@ export function PreciosListas({ empresaId, listas }: { empresaId: string; listas
               <Label htmlFor="lista" className="text-xs">
                 Lista de precio activa
               </Label>
-              <select
-                id="lista"
-                className="h-8 max-w-full rounded-md border border-input bg-transparent px-2.5 text-xs sm:text-sm"
-                value={listaId}
-                onChange={(e) => setListaId(e.target.value)}
-              >
-                {listas.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.codigo} — {l.nombre} ({l.clientes} clientes)
-                  </option>
-                ))}
-              </select>
+              <Select value={listaId} onValueChange={setListaId}>
+                <SelectTrigger id="lista" className="h-8 w-full min-w-[180px] sm:w-56 text-xs sm:text-sm">
+                  <SelectValue placeholder="Elige una lista" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listas.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.codigo} — {l.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {listaActual && (
