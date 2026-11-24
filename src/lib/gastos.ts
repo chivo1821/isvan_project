@@ -44,11 +44,15 @@ export type Gasto = {
   categoria: string;
   descripcion: string | null;
   proveedor: string | null;
+  tipoDocumento: string | null;
+  numeroDocumentoProveedor: string | null;
   referencia: string | null;
   montoUsd: number;
   montoBs: number | null;
   moneda: "USD" | "BS";
   tasa: number | null;
+  banco: string | null;
+  retencion: string | null;
   cargaId: string;
 };
 

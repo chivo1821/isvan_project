@@ -21,6 +21,7 @@ from app.core.permisos import ROLES_DE_UN_MODULO, es_de_su_vehiculo, es_repartid
 from app.core.ubicacion import sin_ubicacion
 
 from app.schemas import (
+    MarcaParada,
     PlanRutasRequest,
     PlanRutasResponse,
     ReversarRutaRequest,
@@ -97,12 +98,16 @@ def _con_detalle_lote(cur, rutas: list[dict], *, geometria_completa: bool = True
     # Lo que hay que resolver antes de la salida (sin vehiculo, horarios que
     # se pisan...): se calcula para todas las rutas del lote de una vez.
     avisos = pl.avisos_de(cur, rutas)
+    # Las paradas que salieron sin entregarse siguen en la ruta, en rojo y con
+    # su motivo (ver reversos.no_entregados_de).
+    no_entregados = reversos.no_entregados_de(cur, ruta_ids)
     return [
         {
             **r,
             "despachos": despachos_por_ruta.get(r["id"], []),
             "puntos": puntos_por_ruta.get(r["id"], []),
             "avisos": avisos.get(r["id"], []),
+            "noEntregados": no_entregados.get(r["id"], []),
         }
         for r in rutas
     ]
@@ -194,6 +199,87 @@ def version_seguimiento(ruta: str | None = None):
         return {"version": cur.fetchone()["version"]}
 
 
+# ---------- Seguimiento en vivo (app movil) ----------
+#
+# La posicion real de cada repartidor con la jornada abierta, la que manda la
+# app en segundo plano (ver app/services/jornadas.py). El mapa la pide sola
+# cada pocos segundos: son unos cientos de bytes, sin recargar la pagina (que
+# vuelve a leer el trazado de todas las rutas).
+#
+# Ojo con el orden: /seguimiento/repartidores, /seguimiento/sin-senal y
+# /activas/con-relaciones van ANTES de /{ruta_id}/con-relaciones,
+# /{ruta_id}/recorrido y /{ruta_id}.
+
+MINUTOS_SIN_SENAL = 10
+PUNTOS_MAXIMOS_RECORRIDO = 1500
+
+
+@router.get("/seguimiento/repartidores", dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))])
+def repartidores_en_vivo():
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT u."id" AS "usuarioId", u."nombre", u."telefono", v."placa" AS "vehiculoPlaca",
+                   j."iniciadaEn" AS "jornadaDesde", up."lat", up."lng", up."bateria", up."tomadaEn",
+                   r."id" AS "rutaId", r."numero" AS "rutaNumero"
+            FROM "Jornada" j
+            JOIN "Usuario" u ON u."id" = j."usuarioId"
+            LEFT JOIN "Vehiculo" v ON v."id" = COALESCE(j."vehiculoId", u."vehiculoAsignadoId")
+            LEFT JOIN "UltimaPosicion" up ON up."usuarioId" = u."id" AND up."jornadaId" = j."id"
+            LEFT JOIN LATERAL (
+                SELECT x."id", x."numero" FROM "Ruta" x
+                WHERE v."id" IN (x."vehiculoId", x."vehiculoApoyoId") AND x."estado" = 'EN_TRANSITO'
+                ORDER BY x."iniciadaEn" DESC LIMIT 1
+            ) r ON true
+            WHERE j."terminadaEn" IS NULL AND j."iniciadaEn" > now() - interval '16 hours'
+            ORDER BY u."nombre"
+            """
+        )
+        filas = cur.fetchall()
+    ahora = ahora_utc()
+    salida = []
+    for f in filas:
+        minutos = round((ahora - f["tomadaEn"]).total_seconds() / 60) if f["tomadaEn"] else None
+        # Sin ningun punto todavia, se cuenta desde que abrio la jornada: el
+        # primer lote tarda un par de minutos en llegar y no es "sin señal".
+        sin_puntos = round((ahora - f["jornadaDesde"]).total_seconds() / 60)
+        sin_senal = (minutos if minutos is not None else sin_puntos) > MINUTOS_SIN_SENAL
+        # Solo lo que la pagina muestra: el que va en una ruta en transito y
+        # el que dejo de enviar (el resto no se dibuja en ningun lado).
+        if not f["rutaId"] and not sin_senal:
+            continue
+        salida.append({
+            **f,
+            "jornadaDesde": en_utc(f["jornadaDesde"]),
+            "tomadaEn": en_utc(f["tomadaEn"]) if f["tomadaEn"] else None,
+            "minutosDesdeUltimo": minutos,
+            "sinSenal": sin_senal,
+        })
+    return {"repartidores": salida, "minutosSinSenal": MINUTOS_SIN_SENAL}
+
+
+@router.get("/seguimiento/sin-senal", dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))])
+def cuantos_sin_senal():
+    """Cuantos repartidores con la jornada abierta dejaron de enviar su
+    ubicacion. Para el numero del menu: cada pestaña abierta lo pide cada
+    minuto, asi que es un conteo en la base y no la lista (con 100
+    repartidores la lista pesa ~40 KB; esto, unos bytes)."""
+    ahora = ahora_utc()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS "n"
+            FROM "Jornada" j
+            LEFT JOIN "UltimaPosicion" up ON up."usuarioId" = j."usuarioId" AND up."jornadaId" = j."id"
+            WHERE j."terminadaEn" IS NULL AND j."iniciadaEn" > %(desde)s
+              AND COALESCE(up."tomadaEn", j."iniciadaEn") < %(limite)s
+            """,
+            # La misma regla que repartidores_en_vivo (minutos redondeados > MINUTOS_SIN_SENAL).
+            {"desde": ahora - timedelta(hours=16), "limite": ahora - timedelta(minutes=MINUTOS_SIN_SENAL + 0.5)},
+        )
+        return {"sinSenal": cur.fetchone()["n"], "minutosSinSenal": MINUTOS_SIN_SENAL}
+
+
 # ---------- Rutas con sus relaciones, en una sola llamada ----------
 #
 # El detalle y las vistas de rutas activas necesitan la ruta mas los
@@ -280,23 +366,6 @@ def rutas_activas_con_relaciones(usuario: dict = Depends(get_current_user)):
             )
         rutas = _con_detalle_lote(cur, cur.fetchall(), geometria_completa=False)
         return {"rutas": rutas, **_relaciones_de_rutas(cur, usuario, rutas)}
-
-
-@router.get("/{ruta_id}/con-relaciones", response_model=RutasConRelaciones)
-def ruta_con_relaciones(ruta_id: str, usuario: dict = Depends(get_current_user)):
-    """Una ruta (con el trazado completo, como GET /rutas/{id}) mas solo las
-    relaciones que usa, en una sola llamada."""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Ruta no encontrada")
-        # Mismo criterio que GET /rutas/{id}: para un repartidor, la ruta de
-        # otro vehiculo es un 404, no un 403.
-        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"], row.get("vehiculoApoyoId")):
-            raise HTTPException(404, "Ruta no encontrada")
-        ruta = _con_detalle(cur, row)
-        return {"rutas": [ruta], **_relaciones_de_rutas(cur, usuario, [ruta])}
 
 
 # ---------- Planificacion: agenda y configuracion ----------
@@ -419,6 +488,83 @@ def guardar_configuracion(clave: str, data: ValorAjuste, usuario: dict = Depends
             raise HTTPException(422, str(e)) from e
         conn.commit()
         return [{**a, "actualizadoEn": en_utc(a["actualizadoEn"]) if a["actualizadoEn"] else None} for a in cfg.todos(cur)]
+
+
+@router.get("/{ruta_id}/con-relaciones", response_model=RutasConRelaciones)
+def ruta_con_relaciones(ruta_id: str, usuario: dict = Depends(get_current_user)):
+    """Una ruta (con el trazado completo, como GET /rutas/{id}) mas solo las
+    relaciones que usa, en una sola llamada."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Ruta no encontrada")
+        # Mismo criterio que GET /rutas/{id}: para un repartidor, la ruta de
+        # otro vehiculo es un 404, no un 403.
+        if es_repartidor(usuario) and not es_de_su_vehiculo(usuario, row["vehiculoId"], row.get("vehiculoApoyoId")):
+            raise HTTPException(404, "Ruta no encontrada")
+        ruta = _con_detalle(cur, row)
+        return {"rutas": [ruta], **_relaciones_de_rutas(cur, usuario, [ruta])}
+
+
+@router.get("/{ruta_id}/recorrido", dependencies=[Depends(requiere_rol("DESPACHOS", "APROBADOR"))])
+def recorrido_real(ruta_id: str):
+    """Por donde paso de verdad el vehiculo en esta ruta (los puntos de la
+    app), aligerado a PUNTOS_MAXIMOS_RECORRIDO."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT COUNT(*) AS "n" FROM "Posicion" WHERE "rutaId" = %s', (ruta_id,))
+        total = cur.fetchone()["n"]
+        paso = max(1, -(-total // PUNTOS_MAXIMOS_RECORRIDO))
+        cur.execute(
+            'SELECT "lat", "lng", "tomadaEn" FROM (SELECT *, row_number() OVER (ORDER BY "tomadaEn") AS n '
+            'FROM "Posicion" WHERE "rutaId" = %s) t WHERE (n - 1) %% %s = 0 ORDER BY "tomadaEn"',
+            (ruta_id, paso),
+        )
+        puntos = [{"lat": f["lat"], "lng": f["lng"], "tomadaEn": en_utc(f["tomadaEn"])} for f in cur.fetchall()]
+        # La ultima señal tal cual (el aligerado puede saltarsela), con quien
+        # la mando y su bateria, para el "ahora" del detalle.
+        cur.execute(
+            'SELECT p."lat", p."lng", p."tomadaEn", p."bateria", p."precisionM", u."nombre" AS "repartidor" '
+            'FROM "Posicion" p JOIN "Usuario" u ON u."id" = p."usuarioId" '
+            'WHERE p."rutaId" = %s ORDER BY p."tomadaEn" DESC LIMIT 1',
+            (ruta_id,),
+        )
+        u = cur.fetchone()
+        # En transito, la ultima posicion de la jornada del repartidor de ese
+        # vehiculo si es mas nueva: recien iniciada la ruta todavia no llego
+        # ningun punto "de la ruta" (la app los manda en lotes), pero la
+        # oficina ya debe verlo donde esta.
+        cur.execute('SELECT "estado"::text AS "estado", "vehiculoId", "vehiculoApoyoId" FROM "Ruta" WHERE "id" = %s',
+                    (ruta_id,))
+        ruta = cur.fetchone()
+        if ruta and ruta["estado"] == "EN_TRANSITO":
+            vehiculos = [v for v in (ruta["vehiculoId"], ruta["vehiculoApoyoId"]) if v]
+            cur.execute(
+                'SELECT up."lat", up."lng", up."tomadaEn", up."bateria", up."precisionM", u."nombre" AS "repartidor" '
+                'FROM "UltimaPosicion" up '
+                'JOIN "Jornada" j ON j."id" = up."jornadaId" AND j."terminadaEn" IS NULL '
+                'JOIN "Usuario" u ON u."id" = up."usuarioId" '
+                'WHERE COALESCE(j."vehiculoId", u."vehiculoAsignadoId") = ANY(%s) '
+                'ORDER BY up."tomadaEn" DESC LIMIT 1',
+                (vehiculos,),
+            )
+            de_jornada = cur.fetchone()
+            if de_jornada and (not u or de_jornada["tomadaEn"] > u["tomadaEn"]):
+                u = de_jornada
+    ultima = None
+    if u:
+        minutos = max(0, round((ahora_utc() - u["tomadaEn"]).total_seconds() / 60))
+        ultima = {
+            "lat": u["lat"],
+            "lng": u["lng"],
+            "tomadaEn": en_utc(u["tomadaEn"]),
+            "bateria": u["bateria"],
+            "precisionM": u["precisionM"],
+            "repartidor": u["repartidor"],
+            "minutosDesdeUltimo": minutos,
+            "sinSenal": minutos > MINUTOS_SIN_SENAL,
+        }
+    return {"puntos": puntos, "total": total, "ultima": ultima}
 
 
 @router.get("/{ruta_id}", response_model=Ruta)
@@ -727,7 +873,8 @@ def _cancelar_con_pendientes(cur, ruta: dict, usuario_id: str, motivo: str, alca
     """Cancela la ruta (ya bloqueada) y devuelve a "Aprobado" lo que no se
     entrego; lo entregado se queda en ella."""
     cur.execute(
-        'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "rutaId" = %s ORDER BY "ordenEnRuta"',
+        'SELECT "id", "numero", "estado", "llegadaEn", "ordenEnRuta" FROM "Despacho" WHERE "rutaId" = %s '
+        'ORDER BY "ordenEnRuta"',
         (ruta["id"],),
     )
     despachos = cur.fetchall()
@@ -783,7 +930,7 @@ def marcar_parada_no_entregada(
             raise HTTPException(400, "La ruta no esta en transito")
 
         cur.execute(
-            'SELECT "id", "numero", "estado", "llegadaEn" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
+            'SELECT "id", "numero", "estado", "llegadaEn", "ordenEnRuta" FROM "Despacho" WHERE "id" = %s AND "rutaId" = %s',
             (despacho_id, ruta_id),
         )
         despacho = cur.fetchone()
@@ -799,12 +946,35 @@ def marcar_parada_no_entregada(
         return _sin_trazado(cur, ruta_id)
 
 
+# Una marca que se hizo sin senal llega despues: la app manda cuanto paso
+# desde que se toco el boton (medido en el telefono, sin depender de su
+# reloj), con un tope de un dia. Nunca queda antes de `desde` (la salida de la
+# ruta o la llegada al cliente).
+TOPE_MARCA_DIFERIDA = timedelta(days=1)
+
+
+def _instante_marca(data: MarcaParada | None, desde: datetime | None = None) -> datetime:
+    ahora = ahora_utc()
+    instante = ahora
+    if data and data.haceSegundos:
+        instante = ahora - min(timedelta(seconds=data.haceSegundos), TOPE_MARCA_DIFERIDA)
+    if desde and instante < desde:
+        instante = desde
+    return instante
+
+
+def _ubicacion_marca(data: MarcaParada | None) -> tuple[float | None, float | None]:
+    if data and data.lat is not None and data.lng is not None:
+        return data.lat, data.lng
+    return None, None
+
+
 @router.post(
     "/{ruta_id}/iniciar",
     response_model=Ruta,
     dependencies=[Depends(requiere_rol("REPARTIDOR"))],
 )
-def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
+def iniciar_ruta(ruta_id: str, data: MarcaParada | None = None, usuario: dict = Depends(get_current_user)):
     """El despachador marca que el vehiculo salio del almacen con todos los
     despachos de la ruta a la vez."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -834,7 +1004,7 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
 
         cur.execute(
             'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',
-            (ahora_utc(), ruta_id),
+            (_instante_marca(data), ruta_id),
         )
         cur.execute('UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "rutaId" = %s', (ruta_id,))
         conn.commit()
@@ -847,7 +1017,9 @@ def iniciar_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     response_model=Ruta,
     dependencies=[Depends(requiere_rol("REPARTIDOR"))],
 )
-def marcar_llegada_a_parada(ruta_id: str, despacho_id: str, usuario: dict = Depends(get_current_user)):
+def marcar_llegada_a_parada(
+    ruta_id: str, despacho_id: str, data: MarcaParada | None = None, usuario: dict = Depends(get_current_user)
+):
     """El repartidor marca que llego al cliente. Junto con la marca de
     entrega da el tiempo de atencion de esa parada, y contra la entrega
     anterior, el tiempo de traslado."""
@@ -869,7 +1041,11 @@ def marcar_llegada_a_parada(ruta_id: str, despacho_id: str, usuario: dict = Depe
         if despacho["llegadaEn"] is not None:
             raise HTTPException(400, "La llegada a este cliente ya estaba marcada")
 
-        cur.execute('UPDATE "Despacho" SET "llegadaEn" = %s WHERE "id" = %s', (ahora_utc(), despacho_id))
+        lat, lng = _ubicacion_marca(data)
+        cur.execute(
+            'UPDATE "Despacho" SET "llegadaEn" = %s, "llegadaLat" = %s, "llegadaLng" = %s WHERE "id" = %s',
+            (_instante_marca(data, ruta["iniciadaEn"]), lat, lng, despacho_id),
+        )
         conn.commit()
 
         return _sin_trazado(cur, ruta_id)
@@ -880,7 +1056,9 @@ def marcar_llegada_a_parada(ruta_id: str, despacho_id: str, usuario: dict = Depe
     response_model=Ruta,
     dependencies=[Depends(requiere_rol("REPARTIDOR"))],
 )
-def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depends(get_current_user)):
+def marcar_parada_entregada(
+    ruta_id: str, despacho_id: str, data: MarcaParada | None = None, usuario: dict = Depends(get_current_user)
+):
     """El despachador marca que se entrego un despacho puntual dentro del
     viaje — no afecta a las demas paradas de la misma ruta. Cuando se
     entrega la ultima parada pendiente, la ruta pasa a COMPLETADA."""
@@ -905,9 +1083,12 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
         if despacho["llegadaEn"] is None:
             raise HTTPException(400, "Marca primero la llegada al cliente")
 
+        entregado_en = _instante_marca(data, despacho["llegadaEn"])
+        lat, lng = _ubicacion_marca(data)
         cur.execute(
-            'UPDATE "Despacho" SET "estado" = \'ENTREGADO\', "entregadoEn" = %s WHERE "id" = %s',
-            (ahora_utc(), despacho_id),
+            'UPDATE "Despacho" SET "estado" = \'ENTREGADO\', "entregadoEn" = %s, "entregadoLat" = %s, '
+            '"entregadoLng" = %s WHERE "id" = %s',
+            (entregado_en, lat, lng, despacho_id),
         )
         cur.execute(
             'UPDATE "RutaPunto" SET "estado" = \'entregado\' WHERE "rutaId" = %s AND "paradaDespachoId" = %s',
@@ -921,7 +1102,7 @@ def marcar_parada_entregada(ruta_id: str, despacho_id: str, usuario: dict = Depe
         if cur.fetchone()["pendientes"] == 0:
             cur.execute(
                 'UPDATE "Ruta" SET "estado" = \'COMPLETADA\', "completadaEn" = %s WHERE "id" = %s',
-                (ahora_utc(), ruta_id),
+                (entregado_en, ruta_id),
             )
 
         conn.commit()

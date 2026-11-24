@@ -1,212 +1,215 @@
 import Link from "@/components/shared/enlace";
-import { notFound } from "next/navigation";
-import { CalendarClockIcon, Undo2Icon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
-import { ProgramarRutaDialog } from "@/components/modules/rutas/programar-ruta-dialog";
-import { RecalcularRutaButton } from "@/components/modules/rutas/recalcular-ruta-button";
-import { ReversarDialog } from "@/components/modules/rutas/reversar-dialog";
-import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  ESTADO_DESPACHO_META,
-  ESTADO_RUTA_META,
-  describirVehiculo,
-  documentoDespacho,
-  contarParadas,
-  formatDate,
-  formatDateTime,
-  textoParadas,
-} from "@/lib/constants";
+import { AjustesPlanificacionDialog } from "@/components/modules/rutas/ajustes-planificacion-dialog";
+import { RutaAgendaCard } from "@/components/modules/rutas/ruta-agenda-card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { apiGet } from "@/lib/api-client";
-import { getRutaConDetalle } from "@/lib/mock-data";
-import { diaCaracas, type Agenda } from "@/lib/planificacion";
+import {
+  diaCaracas,
+  etiquetaDia,
+  formatDia,
+  lunesDe,
+  sumarDias,
+  type AjustePlanificacion,
+  type Agenda,
+  type RutaAgenda,
+} from "@/lib/planificacion";
 import { getUsuarioActual } from "@/lib/session";
+import { cn } from "@/lib/utils";
 
-export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]">) {
-  const { id } = await params;
-  const [ruta, usuarioActual] = await Promise.all([getRutaConDetalle(id), getUsuarioActual()]);
-  if (!ruta) notFound();
+type SearchParams = { vista?: string; fecha?: string };
+type Vista = "dia" | "semana";
 
-  const rutaActiva = ruta.estado === "PLANIFICADA" || ruta.estado === "EN_TRANSITO";
-  // Mismo criterio que la API (backend/app/services/reversos.py): el
-  // coordinador saca de una ruta activa lo que no se entregó; lo entregado
-  // se queda.
-  const pendientes = ruta.despachos.filter((d) => d.estado !== "ENTREGADO");
-  const entregadas = ruta.despachos.length - pendientes.length;
-  const esCoordinador = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
-  const puedeReversar = esCoordinador && rutaActiva && pendientes.length > 0;
-  const reversada = ruta.estado === "CANCELADA" && ruta.canceladaEn;
-  // Reprogramar y asignar vehículo: solo mientras no salió, y solo quien
-  // arma rutas (la API exige DESPACHOS; ADMIN siempre pasa).
-  const puedeProgramar =
-    ruta.estado === "PLANIFICADA" && (usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS");
-  // La agenda de su día trae la flota y qué vehículos están libres a su hora.
-  const dia = diaCaracas(ruta.salidaProgramada);
-  const agenda = puedeProgramar
-    ? await apiGet<Agenda>(`/rutas/agenda?desde=${dia}&hasta=${dia}`).catch(() => null)
-    : null;
-  const enAgenda = agenda?.rutas.find((r) => r.id === ruta.id);
+function enlace(vista: Vista, fecha: string) {
+  return `/rutas/planificacion?vista=${vista}&fecha=${fecha}`;
+}
+
+/** Agenda de salidas: quÃ© rutas salen cada dÃ­a y a quÃ© hora, con o sin
+ * vehÃ­culo, y lo que hay que resolver antes (ver
+ * backend/app/services/planificacion.py). Por dÃ­a o por semana. */
+export default async function PlanificacionPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const vista: Vista = params.vista === "semana" ? "semana" : "dia";
+  const hoy = diaCaracas();
+  const fecha = params.fecha && /^\d{4}-\d{2}-\d{2}$/.test(params.fecha) ? params.fecha : hoy;
+  const desde = vista === "dia" ? fecha : lunesDe(fecha);
+  const hasta = vista === "dia" ? fecha : sumarDias(desde, 6);
+  const paso = vista === "dia" ? 1 : 7;
+
+  const [agenda, ajustes, usuarioActual] = await Promise.all([
+    apiGet<Agenda>(`/rutas/agenda?desde=${desde}&hasta=${hasta}`),
+    apiGet<AjustePlanificacion[]>("/rutas/configuracion").catch(() => []),
+    getUsuarioActual(),
+  ]);
+  const puedeProgramar = usuarioActual?.rol === "ADMIN" || usuarioActual?.rol === "DESPACHOS";
+  const limiteMoto = ajustes.find((a) => a.clave === "motoDistanciaMaxKm");
+
+  const dias = Array.from({ length: vista === "dia" ? 1 : 7 }, (_, i) => sumarDias(desde, i));
+  const porDia = new Map<string, RutaAgenda[]>(dias.map((d) => [d, []]));
+  for (const r of agenda.rutas) porDia.get(diaCaracas(r.salidaProgramada))?.push(r);
+
+  const todas = [...agenda.rutas, ...agenda.atrasadas];
+  const activas = todas.filter((r) => r.estado === "PLANIFICADA" || r.estado === "EN_TRANSITO");
+  const sinVehiculo = activas.filter((r) => !r.vehiculoId).length;
+  const conAvisos = activas.filter((r) => r.avisos.length > 0).length;
+  const pedidos = agenda.rutas.reduce((n, r) => n + r.pedidos.length, 0);
+
+  const rango =
+    vista === "dia" ? `${etiquetaDia(fecha, hoy)} Â· ${formatDia(fecha)}` : `${formatDia(desde)} â€“ ${formatDia(hasta)}`;
+  const incluyeHoy = desde <= hoy && hoy <= hasta;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={ruta.numero}
-        subtitle={
-          ruta.vehiculoApoyo
-            ? `${ruta.origen.nombre} · Morocho: ${ruta.vehiculo?.placa ?? "—"} (${ruta.conductor ?? "sin chofer"}) + ${ruta.vehiculoApoyo.placa} (${ruta.conductorApoyo ?? "sin chofer"}) · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`
-            : `${ruta.origen.nombre} · ${describirVehiculo(ruta.vehiculo)} · conductor: ${ruta.conductor ?? "sin asignar"} · creada el ${formatDate(ruta.fechaCreacion)} por ${ruta.creadoPor.nombre}`
-        }
+        title="PlanificaciÃ³n"
+        subtitle={`Salidas de las rutas desde el almacÃ©n${
+          limiteMoto ? ` Â· motos hasta ${limiteMoto.valor.toLocaleString("es-VE")} ${limiteMoto.unidad} del almacÃ©n` : ""
+        }`}
+        helpText="Las rutas se planifican con fecha y hora de salida, con o sin vehÃ­culo. Lo que falta resolver (sin vehÃ­culo, horarios que se pisan, vehÃ­culo en taller, moto demasiado lejos, salida vencida) aparece como aviso: no bloquea."
         actions={
-          <div className="flex flex-wrap items-center gap-3">
-            {puedeProgramar && agenda && (
-              <ProgramarRutaDialog
-                ruta={ruta}
-                vehiculos={agenda.vehiculos}
-                libres={enAgenda?.vehiculosLibres}
-                pesoKg={enAgenda?.pesoKg}
-                clientes={new Set(ruta.despachos.map((d) => d.destinoClienteId)).size}
-              />
-            )}
-            {rutaActiva && <RecalcularRutaButton rutaId={ruta.id} />}
-            {puedeReversar && (
-              <ReversarDialog
-                endpoint={`/rutas/${ruta.id}/reversar`}
-                boton="Reversar ruta"
-                titulo={`Reversar la ruta ${ruta.numero}`}
-                descripcion={
-                  <>
-                    La ruta queda cancelada y sus {pendientes.length} despacho(s) sin entregar vuelven a «Aprobado»
-                    sin ruta, para armar otro viaje.
-                    {entregadas > 0 && ` Las ${entregadas} entrega(s) ya hechas se conservan.`} El vehículo queda
-                    libre y el repartidor deja de verla. No se puede deshacer.
-                  </>
-                }
-                exito={{
-                  titulo: `Ruta ${ruta.numero} reversada`,
-                  descripcion: `${pendientes.length} despacho(s) volvieron a «Aprobado», listos para otra ruta.`,
-                }}
-              />
-            )}
-            {ruta.vehiculoApoyo && <StatusBadge tone="info" label="Morocho" />}
-            <StatusBadge {...ESTADO_RUTA_META[ruta.estado]} />
-            {rutaActiva && (
-              <Link href={`/despachador/${ruta.id}`} className="text-sm text-primary hover:underline">
-                Ver en despachador →
-              </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {usuarioActual?.rol === "ADMIN" && ajustes.length > 0 && <AjustesPlanificacionDialog ajustes={ajustes} />}
+            {puedeProgramar && (
+              <Button asChild>
+                <Link href="/rutas/nueva">
+                  <PlusIcon />
+                  Nueva ruta
+                </Link>
+              </Button>
             )}
           </div>
         }
       />
 
-      {ruta.estado !== "CANCELADA" && (
-        <p className="flex items-center gap-1.5 text-sm">
-          <CalendarClockIcon className="size-4 text-muted-foreground" aria-hidden />
-          {ruta.estado === "PLANIFICADA" ? "Sale del almacén el " : "Salida programada: "}
-          <span className="font-medium">{formatDateTime(ruta.salidaProgramada)}</span>
-          {ruta.iniciadaEn && <span className="text-muted-foreground">· salió el {formatDateTime(ruta.iniciadaEn)}</span>}
-        </p>
-      )}
-      <AvisosRuta avisos={ruta.avisos} />
-
-      {reversada && (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardContent className="flex items-start gap-3 text-sm">
-            <Undo2Icon className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">
-                Ruta reversada el {formatDateTime(ruta.canceladaEn!)}
-                {ruta.canceladaPor ? ` por ${ruta.canceladaPor.nombre}` : ""}
-              </p>
-              {ruta.motivoCancelacion && <p className="text-muted-foreground">Motivo: {ruta.motivoCancelacion}</p>}
-              {ruta.despachosAlCancelar && ruta.despachosAlCancelar.length > 0 && (
-                <p className="text-muted-foreground">
-                  Llevaba {ruta.despachosAlCancelar.length} despacho(s) sin entregar, que volvieron a «Aprobado»
-                  para otra ruta: {ruta.despachosAlCancelar.join(", ")}.
-                </p>
-              )}
-              {ruta.despachos.length > 0 && (
-                <p className="text-muted-foreground">
-                  Las entregas ya hechas ({textoParadas(ruta.despachos)}) se conservan en la ruta.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          {ruta.puntos.length > 0 ? (
-            <SeguimientoDetalleMap ruta={ruta.puntos} paradas={ruta.despachos} className="h-[28rem]" />
-          ) : (
-            <Card>
-              <CardContent className="flex h-[28rem] items-center justify-center text-center text-sm text-muted-foreground">
-                {reversada
-                  ? "La ruta fue reversada: ya no tiene trazado ni paradas."
-                  : "Esta ruta todavía no tiene trazado calculado."}
-              </CardContent>
-            </Card>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" size="icon" aria-label={vista === "dia" ? "DÃ­a anterior" : "Semana anterior"}>
+            <Link href={enlace(vista, sumarDias(fecha, -paso))}>
+              <ChevronLeftIcon />
+            </Link>
+          </Button>
+          <Button asChild variant={incluyeHoy ? "secondary" : "outline"} size="sm">
+            <Link href={enlace(vista, hoy)}>Hoy</Link>
+          </Button>
+          <Button asChild variant="outline" size="icon" aria-label={vista === "dia" ? "DÃ­a siguiente" : "Semana siguiente"}>
+            <Link href={enlace(vista, sumarDias(fecha, paso))}>
+              <ChevronRightIcon />
+            </Link>
+          </Button>
+          <h2 className="ml-1 font-heading text-base font-medium">{rango}</h2>
         </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Paradas ({contarParadas(ruta.despachos)})
-              {contarParadas(ruta.despachos) !== ruta.despachos.length && (
-                <span className="ml-1.5 text-sm font-normal text-muted-foreground">
-                  · {ruta.despachos.length} documentos
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {ruta.despachos.map((d, index) => (
-              <div
-                key={d.id}
-                className="space-y-2 rounded-lg border border-border p-3 text-sm transition-colors hover:border-primary/40"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <Link href={`/despachos/${d.id}`} className="hover:underline">
-                    <p className="font-medium text-foreground">
-                      {index + 1}. {d.destinoCliente.nombre}
-                    </p>
-                    <p className="text-muted-foreground">
-                      <span className="font-medium text-foreground">{documentoDespacho(d)}</span> · cód.{" "}
-                      {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Despacho {d.numero}</p>
-                  </Link>
-                  <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
-                </div>
-                {esCoordinador && rutaActiva && d.estado !== "ENTREGADO" && (
-                  <ReversarDialog
-                    endpoint={`/despachos/${d.id}/reversar`}
-                    boton="Sacar de la ruta"
-                    titulo={`Sacar ${d.numero} de la ruta ${ruta.numero}`}
-                    descripcion={
-                      <>
-                        {d.destinoCliente.nombre}: el despacho vuelve a «Aprobado» sin ruta, para otro viaje.
-                        {pendientes.length === 1 && " Es el último sin entregar, así que la ruta se cierra."}
-                      </>
-                    }
-                    placeholder="Ej.: el cliente pidió cambiar el día de entrega"
-                    exito={{ titulo: `${d.numero} salió de la ruta ${ruta.numero}`, descripcion: "Volvió a «Aprobado»." }}
-                  />
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-1 rounded-lg border p-0.5" role="group" aria-label="Vista">
+          {(["dia", "semana"] as const).map((v) => (
+            <Button key={v} asChild size="sm" variant={vista === v ? "secondary" : "ghost"}>
+              <Link href={enlace(v, fecha)} aria-current={vista === v ? "page" : undefined}>
+                {v === "dia" ? "DÃ­a" : "Semana"}
+              </Link>
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {(ruta.distanciaTotalKm != null || ruta.tiempoTotalMin != null) && (
-        <p className="text-sm text-muted-foreground">
-          {ruta.distanciaTotalKm?.toLocaleString("es-VE")} km · ~{ruta.tiempoTotalMin} min estimados en total.
-        </p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Resumen etiqueta="Rutas" valor={agenda.rutas.length} />
+        <Resumen etiqueta="Pedidos" valor={pedidos} />
+        <Resumen etiqueta="Sin vehÃ­culo" valor={sinVehiculo} alerta={sinVehiculo > 0} />
+        <Resumen etiqueta="Con avisos" valor={conAvisos} alerta={conAvisos > 0} />
+      </div>
+
+      {agenda.atrasadas.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="flex items-center gap-1.5 font-heading text-base font-medium">
+            <TriangleAlertIcon className="size-4 text-[var(--warning)]" aria-hidden />
+            Atrasadas: debÃ­an salir antes y siguen planificadas ({agenda.atrasadas.length})
+          </h2>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {agenda.atrasadas.map((r) => (
+              <RutaAgendaCard
+                key={r.id}
+                ruta={r}
+                vehiculos={agenda.vehiculos}
+                puedeProgramar={puedeProgramar}
+                mostrarFecha
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {vista === "dia" ? (
+        (porDia.get(fecha) ?? []).length === 0 ? (
+          <SinRutas puedeProgramar={puedeProgramar} />
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {porDia.get(fecha)!.map((r) => (
+              <RutaAgendaCard key={r.id} ruta={r} vehiculos={agenda.vehiculos} puedeProgramar={puedeProgramar} />
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+          {dias.map((d) => {
+            const delDia = porDia.get(d) ?? [];
+            return (
+              <section
+                key={d}
+                className={cn("space-y-2 rounded-lg border p-2", d === hoy ? "border-primary/50 bg-primary/5" : "bg-muted/30")}
+              >
+                <Link href={enlace("dia", d)} className="block rounded-md px-1 hover:bg-muted">
+                  <span className="block text-sm font-medium">{etiquetaDia(d, hoy)}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {formatDia(d)} Â· {delDia.length} ruta(s)
+                  </span>
+                </Link>
+                {delDia.length === 0 ? (
+                  <p className="px-1 py-3 text-xs text-muted-foreground">Sin salidas</p>
+                ) : (
+                  delDia.map((r) => (
+                    <RutaAgendaCard
+                      key={r.id}
+                      ruta={r}
+                      vehiculos={agenda.vehiculos}
+                      puedeProgramar={puedeProgramar}
+                      compacta
+                    />
+                  ))
+                )}
+              </section>
+            );
+          })}
+        </div>
       )}
     </div>
+  );
+}
+
+function Resumen({ etiqueta, valor, alerta = false }: { etiqueta: string; valor: number; alerta?: boolean }) {
+  return (
+    <Card className="py-3">
+      <CardContent className="px-4">
+        <p className="text-xs text-muted-foreground">{etiqueta}</p>
+        <p className={cn("text-2xl font-bold tabular-nums", alerta && "text-warning")}>{valor}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SinRutas({ puedeProgramar }: { puedeProgramar: boolean }) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+        No hay rutas que salgan este dÃ­a.
+        {puedeProgramar && (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/rutas/nueva">
+              <PlusIcon />
+              Planificar una ruta
+            </Link>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -35,6 +35,11 @@ ALIAS = {
                   "partida", "centro_de_costo"],
     "descripcion": ["descripcion", "detalle", "observacion", "observaciones", "nota", "notas", "glosa"],
     "proveedor": ["proveedor", "beneficiario", "pagado_a", "razon_social", "acreedor"],
+    "tipo_documento": ["tipo_de_documento", "tipo_documento", "tipo_doc", "doc_tipo"],
+    "numero_documento_proveedor": [
+        "numero_documento_proveedor", "nro_documento_proveedor", "num_documento_proveedor",
+        "documento_proveedor", "nro_doc_proveedor", "numero_de_documento_proveedor",
+    ],
     "referencia": ["referencia", "factura", "nro_factura", "n°_factura", "numero_factura", "documento", "comprobante",
                    "nro", "numero"],
     "monto_usd": ["monto_usd", "monto_$", "monto_en_usd", "monto_en_dolares", "usd", "$", "dolares", "monto_dolares",
@@ -44,6 +49,8 @@ ALIAS = {
     "monto": ["monto", "total", "importe", "valor", "monto_total"],
     "moneda": ["moneda", "divisa", "moneda_de_pago"],
     "tasa": ["tasa", "tasa_bcv", "tasa_de_cambio", "tasa_cambio"],
+    "banco": ["banco", "banco_pago", "banco_emisor", "cuenta_bancaria"],
+    "retencion": ["retencion", "retenciones", "retencion_iva", "retencion_islr", "comprobante_retencion"],
     "empresa": ["empresa", "compania", "compañia"],
 }
 MONEDA_USD = {"USD", "$", "US$", "DOLAR", "DOLARES", "DIVISA", "DIVISAS"}
@@ -65,11 +72,15 @@ class FilaGasto:
     categoria: str
     descripcion: str | None
     proveedor: str | None
+    tipoDocumento: str | None
+    numeroDocumentoProveedor: str | None
     referencia: str | None
     moneda: str
     montoUsd: Decimal
     montoBs: Decimal | None
     tasa: Decimal | None
+    banco: str | None
+    retencion: str | None
 
 
 @dataclass
@@ -194,8 +205,12 @@ def leer_excel(contenido: bytes, empresa_por_defecto: str | None, moneda_por_def
             categoria=(texto("categoria") or SIN_CATEGORIA).upper()[:80],
             descripcion=_corto(texto("descripcion"), 300),
             proveedor=_corto(texto("proveedor"), 200),
+            tipoDocumento=_corto(texto("tipo_documento"), 60),
+            numeroDocumentoProveedor=_corto(texto("numero_documento_proveedor"), 80),
             referencia=_corto(texto("referencia"), 80),
             moneda=moneda, montoUsd=redondear(usd), montoBs=redondear(bs) if bs is not None else None, tasa=tasa,
+            banco=_corto(texto("banco"), 80),
+            retencion=_corto(texto("retencion"), 80),
         ))
     return lectura
 

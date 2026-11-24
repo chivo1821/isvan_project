@@ -19,20 +19,23 @@ codigo).
 from __future__ import annotations
 
 import calendar
+import hashlib
 import uuid
 from collections import Counter
 from dataclasses import replace
 from datetime import date, timedelta
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api import indicadores as ind
 from app.core.auth import requiere_rol
 from app.core.db import get_connection
 from app.core.fechas import ahora_utc, dias_caracas_en_utc, hoy_caracas
-from app.core.permisos import rutas_del_vendedor
+from app.core.permisos import es_vendedor, rutas_del_vendedor
 from app.core.ubicacion import sin_ubicacion
 from app.services import censo_tablero as ct
+from app.services import empresas, inventario
 from app.services.maestra_import import EMPRESAS, RUTA_DE_BAJA, codigo_normalizado
 from app.schemas import (
     DespachosVendedor,
@@ -498,3 +501,242 @@ def censo_pendientes(usuario: dict = Depends(requiere_rol("VENDEDOR"))):
     tienen un codigo para revisar."""
     with get_connection() as conn, conn.cursor() as cur:
         return censo_tablero.pendientes_de_vendedor(cur, usuario["id"])
+
+
+# ---------- Catalogo vendedor, stock real por lote y demanda no atendida ----------
+
+
+@router.get("/clientes-pedido")
+def clientes_pedido(
+    empresa: str | None = None,
+    usuario: dict = Depends(requiere_rol("VENDEDOR")),
+):
+    """Clientes habilitados para toma de pedidos del vendedor (o todos para ADMIN)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        permitidas = empresas.del_usuario(cur, usuario)
+        if not permitidas:
+            return []
+        empresa_ids = [e["id"] for e in permitidas]
+
+        condiciones = ['ef."id" = ANY(%s)', '(%s::text IS NULL OR c."empresa"::text = %s)']
+        params: list = [empresa_ids, empresa, empresa]
+
+        if es_vendedor(usuario):
+            rutas = rutas_del_vendedor(cur, usuario["id"])
+            if not rutas:
+                return []
+            condiciones.append('(c."empresa"::text || \'|\' || COALESCE(c."rutaVenta", \'\')) = ANY(%s)')
+            params.append(_claves(rutas))
+
+        cur.execute(
+            'SELECT c."id" AS "clienteId", ef."id" AS "empresaId", c."empresa"::text AS "empresa", '
+            'c."codigo", COALESCE(c."razonSocial", c."nombre") AS "nombre", '
+            'c."rutaVenta", c."listaPrecioCodigo", c."limiteCreditoUsd" '
+            'FROM "Cliente" c '
+            'JOIN "EmpresaFiscal" ef ON ef."codigo" = c."empresa"::text '
+            f'WHERE {" AND ".join(condiciones)} '
+            'ORDER BY COALESCE(c."razonSocial", c."nombre"), c."codigo"',
+            params,
+        )
+        filas = cur.fetchall()
+
+        modulos_ventas: dict[str, bool] = {}
+        resultado = []
+        for f in filas:
+            eid = f["empresaId"]
+            if eid not in modulos_ventas:
+                modulos_ventas[eid] = empresas.modulo_activo(cur, "ventas", eid)
+            resultado.append({
+                "clienteId": f["clienteId"],
+                "empresaId": eid,
+                "empresa": f["empresa"],
+                "codigo": f["codigo"],
+                "nombre": f["nombre"],
+                "rutaVenta": f["rutaVenta"],
+                "listaPrecioCodigo": f["listaPrecioCodigo"],
+                "limiteCreditoUsd": float(f["limiteCreditoUsd"]) if f["limiteCreditoUsd"] is not None else None,
+                "almacenId": "alm-catia",
+                "moduloVentasActivo": modulos_ventas[eid],
+            })
+        return resultado
+
+
+@router.get("/catalogo/version")
+def catalogo_version(
+    empresaId: str,
+    almacenId: str = "alm-catia",
+    usuario: dict = Depends(requiere_rol("VENDEDOR")),
+):
+    """Huella ligera del catalogo/stock para sondeo movil cada 20s."""
+    with get_connection() as conn, conn.cursor() as cur:
+        empresas.exigir(cur, usuario, empresaId)
+        cur.execute(
+            'SELECT COUNT(*) AS "exCount", COALESCE(SUM(e."cajas"), 0) AS "exCajas" '
+            'FROM "Existencia" e JOIN "Producto" p ON p."id" = e."productoId" '
+            'WHERE p."empresaId" = %s AND e."almacenId" = %s',
+            (empresaId, almacenId),
+        )
+        ex = cur.fetchone()
+        cur.execute(
+            'SELECT COUNT(DISTINCT p."id") AS "pedCount", COALESCE(SUM(i."cajas"), 0) AS "pedCajas" '
+            'FROM "Pedido" p LEFT JOIN "PedidoItem" i ON i."pedidoId" = p."id" '
+            'WHERE p."empresaId" = %s AND p."almacenId" = %s AND p."estado" = \'CONFIRMADO\'',
+            (empresaId, almacenId),
+        )
+        ped = cur.fetchone()
+
+    raw = (
+        f"{ex['exCount']}:{Decimal(ex['exCajas']):.3f}:"
+        f"{ped['pedCount']}:{Decimal(ped['pedCajas']):.3f}"
+    )
+    version = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return {"version": version}
+
+
+@router.get("/catalogo")
+def catalogo_vendedor(
+    empresaId: str,
+    clienteId: str | None = None,
+    almacenId: str | None = None,
+    buscar: str | None = Query(default=None, max_length=80),
+    usuario: dict = Depends(requiere_rol("VENDEDOR", "SUPERVISOR")),
+):
+    """Catalogo activo de la empresa con precios de la lista del cliente (si
+    se indica clienteId) y disponibilidad real por lote (existencia fisica
+    menos pedidos confirmados sin facturar)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        empresa = empresas.exigir(cur, usuario, empresaId)
+
+        if almacenId:
+            cur.execute('SELECT "id", "nombre" FROM "Almacen" WHERE "id" = %s', (almacenId,))
+            almacen = cur.fetchone()
+            if not almacen:
+                raise HTTPException(400, "Almacen desconocido")
+        else:
+            cur.execute(
+                'SELECT "id", "nombre" FROM "Almacen" '
+                'ORDER BY CASE WHEN "id" = \'alm-catia\' THEN 0 ELSE 1 END, "id" LIMIT 1'
+            )
+            almacen = cur.fetchone()
+        almacen_id = almacen["id"] if almacen else None
+        almacen_nombre = almacen["nombre"] if almacen else None
+
+        lista_codigo = None
+        precios: dict[str, Decimal] = {}
+        if clienteId:
+            cur.execute(
+                'SELECT "id", "empresa"::text AS "empresa", "rutaVenta", "listaPrecioCodigo" '
+                'FROM "Cliente" WHERE "id" = %s AND "empresa"::text = %s',
+                (clienteId, empresa["codigo"]),
+            )
+            cliente = cur.fetchone()
+            if not cliente:
+                raise HTTPException(404, "Cliente no encontrado en esta empresa")
+            if es_vendedor(usuario):
+                rutas = _de_sus_rutas(rutas_del_vendedor(cur, usuario["id"]))
+                ruta_cli = cliente.get("rutaVenta")
+                if not ruta_cli or (empresa["codigo"], iv.ruta_comparable(ruta_cli)) not in rutas:
+                    raise HTTPException(403, "El cliente no es de tus rutas")
+            lista_codigo = cliente.get("listaPrecioCodigo")
+            if lista_codigo:
+                cur.execute(
+                    'SELECT i."productoId", i."precioCajaUsd" '
+                    'FROM "ListaPrecioItem" i JOIN "ListaPrecio" l ON l."id" = i."listaId" '
+                    'WHERE l."empresaId" = %s AND l."codigo" = %s AND l."activa"',
+                    (empresaId, lista_codigo),
+                )
+                precios = {f["productoId"]: Decimal(f["precioCajaUsd"]) for f in cur.fetchall()}
+
+        condiciones = ['p."empresaId" = %s', 'p."activo"']
+        params: list = [empresaId]
+        if buscar:
+            condiciones.append('(p."nombre" ILIKE %s OR p."codigo"::text = %s OR p."grupo" ILIKE %s)')
+            params += [f"%{buscar}%", buscar.strip(), f"%{buscar}%"]
+        cur.execute(
+            'SELECT p."id", p."codigo", p."nombre", p."grupo", p."codigoProveedor", p."unidadesPorCaja", '
+            'p."litrosPorUnidad", p."pesoCajaKg", p."impuestoCodigo", p."requiereFrio", p."manejaLote" '
+            f'FROM "Producto" p WHERE {" AND ".join(condiciones)} ORDER BY p."grupo", p."nombre" LIMIT 2000',
+            params,
+        )
+        productos = cur.fetchall()
+
+        existencias_por_prod: dict[str, dict] = {}
+        reservas_por_prod: dict[str, Decimal] = {}
+        if almacen_id and productos:
+            existencias_por_prod = {e["productoId"]: e for e in inventario.existencias(cur, empresaId, almacen_id)}
+            sin_existencia = [p["id"] for p in productos if p["id"] not in existencias_por_prod]
+            if sin_existencia:
+                reservas_por_prod = inventario.reservado(cur, almacen_id, sin_existencia)
+
+        resultado = []
+        for p in productos:
+            ex = existencias_por_prod.get(p["id"])
+            if ex:
+                lotes = [l for l in ex["lotes"] if l["cajas"] > 0]
+                cajas_fisicas = float(ex["cajas"])
+                reservado = float(ex["reservado"])
+                disponible = max(0.0, float(ex["disponible"]))
+            else:
+                lotes = []
+                cajas_fisicas = 0.0
+                res_dec = reservas_por_prod.get(p["id"], Decimal("0"))
+                reservado = float(res_dec)
+                disponible = 0.0
+            vencimientos = [l["vencimiento"] for l in lotes if l["cajas"] > 0 and l["vencimiento"] is not None]
+            proximo_vencimiento = min(vencimientos) if vencimientos else None
+            precio_dec = precios.get(p["id"])
+            precio_float = float(precio_dec) if precio_dec is not None else None
+            resultado.append({
+                "id": p["id"],
+                "productoId": p["id"],
+                "codigo": int(p["codigo"]),
+                "nombre": p["nombre"],
+                "grupo": p["grupo"],
+                "codigoProveedor": p["codigoProveedor"],
+                "unidadesPorCaja": p["unidadesPorCaja"],
+                "litrosPorUnidad": float(p["litrosPorUnidad"]) if p["litrosPorUnidad"] is not None else None,
+                "pesoCajaKg": float(p["pesoCajaKg"]) if p["pesoCajaKg"] is not None else None,
+                "impuestoCodigo": p["impuestoCodigo"],
+                "requiereFrio": p["requiereFrio"],
+                "manejaLote": p["manejaLote"],
+                "listaPrecioCodigo": lista_codigo,
+                "precioUsd": precio_float,
+                "precioPorCaja": precio_float,
+                "cajasFisicas": cajas_fisicas,
+                "reservado": reservado,
+                "disponible": disponible,
+                "proximoVencimiento": proximo_vencimiento,
+                "lotes": lotes,
+            })
+
+    return {
+        "empresaId": empresa["id"],
+        "almacenId": almacen_id,
+        "almacenNombre": almacen_nombre,
+        "clienteId": clienteId,
+        "listaPrecioCodigo": lista_codigo,
+        "productos": resultado,
+    }
+
+
+@router.get("/demanda-no-atendida")
+def demanda_no_atendida_vendedor(
+    empresaId: str | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    productoId: str | None = None,
+    usuario: dict = Depends(requiere_rol("VENDEDOR", "SUPERVISOR")),
+):
+    """Consulta de demanda no atendida para vendedores y supervisores."""
+    from app.api.ventas import _consultar_demanda_no_atendida
+
+    with get_connection() as conn, conn.cursor() as cur:
+        return _consultar_demanda_no_atendida(
+            cur,
+            usuario=usuario,
+            empresa_id=empresaId,
+            desde=desde,
+            hasta=hasta,
+            vendedor_id=usuario["id"] if es_vendedor(usuario) else None,
+            producto_id=productoId,
+        )

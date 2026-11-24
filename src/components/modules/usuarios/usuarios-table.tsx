@@ -6,6 +6,7 @@ import { AsignarVehiculoDialog } from "@/components/modules/usuarios/asignar-veh
 import { PermisoExcepciones } from "@/components/modules/usuarios/permiso-excepciones";
 import { NuevoUsuarioDialog } from "@/components/modules/usuarios/nuevo-usuario-dialog";
 import { RestablecerPasswordDialog } from "@/components/modules/usuarios/restablecer-password-dialog";
+import { SesionesMovilesDialog } from "@/components/modules/usuarios/sesiones-moviles-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,11 +80,11 @@ export function UsuariosTable({
                       <span className="font-medium text-foreground">{u.nombre}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="max-w-[220px] whitespace-normal break-words text-muted-foreground">
                     {u.autogestionado ? (
                       <span>
                         {formatTelefono(u.telefono)}
-                        <span className="ml-1.5 text-xs">(motorizado, entra con placa y PIN)</span>
+                        <span className="block text-xs">(motorizado, placa y PIN)</span>
                       </span>
                     ) : (
                       u.email
@@ -122,8 +123,8 @@ export function UsuariosTable({
                     )}
                   </TableCell>
                   {esAdmin && (
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
+                    <TableCell className="whitespace-normal">
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         {/* Un motorizado anda en su moto y entra con PIN: se administra
                             en Vehículos › Choferes › Motorizados. */}
                         {u.rol === "REPARTIDOR" && !u.autogestionado && (
@@ -131,6 +132,9 @@ export function UsuariosTable({
                         )}
                         {u.rol === "VENDEDOR" && <AsignarRutasDialog usuario={u} />}
                         {!u.autogestionado && <RestablecerPasswordDialog usuarioId={u.id} usuarioNombre={u.nombre} />}
+                        {(u.rol === "REPARTIDOR" || u.rol === "VENDEDOR") && (
+                          <SesionesMovilesDialog usuarioId={u.id} usuarioNombre={u.nombre} />
+                        )}
                       </div>
                     </TableCell>
                   )}

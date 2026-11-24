@@ -1,234 +1,57 @@
 "use client";
 
-import { useState } from "react";
 import Link from "@/components/shared/enlace";
 import { usePathname } from "next/navigation";
-import { Collapsible as CollapsiblePrimitive } from "radix-ui";
-import {
-  BarChart3Icon,
-  Building2Icon,
-  ChevronRightIcon,
-  ClipboardCheckIcon,
-  HandCoinsIcon,
-  IceCreamConeIcon,
-  LayoutDashboardIcon,
-  MapPinCheckIcon,
-  MapPinnedIcon,
-  NavigationIcon,
-  WalletIcon,
-  PackageIcon,
-  RouteIcon,
-  TruckIcon,
-  UsersIcon,
-} from "lucide-react";
+import { IceCreamConeIcon } from "lucide-react";
+import { BuscadorPantallas } from "@/components/layout/buscador-pantallas";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { INICIO_POR_ROL } from "@/lib/constants";
 import type { RolUsuario } from "@/lib/mock-data";
+import { areasDe, ubicar, type Area } from "@/lib/navegacion";
+import { useSinSenal } from "@/lib/seguimiento";
 
-type NavLeaf = { label: string; href: string; roles?: RolUsuario[] };
-type NavItem = {
-  label: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children?: NavLeaf[];
-  roles?: RolUsuario[];
-  /** Activo solo en su ruta exacta, no en las que cuelgan de ella
-   * (/vendedor no debe marcarse cuando se está en /vendedor/visitas). */
-  exacto?: boolean;
-};
-type NavGroup = { label: string; items: NavItem[] };
-
-// Roles que ven la operación completa. Un REPARTIDOR queda fuera a
-// propósito: su única pantalla es el despachador (ver (dashboard)/layout.tsx
-// y backend/app/core/permisos.py).
-const ROLES_OPERACION: RolUsuario[] = ["ADMIN", "DESPACHOS", "APROBADOR"];
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    // Único módulo de un VENDEDOR (ver (dashboard)/layout.tsx y
-    // backend/app/api/vendedor.py).
-    label: "Ventas",
-    items: [
-      { label: "Mis despachos", href: "/vendedor", icon: PackageIcon, roles: ["VENDEDOR"], exacto: true },
-      { label: "Visitas", href: "/vendedor/visitas", icon: MapPinCheckIcon, roles: ["VENDEDOR"] },
-      { label: "Indicadores", href: "/vendedor/indicadores", icon: BarChart3Icon, roles: ["VENDEDOR"] },
-      { label: "Censo", href: "/vendedor/censo", icon: ClipboardCheckIcon, roles: ["VENDEDOR"] },
-    ],
-  },
-  {
-    // Las dos pantallas del SUPERVISOR (ver MODULOS_POR_ROL en
-    // src/lib/constants.ts); el ADMIN las tiene en "Inicio".
-    label: "Supervisión",
-    items: [
-      { label: "Vendedores", href: "/supervisor", icon: MapPinCheckIcon, roles: ["SUPERVISOR"] },
-      { label: "Censo de clientes", href: "/censo", icon: ClipboardCheckIcon, roles: ["SUPERVISOR"] },
-    ],
-  },
-  {
-    // Único módulo de COBRANZAS; el ADMIN también lo ve (ver
-    // backend/app/api/cobranzas.py).
-    label: "Cobranzas",
-    items: [
-      {
-        label: "Cobranzas",
-        href: "/cobranzas",
-        icon: HandCoinsIcon,
-        roles: ["ADMIN", "COBRANZAS"],
-        exacto: true,
-        children: [
-          { label: "Tablero", href: "/cobranzas" },
-          { label: "Pagos por verificar", href: "/cobranzas/pagos" },
-          { label: "Clientes", href: "/cobranzas/clientes" },
-          { label: "Cuentas del portal", href: "/cobranzas/cuentas" },
-          { label: "Ajustes", href: "/cobranzas/ajustes" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Rutas y despachos",
-    items: [
-      {
-        label: "Despachos",
-        href: "/despachos",
-        icon: TruckIcon,
-        roles: ROLES_OPERACION,
-        children: [
-          { label: "Todos los despachos", href: "/despachos" },
-          { label: "Nuevo despacho", href: "/despachos/nuevo", roles: ["ADMIN", "DESPACHOS"] },
-          { label: "Aprobación de despachos", href: "/despachos/aprobacion", roles: ["ADMIN", "APROBADOR"] },
-        ],
-      },
-      {
-        label: "Rutas",
-        href: "/rutas",
-        icon: RouteIcon,
-        roles: ROLES_OPERACION,
-        children: [
-          { label: "Todas las rutas", href: "/rutas" },
-          { label: "Planificación", href: "/rutas/planificacion" },
-          { label: "Nueva ruta", href: "/rutas/nueva", roles: ["ADMIN", "DESPACHOS"] },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Clientes y flota",
-    items: [
-      { label: "Clientes", href: "/clientes", icon: Building2Icon, roles: ROLES_OPERACION },
-      {
-        label: "Vehículos",
-        href: "/flota",
-        icon: ClipboardCheckIcon,
-        roles: ROLES_OPERACION,
-        children: [
-          { label: "Todos los vehículos", href: "/flota" },
-          { label: "Choferes", href: "/flota/choferes" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Seguimiento",
-    items: [
-      { label: "Seguimiento", href: "/seguimiento", icon: MapPinnedIcon, roles: ROLES_OPERACION },
-      { label: "Despachador", href: "/despachador", icon: NavigationIcon, roles: ["ADMIN", "REPARTIDOR"] },
-      // Su propio estado de cuenta de delivery (el ADMIN ve el de todos en Delivery en moto).
-      { label: "Mi estado de cuenta", href: "/despachador/cuenta", icon: WalletIcon, roles: ["REPARTIDOR"] },
-    ],
-  },
-  {
-    label: "Administración",
-    items: [{ label: "Usuarios", href: "/usuarios", icon: UsersIcon, roles: ["ADMIN"] }],
-  },
-];
-
-// Pantallas del bloque "Inicio", solo para ADMIN (la regla de verdad está
-// en (dashboard)/layout.tsx y en la API).
-const INICIO_HIJOS: NavLeaf[] = [
-  { label: "Resumen", href: "/" },
-  { label: "Indicadores de venta", href: "/indicadores" },
-  { label: "Resultados y gastos", href: "/gastos" },
-  { label: "Delivery en moto", href: "/delivery" },
-  { label: "Censo de clientes", href: "/censo" },
-];
-
-function isActive(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-/** "Inicio" desplegable: el enlace lleva al resumen y la flecha abre o
- * cierra sus pantallas. */
-function InicioAdmin({ pathname }: { pathname: string }) {
-  const [abierto, setAbierto] = useState(true);
-  const activo = INICIO_HIJOS.some((hijo) => isActive(pathname, hijo.href));
-
-  return (
-    <CollapsiblePrimitive.Root open={abierto} onOpenChange={setAbierto} asChild>
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={activo} tooltip="Inicio">
-          <Link href="/">
-            <LayoutDashboardIcon />
-            <span>Inicio</span>
-          </Link>
-        </SidebarMenuButton>
-        <CollapsiblePrimitive.Trigger asChild>
-          <SidebarMenuAction
-            className="transition-transform data-[state=open]:rotate-90"
-            aria-label={abierto ? "Cerrar Inicio" : "Abrir Inicio"}
-          >
-            <ChevronRightIcon />
-          </SidebarMenuAction>
-        </CollapsiblePrimitive.Trigger>
-        <CollapsiblePrimitive.Content>
-          <SidebarMenuSub>
-            {INICIO_HIJOS.map((hijo) => (
-              <SidebarMenuSubItem key={hijo.href}>
-                <SidebarMenuSubButton asChild isActive={isActive(pathname, hijo.href)}>
-                  <Link href={hijo.href}>{hijo.label}</Link>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
-          </SidebarMenuSub>
-        </CollapsiblePrimitive.Content>
-      </SidebarMenuItem>
-    </CollapsiblePrimitive.Root>
-  );
-}
-
-function puedeVer(roles: RolUsuario[] | undefined, rol: RolUsuario) {
-  return !roles || roles.includes(rol);
-}
-
+/** Un enlace por área (ver src/lib/navegacion.ts). Las secciones de cada
+ * área van como pestañas arriba de la pantalla (PestanasArea), no aquí: así
+ * el menú queda corto aunque el sistema siga creciendo. */
 export function AppSidebar({ rol }: { rol: RolUsuario }) {
   const pathname = usePathname();
-  const esAdmin = rol === "ADMIN";
-  const inicio = INICIO_POR_ROL[rol];
+  // La API deja ver las posiciones a DESPACHOS y APROBADOR (y al ADMIN).
+  const sinSenal = useSinSenal(rol === "ADMIN" || rol === "DESPACHOS" || rol === "APROBADOR");
+  const areas = areasDe(rol);
+  const actual = ubicar(pathname, areas)?.area.id;
+  const arriba = areas.filter((a) => !a.abajo);
+  const abajo = areas.filter((a) => a.abajo);
 
-  const grupos = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items
-      .filter((item) => puedeVer(item.roles, rol))
-      .map((item) => ({
-        ...item,
-        children: item.children?.filter((child) => puedeVer(child.roles, rol)),
-      })),
-  })).filter((group) => group.items.length > 0);
+  const enlace = (area: Area) => (
+    <SidebarMenuItem key={area.id}>
+      <SidebarMenuButton asChild isActive={area.id === actual} tooltip={area.label}>
+        <Link href={area.secciones[0].href}>
+          <area.icon />
+          <span>{area.label}</span>
+        </Link>
+      </SidebarMenuButton>
+      {area.id === "logistica" && sinSenal > 0 && (
+        <SidebarMenuBadge
+          className="bg-amber-500/15 text-amber-700 peer-hover/menu-button:text-amber-700 peer-data-active/menu-button:text-amber-700"
+          title="Repartidores que dejaron de enviar su ubicación"
+          aria-label={`${sinSenal} repartidor(es) dejaron de enviar su ubicación`}
+        >
+          {sinSenal}
+        </SidebarMenuBadge>
+      )}
+    </SidebarMenuItem>
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -236,7 +59,7 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg">
-              <Link href={inicio}>
+              <Link href={INICIO_POR_ROL[rol]}>
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <IceCreamConeIcon className="size-4.5" />
                 </span>
@@ -246,59 +69,21 @@ export function AppSidebar({ rol }: { rol: RolUsuario }) {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          {areas.some((a) => a.secciones.length > 1) && <BuscadorPantallas areas={areas} />}
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {esAdmin && (
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <InicioAdmin pathname={pathname} />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {grupos.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label.toUpperCase()}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  // Si otra opción del grupo es más específica y también
-                  // coincide (/despachador/cuenta dentro de /despachador), se
-                  // marca solo esa.
-                  const masEspecifica = group.items.some(
-                    (otra) => otra.href.length > item.href.length && isActive(pathname, otra.href)
-                  );
-                  const active = !masEspecifica && (item.exacto ? pathname === item.href : isActive(pathname, item.href));
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-                        <Link href={item.href}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                      {item.children && item.children.length > 0 && (
-                        <SidebarMenuSub>
-                          {item.children.map((child) => (
-                            <SidebarMenuSubItem key={child.href}>
-                              <SidebarMenuSubButton asChild isActive={pathname === child.href}>
-                                <Link href={child.href}>{child.label}</Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          ))}
-                        </SidebarMenuSub>
-                      )}
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>{arriba.map(enlace)}</SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
+      {abajo.length > 0 && (
+        <SidebarFooter>
+          <SidebarMenu>{abajo.map(enlace)}</SidebarMenu>
+        </SidebarFooter>
+      )}
     </Sidebar>
   );
 }

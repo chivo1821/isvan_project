@@ -200,6 +200,33 @@ export type Ruta = {
   despachosAlCancelar?: string[] | null;
   despachos: Despacho[];
   puntos: RutaPunto[];
+  /** Paradas que salieron de la ruta sin entregarse, con su motivo: se
+   * siguen mostrando, en rojo (ver backend reversos.no_entregados_de). */
+  noEntregados?: NoEntregado[];
+};
+
+export type NoEntregado = {
+  despachoId: string;
+  numero: string;
+  numeroDocumento: string;
+  tipoDocumento?: string | null;
+  /** El lugar que tenía en la ruta; vacío en los reversos de antes. */
+  ordenEnRuta?: number | null;
+  /** REPARTIDOR: «No se pudo entregar»; DESPACHO / RUTA: lo sacó el coordinador. */
+  alcance: "REPARTIDOR" | "DESPACHO" | "RUTA";
+  motivo: string;
+  fecha: string;
+  llegadaEn?: string | null;
+  /** Quién lo marcó. */
+  usuario: string;
+  cliente: {
+    codigo: string;
+    nombre: string;
+    direccion?: string | null;
+    ciudad?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  };
 };
 
 /** Respuesta de GET /rutas/activas/con-relaciones y /rutas/{id}/con-relaciones:

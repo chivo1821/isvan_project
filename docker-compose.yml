@@ -1,0 +1,122 @@
+# Instalacion en un servidor propio (una VM de AWS, Google Cloud o local):
+# base de datos, API, web, proxy y tareas programadas. Ver deploy/README.md.
+# En Vercel no se usa.
+#
+#   cp deploy/variables.ejemplo deploy/.env   (y completar)
+#   docker compose --env-file deploy/.env build
+#   docker compose --env-file deploy/.env run --rm migrar
+#   docker compose --env-file deploy/.env up -d
+
+name: gestion-logistica
+
+x-entorno-api: &entorno-api
+  DATABASE_URL: postgresql://${POSTGRES_USER:-gestion}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-gestion}
+  ALLOWED_ORIGINS: ${URL_PUBLICA:-http://localhost:8080}
+  API_URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8080}/api/backend
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  CRON_SECRET: ${CRON_SECRET:?falta CRON_SECRET}
+  ALMACEN_FOTOS: ${ALMACEN_FOTOS:-local}
+  ALMACEN_SECRETO_LOCAL: ${ALMACEN_SECRETO_LOCAL:-}
+  R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+  R2_BUCKET: ${R2_BUCKET:-}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_REGION: ${S3_REGION:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_BUCKET: ${S3_BUCKET:-}
+  CORREO_MODO: ${CORREO_MODO:-consola}
+  CORREO_REMITENTE: ${CORREO_REMITENTE:-}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+
+services:
+  db:
+    # Postgres con PostGIS y pgRouting (las migraciones crean las extensiones).
+    image: pgrouting/pgrouting:${IMAGEN_PGROUTING:-17-3.5-3.8}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gestion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gestion}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - datos-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gestion} -d ${POSTGRES_DB:-gestion}"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrar:
+    # Se corre a mano antes de levantar o actualizar: docker compose run --rm migrar
+    build:
+      context: .
+      target: migrar
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gestion}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-gestion}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["herramientas"]
+
+  api:
+    build: ./backend
+    environment: *entorno-api
+    volumes:
+      - media:/srv/backend/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        NEXT_PUBLIC_API_URL: /api/backend
+    environment:
+      # Los Server Components llaman a la API por la red interna.
+      API_URL_INTERNA: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  proxy:
+    # Front y API bajo un mismo dominio (como las rewrites de vercel.json),
+    # para que la cookie de sesion valga en los dos.
+    image: caddy:2
+    ports:
+      - "${PUERTO_HTTP:-8080}:80"
+    environment:
+      DOMINIO: ${DOMINIO:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-datos:/data
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+
+  tareas:
+    # Lo que en Vercel hacen los crons de vercel.json: la tasa BCV a las
+    # 22:30 UTC (18:30 de Caracas).
+    image: alpine:3
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?falta CRON_SECRET}
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl >/dev/null
+        echo '30 22 * * * curl -fsS -H "Authorization: Bearer $$CRON_SECRET" http://api:8000/tareas/tasa-bcv' > /etc/crontabs/root
+        exec crond -f -l 8
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  datos-db:
+  media:
+  caddy-datos:

@@ -1,0 +1,13 @@
+# Fuera de la imagen: dependencias que se instalan adentro, builds viejos y,
+# sobre todo, los .env con secretos.
+node_modules
+.next
+.git
+.vercel
+.env*
+deploy/.env
+backend
+!backend/requirements.txt
+graphify-out
+coverage
+*.log

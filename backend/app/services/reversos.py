@@ -51,10 +51,10 @@ def liberar(cur, ruta_id: str, despachos: list[dict], usuario_id: str, motivo: s
     ahora = ahora_utc()
     cur.executemany(
         'INSERT INTO "DespachoReverso" ("id", "despachoId", "rutaId", "usuarioId", "alcance", "motivo", '
-        '"estadoAnterior", "llegadaEn", "fecha") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+        '"estadoAnterior", "llegadaEn", "fecha", "ordenEnRuta") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
         [
             (f"rev-{uuid.uuid4().hex[:12]}", d["id"], ruta_id, usuario_id, alcance, motivo,
-             d["estado"], d["llegadaEn"], ahora)
+             d["estado"], d["llegadaEn"], ahora, d.get("ordenEnRuta"))
             for d in despachos
         ],
     )
@@ -98,3 +98,48 @@ def cerrar_ruta_si_corresponde(cur, ruta: dict, usuario_id: str, motivo: str, li
             'UPDATE "Ruta" SET "estado" = \'COMPLETADA\', "completadaEn" = %s WHERE "id" = %s',
             (ahora_utc(), ruta["id"]),
         )
+
+
+def no_entregados_de(cur, ruta_ids: list[str]) -> dict[str, list[dict]]:
+    """Las paradas que salieron de cada ruta sin entregarse, con su motivo:
+    para mostrarlas en rojo en la linea de tiempo y en el mapa en vez de
+    hacerlas desaparecer. Si el despacho volvio a esa misma ruta no se
+    repite; si salio dos veces, cuenta la ultima. Fechas en UTC sin zona,
+    como en la base."""
+    if not ruta_ids:
+        return {}
+    cur.execute(
+        'SELECT DISTINCT ON (r."rutaId", r."despachoId") r."rutaId", r."despachoId", r."alcance"::text AS "alcance", '
+        'r."motivo", r."fecha", r."llegadaEn", r."ordenEnRuta", u."nombre" AS "usuario", '
+        'd."numero", d."numeroDocumento", d."tipoDocumento", '
+        'c."codigo", c."nombre", c."direccion", c."ciudad", c."lat", c."lng" '
+        'FROM "DespachoReverso" r '
+        'JOIN "Despacho" d ON d."id" = r."despachoId" '
+        'JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
+        'JOIN "Usuario" u ON u."id" = r."usuarioId" '
+        'WHERE r."rutaId" = ANY(%s) AND d."rutaId" IS DISTINCT FROM r."rutaId" '
+        'ORDER BY r."rutaId", r."despachoId", r."fecha" DESC',
+        (ruta_ids,),
+    )
+    salida: dict[str, list[dict]] = {}
+    for f in cur.fetchall():
+        salida.setdefault(f["rutaId"], []).append({
+            "despachoId": f["despachoId"],
+            "numero": f["numero"],
+            "numeroDocumento": f["numeroDocumento"],
+            "tipoDocumento": f["tipoDocumento"],
+            "ordenEnRuta": f["ordenEnRuta"],
+            "alcance": f["alcance"],
+            "motivo": f["motivo"],
+            "fecha": f["fecha"],
+            "llegadaEn": f["llegadaEn"],
+            "usuario": f["usuario"],
+            "cliente": {
+                "codigo": f["codigo"], "nombre": f["nombre"], "direccion": f["direccion"], "ciudad": f["ciudad"],
+                "lat": f["lat"], "lng": f["lng"],
+            },
+        })
+    for lista in salida.values():
+        # En el orden que tenian en la ruta; los de antes (sin orden), por fecha.
+        lista.sort(key=lambda x: (x["ordenEnRuta"] is None, x["ordenEnRuta"] or 0, x["fecha"]))
+    return salida

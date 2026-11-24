@@ -6,7 +6,7 @@ de DATABASE_URL del .env, que debe ser local (localhost o 127.0.0.1); en CI
 se pasa PRUEBAS_POSTGRES_URL. Nunca corre contra otra cosa: lo comprueba antes
 de crear nada.
 
-    cd backend && .venv/Scripts/python.exe -m pytest tests
+    backend/.venv/Scripts/python.exe -m pytest backend/tests
 """
 
 from __future__ import annotations

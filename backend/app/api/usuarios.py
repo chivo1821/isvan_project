@@ -14,6 +14,7 @@ from app.schemas import (
     RutaVenta,
     Usuario,
     UsuarioCreate,
+    en_utc,
 )
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
@@ -222,3 +223,33 @@ def asignar_rutas_venta(usuario_id: str, data: AsignarRutasVentaRequest):
         )
         conn.commit()
     return [{"empresa": empresa, "ruta": ruta} for empresa, ruta in pedidas]
+
+
+# ---------- Sesiones de la app movil ----------
+#
+# La sesion del telefono dura 30 dias y se renueva sola (ver
+# app/core/auth.py): si un repartidor pierde el telefono, el ADMIN la cierra
+# desde aca y la app vuelve a pedir la clave.
+
+
+@router.get("/{usuario_id}/sesiones-moviles", dependencies=[Depends(requiere_rol("ADMIN"))])
+def sesiones_moviles(usuario_id: str):
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT "id", "dispositivo", "creadoEn", "ultimoUsoEn", "expiraEn" FROM "Sesion" '
+            "WHERE \"usuarioId\" = %s AND \"origen\" = 'MOVIL' AND \"expiraEn\" > now() ORDER BY \"ultimoUsoEn\" DESC",
+            (usuario_id,),
+        )
+        return [
+            {k: (en_utc(v) if k in ("creadoEn", "ultimoUsoEn", "expiraEn") and v else v) for k, v in f.items()}
+            for f in cur.fetchall()
+        ]
+
+
+@router.delete("/{usuario_id}/sesiones-moviles", dependencies=[Depends(requiere_rol("ADMIN"))])
+def cerrar_sesiones_moviles(usuario_id: str):
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('DELETE FROM "Sesion" WHERE "usuarioId" = %s AND "origen" = \'MOVIL\'', (usuario_id,))
+        cerradas = cur.rowcount
+        conn.commit()
+    return {"cerradas": cerradas}

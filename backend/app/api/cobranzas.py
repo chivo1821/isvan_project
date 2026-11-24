@@ -37,6 +37,7 @@ from app.schemas import (
     en_utc,
 )
 from app.services import bancos, cartera, configuracion, correo, documento_cobro, pagos, tablero_cobranzas, tasa_bcv
+from app.services import jornadas
 from app.services.motorizados import validar_telefono
 
 router = APIRouter(prefix="/cobranzas", tags=["cobranzas"], dependencies=[Depends(requiere_rol("COBRANZAS"))])
@@ -590,6 +591,12 @@ def tarea_tasa_bcv(authorization: str | None = Header(default=None)):
         raise HTTPException(503, "CRON_SECRET no esta configurado")
     if not authorization or not hmac.compare_digest(authorization.encode(), f"Bearer {secreto}".encode()):
         raise HTTPException(401, "No autorizado")
+    # De paso, la limpieza diaria de la app movil (jornadas olvidadas y
+    # puntos viejos): va primero y aparte, para que una falla de la tasa no
+    # la frene. Vercel Hobby da pocos crons y este ya corre a diario.
+    with get_connection() as conn, conn.cursor() as cur:
+        jornadas.limpiar_viejas(cur)
+        conn.commit()
     with get_connection() as conn, conn.cursor() as cur:
         try:
             cambios = tasa_bcv.actualizar(cur)

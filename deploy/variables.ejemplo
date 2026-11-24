@@ -1,0 +1,38 @@
+# Variables de la instalacion en contenedores (docker-compose.yml).
+# Copiar como deploy/.env (ignorado por git) y completar:
+#   docker compose --env-file deploy/.env ...
+# No usar el .env de la raiz: es el de desarrollo.
+
+# Base de datos (contenedor "db")
+POSTGRES_USER=gestion
+POSTGRES_PASSWORD=
+POSTGRES_DB=gestion
+
+# Direccion por la que entran los usuarios (sin barra al final)
+URL_PUBLICA=http://localhost:8080
+PUERTO_HTTP=8080
+# ":80" para HTTP sin dominio; un dominio real activa HTTPS automatico
+DOMINIO=:80
+COOKIE_SECURE=false
+
+# Secreto que firma la llamada de las tareas programadas
+CRON_SECRET=
+
+# Fotos y comprobantes: "local" (volumen media), "r2" (Cloudflare) o "s3"
+# (AWS S3 o Google Cloud Storage en modo compatible)
+ALMACEN_FOTOS=local
+ALMACEN_SECRETO_LOCAL=
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+S3_ENDPOINT=
+S3_REGION=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+S3_BUCKET=
+
+# Correo: "consola" (no envia, lo escribe en el log) o el proveedor
+CORREO_MODO=consola
+CORREO_REMITENTE=
+RESEND_API_KEY=
