@@ -126,26 +126,28 @@ def _rutas_ordenadas(rutas: list[tuple[str, str]]) -> list[dict]:
 
 def clientes_de_visita(cur) -> dict[tuple[str, str], dict]:
     """Los clientes que visitan los vendedores, por (empresa, codigo): la
-    maestra vigente de cada empresa sin la ruta 77, como el censo, mas los
-    que aparecen en las ventas cargadas y no estan en ella (asi no se pierde
-    nadie si una maestra viene incompleta). Uno de baja en la maestra no
-    vuelve por las ventas. Nombre y ruta, los de la maestra si esta.
+    maestra vigente de cada empresa sin la ruta 77, como el censo. Si una
+    empresa todavia no tiene maestra cargada, cae a VentaCliente como respaldo.
+    Cuando ya hay maestra vigente, esa maestra manda (evita resucitar clientes
+    historicos dados de baja que no vienen en una maestra filtrada de activos).
     "rutaNumero" es la ruta comparable ("R4", "4" y "Ruta 4" son la misma)."""
     clientes: dict[tuple[str, str], dict] = {}
-    de_baja: set[tuple[str, str]] = set()
+    empresas_con_maestra: set[str] = set()
     for empresa, filas in ct._maestra(cur, EMPRESAS, con_baja=True).items():
+        if filas:
+            empresas_con_maestra.add(empresa)
         for f in filas:
-            if f["rutaNumero"] == RUTA_DE_BAJA:
-                de_baja.add((empresa, f["codigo"]))
-            else:
+            if f["rutaNumero"] != RUTA_DE_BAJA:
                 clientes[(empresa, f["codigo"])] = {
                     "empresa": empresa, "codigo": f["codigo"], "nombre": f["razonSocial"],
                     "ruta": f["ruta"], "rutaNumero": f["rutaNumero"],
                 }
     cur.execute('SELECT "empresa"::text AS "empresa", "codigo", "nombre", "ruta" FROM "VentaCliente"')
     for v in cur.fetchall():
+        if v["empresa"] in empresas_con_maestra:
+            continue
         clave = (v["empresa"], codigo_normalizado(v["codigo"]))
-        if clave not in clientes and clave not in de_baja:
+        if clave not in clientes:
             clientes[clave] = {
                 "empresa": v["empresa"], "codigo": clave[1], "nombre": v["nombre"],
                 "ruta": v["ruta"], "rutaNumero": iv.ruta_comparable(v["ruta"]),

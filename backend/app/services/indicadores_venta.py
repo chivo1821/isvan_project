@@ -671,7 +671,18 @@ def activacion(cur, f: Filtros) -> dict:
     corte = min(f.hasta, hoy_caracas())
     cur.execute(
         f"""
-        WITH movimientos AS (
+        WITH ultima_maestra AS (
+            SELECT "id" FROM "MaestraCarga"
+            WHERE "empresa" = %(empresa)s
+            ORDER BY "subidaEn" DESC LIMIT 1
+        ),
+        maestra_vigente AS (
+            SELECT ltrim(mc."codigo", '0') AS "codigoNorm",
+                   TRIM(COALESCE(mc."ruta", '')) AS "rutaMaestra"
+            FROM "MaestraCliente" mc
+            JOIN ultima_maestra um ON um."id" = mc."cargaId"
+        ),
+        movimientos AS (
             SELECT v."codigoCliente" AS "codigo",
                    MAX(v."fecha") AS "ultimaCompra",
                    COALESCE(SUM(v."montoUsd") FILTER (WHERE {en_periodo}), 0) AS "ventaPeriodo",
@@ -685,7 +696,21 @@ def activacion(cur, f: Filtros) -> dict:
                m."ultimaCompra", m."ventaPeriodo", m."ventaAnterior", m."documentos"
         FROM "VentaCliente" vc
         LEFT JOIN movimientos m ON m."codigo" = vc."codigo"
+        LEFT JOIN maestra_vigente mv ON mv."codigoNorm" = ltrim(vc."codigo", '0')
         WHERE {" AND ".join(cartera)}
+          AND (
+              -- Si no hay maestra cargada para la empresa, se comporta como antes.
+              NOT EXISTS (SELECT 1 FROM ultima_maestra)
+              -- Si hay maestra vigente: excluye ruta 77 (dados de baja) y clientes
+              -- que ya no figuran en la maestra, salvo que compraran en este periodo.
+              OR (
+                  COALESCE(mv."rutaMaestra", '') <> '77'
+                  AND (
+                      mv."codigoNorm" IS NOT NULL
+                      OR m."ultimaCompra" >= %(periodo_desde)s
+                  )
+              )
+          )
           AND EXISTS (
               SELECT 1 FROM "Venta" v2
               JOIN "VentaCarga" c2 ON c2."id" = v2."cargaId" AND c2."estado" = 'CONFIRMADA'
