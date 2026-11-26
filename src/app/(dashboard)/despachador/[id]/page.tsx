@@ -11,6 +11,7 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
   const ruta = await getRutaConDetalle(id);
   if (!ruta) notFound();
   const enCamino = ruta.estado === "EN_TRANSITO";
+  const esMoto = ruta.vehiculo?.tipo === "MOTO";
 
   return (
     <div className="space-y-6">
@@ -28,21 +29,25 @@ export default async function DespachadorDetallePage({ params }: PageProps<"/des
             <p className="text-base font-semibold text-foreground">
               Recoger en el almacén:{" "}
               {/* Las motos salen en el día, sin hora fija (pedido del cliente). */}
-              {ruta.vehiculo?.tipo === "MOTO" ? formatDate(ruta.salidaProgramada) : formatDateTime(ruta.salidaProgramada)}
+              {esMoto ? formatDate(ruta.salidaProgramada) : formatDateTime(ruta.salidaProgramada)}
             </p>
             {ruta.distanciaTotalKm != null && ruta.tiempoTotalMin != null && (
               <p>
                 {ruta.distanciaTotalKm.toLocaleString("es-VE")} km · ~{ruta.tiempoTotalMin} min estimados
               </p>
             )}
+            {esMoto && ruta.estado === "PLANIFICADA" && (
+              <p>Selecciona abajo los pedidos con los que vas a salir del almacén.</p>
+            )}
           </div>
-          {ruta.estado === "PLANIFICADA" && <IniciarRutaButton rutaId={ruta.id} />}
+          {!esMoto && ruta.estado === "PLANIFICADA" && <IniciarRutaButton rutaId={ruta.id} />}
         </div>
       )}
 
       <ViajeEnCurso
         rutaId={ruta.id}
         estadoRuta={ruta.estado}
+        esMoto={esMoto}
         enCaminoDesde={
           enCamino
             ? `En camino desde las ${formatHora(ruta.iniciadaEn ?? ruta.salidaProgramada)}${

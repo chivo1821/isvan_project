@@ -76,7 +76,7 @@ def _rutas_movil(cur, rutas: list[dict]) -> list[dict]:
     ids = [r["id"] for r in rutas]
     cur.execute(
         'SELECT d."id", d."rutaId", d."numero", d."numeroDocumento", d."tipoDocumento", d."estado"::text AS "estado", '
-        'd."ordenEnRuta", d."llegadaEn", d."entregadoEn", c."codigo", c."nombre", c."direccion", c."ciudad", '
+        'd."ordenEnRuta", d."salidaEn", d."tandaSalida", d."llegadaEn", d."entregadoEn", c."codigo", c."nombre", c."direccion", c."ciudad", '
         'c."telefono", c."lat", c."lng", '
         '(SELECT COALESCE(SUM(i."cantidad" * i."pesoUnitarioKg"), 0) FROM "DespachoItem" i WHERE i."despachoId" = d."id") AS "pesoKg" '
         'FROM "Despacho" d JOIN "Cliente" c ON c."id" = d."destinoClienteId" '
@@ -92,6 +92,8 @@ def _rutas_movil(cur, rutas: list[dict]) -> list[dict]:
             "tipoDocumento": d["tipoDocumento"],
             "estado": d["estado"],
             "ordenEnRuta": d["ordenEnRuta"],
+            "salidaEn": _instante(d["salidaEn"]),
+            "tandaSalida": d["tandaSalida"],
             "llegadaEn": _instante(d["llegadaEn"]),
             "entregadoEn": _instante(d["entregadoEn"]),
             "pesoKg": round(float(d["pesoKg"]), 1),
@@ -125,6 +127,7 @@ def _rutas_movil(cur, rutas: list[dict]) -> list[dict]:
             "tiempoTotalMin": r["tiempoTotalMin"],
             "vehiculo": {"placa": vehiculo["placa"], "tipo": vehiculo["tipo"]} if vehiculo else None,
             "vehiculoApoyo": {"placa": apoyo["placa"], "tipo": apoyo["tipo"]} if apoyo else None,
+            "tipoVehiculo": vehiculo["tipo"] if vehiculo else None,
             # Las motos salen en el dia, sin hora a la vista (pedido del cliente).
             "esMoto": bool(vehiculo and vehiculo["tipo"] == "MOTO"),
             "almacen": almacenes.get(r["origenId"]),

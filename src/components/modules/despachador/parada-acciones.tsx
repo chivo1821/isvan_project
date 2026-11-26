@@ -13,6 +13,7 @@ import type { EstadoDespacho } from "@/lib/mock-data";
 
 export type MarcasParada = {
   estado: EstadoDespacho;
+  salidaEn?: string | null;
   llegadaEn?: string | null;
   entregadoEn?: string | null;
 };
@@ -28,6 +29,7 @@ export function ParadaAcciones({
   rutaId,
   despachoId,
   rutaEnTransito,
+  esMoto = false,
   marcas,
   onMarcado,
   onNoEntregado,
@@ -35,6 +37,7 @@ export function ParadaAcciones({
   rutaId: string;
   despachoId: string;
   rutaEnTransito: boolean;
+  esMoto?: boolean;
   marcas: MarcasParada;
   onMarcado: (marcas: MarcasParada) => void;
   /** La parada salió de la ruta («No se pudo entregar»). */
@@ -68,19 +71,21 @@ export function ParadaAcciones({
 
   const puedeMarcar = rutaEnTransito && marcas.estado === "EN_TRANSITO";
 
+  const marcasTexto = [
+    marcas.salidaEn && `Salida ${formatHora(marcas.salidaEn)}`,
+    marcas.llegadaEn && `Llegada ${formatHora(marcas.llegadaEn)}`,
+    marcas.entregadoEn && `Entrega ${formatHora(marcas.entregadoEn)}`,
+  ].filter(Boolean);
+
   // En el teléfono los botones van a lo ancho y con alto de dedo (44 px);
   // en pantallas grandes vuelven a su tamaño, al costado de la parada.
   return (
     <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end sm:gap-1.5">
-      {(marcas.llegadaEn || marcas.entregadoEn) && (
-        <p className="text-xs text-muted-foreground">
-          {marcas.llegadaEn && `Llegada ${formatHora(marcas.llegadaEn)}`}
-          {marcas.llegadaEn && marcas.entregadoEn && " · "}
-          {marcas.entregadoEn && `Entrega ${formatHora(marcas.entregadoEn)}`}
-        </p>
+      {marcasTexto.length > 0 && (
+        <p className="text-xs text-muted-foreground">{marcasTexto.join(" · ")}</p>
       )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <StatusBadge {...estadoDeParada(marcas)} className="self-start sm:self-auto" />
+        <StatusBadge {...estadoDeParada(marcas, { esMoto })} className="self-start sm:self-auto" />
         {puedeMarcar &&
           (marcas.llegadaEn ? (
             <Button

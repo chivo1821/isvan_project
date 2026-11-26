@@ -25,17 +25,26 @@ export const ESTADO_DESPACHO_META: Record<EstadoDespacho, StatusMeta> = {
  * `EN_TRANSITO`. Para el mapa y la lista del despachador esa diferencia es
  * justo lo que interesa —saber dónde está parado el conductor ahora—, así
  * que se deriva de las marcas. */
-export function estadoDeParada(parada: {
-  estado: EstadoDespacho;
-  llegadaEn?: string | null;
-  entregadoEn?: string | null;
-}): StatusMeta {
+export function estadoDeParada(
+  parada: {
+    estado: EstadoDespacho;
+    llegadaEn?: string | null;
+    entregadoEn?: string | null;
+  },
+  opciones?: { esMoto?: boolean }
+): StatusMeta {
   if (parada.entregadoEn || parada.estado === "ENTREGADO") return ESTADO_DESPACHO_META.ENTREGADO;
   if (parada.llegadaEn && parada.estado === "EN_TRANSITO") {
     // Azul: no choca con el naranja de "en tránsito" ni con el verde de
     // "entregado". El azul de "Aprobado" no compite, porque una parada solo
     // puede estar "en el cliente" con el viaje ya en marcha.
     return { label: "En el cliente", tone: "info" };
+  }
+  if (opciones?.esMoto) {
+    if (parada.estado === "EN_TRANSITO") {
+      return { label: "En camino", tone: "primary" };
+    }
+    return { label: "En almacén", tone: "neutral" };
   }
   return ESTADO_DESPACHO_META[parada.estado];
 }
