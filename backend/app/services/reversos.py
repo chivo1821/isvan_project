@@ -60,7 +60,8 @@ def liberar(cur, ruta_id: str, despachos: list[dict], usuario_id: str, motivo: s
     )
     ids = [d["id"] for d in despachos]
     cur.execute(
-        'UPDATE "Despacho" SET "estado" = \'APROBADO\', "rutaId" = NULL, "ordenEnRuta" = NULL, "llegadaEn" = NULL '
+        'UPDATE "Despacho" SET "estado" = \'APROBADO\', "rutaId" = NULL, "ordenEnRuta" = NULL, "llegadaEn" = NULL, '
+        '"salidaEn" = NULL, "tandaSalida" = NULL, "salidaLat" = NULL, "salidaLng" = NULL '
         'WHERE "id" = ANY(%s)',
         (ids,),
     )

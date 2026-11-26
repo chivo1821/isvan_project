@@ -19,6 +19,7 @@ export type ResumenRendimiento = {
   paradasMedidas: number;
   promedioAtencionMin?: number | null;
   promedioTrasladoMin?: number | null;
+  esperaEntreSalidasMin?: number | null;
   porConductor: {
     conductor?: string | null;
     placa: string;
@@ -29,6 +30,8 @@ export type ResumenRendimiento = {
     noEntregados: number;
     /** Despachos de sus rutas que reversó la oficina (no cuentan contra él). */
     reversadosOficina: number;
+    /** Promedio de espera en almacén entre tandas de motorizados (informativo, aparte del traslado). */
+    esperaEntreSalidasMin?: number | null;
   }[];
 };
 
@@ -40,6 +43,7 @@ function minutos(valor?: number | null) {
  * marcas que pone el repartidor en la calle (llegada y entrega), así que
  * están vacíos hasta que se cierren viajes con ese flujo. */
 export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento }) {
+  const tieneEsperaEntreSalidas = resumen.porConductor.some((c) => c.esperaEntreSalidasMin != null);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -90,6 +94,9 @@ export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento })
                     <TableHead className="text-right">Distancia</TableHead>
                     <TableHead className="text-right">No entregados</TableHead>
                     <TableHead className="text-right">Reversados por la oficina</TableHead>
+                    {tieneEsperaEntreSalidas && (
+                      <TableHead className="text-right">Espera entre salidas</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -112,6 +119,11 @@ export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento })
                         )}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{c.reversadosOficina}</TableCell>
+                      {tieneEsperaEntreSalidas && (
+                        <TableCell className="text-right text-muted-foreground">
+                          {minutos(c.esperaEntreSalidasMin)}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -120,6 +132,8 @@ export function RendimientoReparto({ resumen }: { resumen: ResumenRendimiento })
                 «No entregados»: paradas que el repartidor marcó «No se pudo entregar». «Reversados por la
                 oficina»: despachos que sacó de sus rutas el coordinador (por ejemplo, una ruta cancelada); no
                 cuentan contra el repartidor. Los motivos están en la hoja «Reversos» del Excel de rutas.
+                {tieneEsperaEntreSalidas &&
+                  " «Espera entre salidas»: promedio de minutos en almacén entre tandas de un motorizado (informativo, aparte del tiempo de traslado)."}
               </p>
               {resumen.paradasMedidas === 0 && (
                 <p className="mt-3 text-xs text-muted-foreground">
