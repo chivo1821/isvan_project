@@ -358,12 +358,15 @@ model Despacho {
   ordenEnRuta Int? // posicion de esta parada dentro de la ruta, calculada por el TSP
 
   // Marcas de tiempo que pone el repartidor en la calle, para medir su
-  // rendimiento: cuando llego al cliente y cuando termino de entregar. La
-  // diferencia entre ambas es el tiempo de atencion de esa parada; entre la
-  // entrega anterior y esta llegada, el tiempo de traslado.
-  llegadaEn   DateTime?
-  entregadoEn DateTime?
+  // rendimiento: cuando salio del almacen (motos por tandas), cuando llego al
+  // cliente y cuando termino de entregar.
+  salidaEn     DateTime?
+  tandaSalida  String?
+  llegadaEn    DateTime?
+  entregadoEn  DateTime?
   // Donde estaba el telefono al marcar (solo la app movil lo manda).
+  salidaLat    Float?
+  salidaLng    Float?
   llegadaLat   Float?
   llegadaLng   Float?
   entregadoLat Float?
