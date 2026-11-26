@@ -126,7 +126,9 @@ export type Despacho = {
   /** Si ya forma parte de una Ruta multi-parada, y en qué posición. */
   rutaId?: string | null;
   ordenEnRuta?: number | null;
-  /** Marcas que pone el repartidor en la calle: llegada al cliente y entrega. */
+  /** Marcas que pone el repartidor en la calle: salida del almacén (motos por tandas), llegada al cliente y entrega. */
+  salidaEn?: string | null;
+  tandaSalida?: string | null;
   llegadaEn?: string | null;
   entregadoEn?: string | null;
   items: DespachoItem[];

@@ -15,8 +15,10 @@ import {
   describirVehiculo,
   documentoDespacho,
   contarParadas,
+  estadoDeParada,
   formatDate,
   formatDateTime,
+  formatHora,
   textoParadas,
 } from "@/lib/constants";
 import { apiGet } from "@/lib/api-client";
@@ -30,6 +32,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
   if (!ruta) notFound();
 
   const rutaActiva = ruta.estado === "PLANIFICADA" || ruta.estado === "EN_TRANSITO";
+  const esMoto = ruta.vehiculo?.tipo === "MOTO";
   // Mismo criterio que la API (backend/app/services/reversos.py): el
   // coordinador saca de una ruta activa lo que no se entregó; lo entregado
   // se queda.
@@ -139,7 +142,7 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {ruta.puntos.length > 0 ? (
-            <SeguimientoDetalleMap ruta={ruta.puntos} paradas={ruta.despachos} className="h-[28rem]" />
+            <SeguimientoDetalleMap ruta={ruta.puntos} paradas={ruta.despachos} esMoto={esMoto} className="h-[28rem]" />
           ) : (
             <Card>
               <CardContent className="flex h-[28rem] items-center justify-center text-center text-sm text-muted-foreground">
@@ -177,9 +180,14 @@ export default async function RutaDetallePage({ params }: PageProps<"/rutas/[id]
                       <span className="font-medium text-foreground">{documentoDespacho(d)}</span> · cód.{" "}
                       {d.destinoCliente.codigo} · {d.destinoCliente.ciudad}
                     </p>
-                    <p className="text-xs text-muted-foreground">Despacho {d.numero}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Despacho {d.numero}
+                      {d.salidaEn && ` · Salió ${formatHora(d.salidaEn)}`}
+                      {d.llegadaEn && ` · Llegó ${formatHora(d.llegadaEn)}`}
+                      {d.entregadoEn && ` · Entregó ${formatHora(d.entregadoEn)}`}
+                    </p>
                   </Link>
-                  <StatusBadge {...ESTADO_DESPACHO_META[d.estado]} />
+                  <StatusBadge {...(esMoto ? estadoDeParada(d, { esMoto: true }) : ESTADO_DESPACHO_META[d.estado])} />
                 </div>
                 {esCoordinador && rutaActiva && d.estado !== "ENTREGADO" && (
                   <ReversarDialog
