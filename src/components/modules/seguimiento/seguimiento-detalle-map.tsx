@@ -50,6 +50,7 @@ export function SeguimientoDetalleMap({
   rutaId,
   recorridoInicial = null,
   enTransito = false,
+  esMoto = false,
   noEntregados = [],
 }: {
   ruta: RutaPunto[];
@@ -63,6 +64,7 @@ export function SeguimientoDetalleMap({
   rutaId?: string;
   recorridoInicial?: RecorridoReal | null;
   enTransito?: boolean;
+  esMoto?: boolean;
   /** Las que salieron sin entregarse: en rojo, en la ubicación del cliente. */
   noEntregados?: NoEntregado[];
 }) {
@@ -138,7 +140,7 @@ export function SeguimientoDetalleMap({
             <DespachoMarker
               key={punto.id}
               position={[punto.lat, punto.lng]}
-              tone={despacho ? estadoDeParada(despacho).tone : TONE_POR_ESTADO[punto.estado]}
+              tone={despacho ? estadoDeParada(despacho, { esMoto }).tone : TONE_POR_ESTADO[punto.estado]}
             >
               <div className="space-y-0.5 text-sm">
                 {despacho ? (
@@ -149,16 +151,20 @@ export function SeguimientoDetalleMap({
                     </p>
                     <p className="flex items-center gap-1.5 text-muted-foreground">
                       {despacho.numero}
-                      <StatusBadge {...estadoDeParada(despacho)} className="font-semibold" />
+                      <StatusBadge {...estadoDeParada(despacho, { esMoto })} className="font-semibold" />
                     </p>
                     <p className="text-muted-foreground">
                       {despacho.destinoCliente.direccion}, {despacho.destinoCliente.ciudad}
                     </p>
-                    {(despacho.llegadaEn || despacho.entregadoEn) && (
+                    {(despacho.salidaEn || despacho.llegadaEn || despacho.entregadoEn) && (
                       <p className="text-muted-foreground">
-                        {despacho.llegadaEn && `Llegada ${formatHora(despacho.llegadaEn)}`}
-                        {despacho.llegadaEn && despacho.entregadoEn && " · "}
-                        {despacho.entregadoEn && `Entrega ${formatHora(despacho.entregadoEn)}`}
+                        {[
+                          despacho.salidaEn && `Salida ${formatHora(despacho.salidaEn)}`,
+                          despacho.llegadaEn && `Llegada ${formatHora(despacho.llegadaEn)}`,
+                          despacho.entregadoEn && `Entrega ${formatHora(despacho.entregadoEn)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                     )}
                   </>

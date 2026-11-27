@@ -1,15 +1,19 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { ArrowDownIcon, MapIcon, NavigationIcon, PhoneIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowDownIcon, MapIcon, NavigationIcon, PhoneIcon, TruckIcon } from "lucide-react";
+import { toast } from "sonner";
 import { SeguimientoDetalleMap } from "@/components/modules/seguimiento/seguimiento-detalle-map";
 import { ParadaAcciones, type MarcasParada } from "@/components/modules/despachador/parada-acciones";
 import { TarjetaNoEntregada } from "@/components/shared/no-entregado";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { apiPost, mensajeDeError } from "@/lib/api-client";
 import { contarParadas, documentoDespacho, textoParadas } from "@/lib/constants";
-import type { Cliente, Despacho, EstadoRuta, NoEntregado, RutaPunto } from "@/lib/mock-data";
+import type { Cliente, Despacho, EstadoRuta, NoEntregado, Ruta, RutaPunto } from "@/lib/mock-data";
 import { conNoEntregadas } from "@/lib/no-entregados";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +56,7 @@ function irAParada(id: string) {
 export function ViajeEnCurso({
   rutaId,
   estadoRuta,
+  esMoto = false,
   enCaminoDesde,
   puntos,
   paradas: paradasDelServidor,
@@ -59,6 +64,7 @@ export function ViajeEnCurso({
 }: {
   rutaId: string;
   estadoRuta: EstadoRuta;
+  esMoto?: boolean;
   /** «En camino desde las …», ya formateado: va en el resumen. */
   enCaminoDesde?: string;
   puntos: RutaPunto[];
@@ -66,6 +72,7 @@ export function ViajeEnCurso({
   /** Las que salieron sin entregarse: siguen en la lista, en rojo, con su motivo. */
   noEntregados?: NoEntregado[];
 }) {
+  const router = useRouter();
   // Las marcas recién puestas se guardan como una capa encima de lo que
   // manda el servidor, en vez de copiar las paradas a estado: así, cuando
   // el router.refresh() trae datos nuevos (por ejemplo al iniciar el viaje,
@@ -75,19 +82,71 @@ export function ViajeEnCurso({
   // Las que marcó «No se pudo entregar»: salen de la lista y del mapa sin
   // esperar a que el servidor deje de mandarlas.
   const [noEntregadas, setNoEntregadas] = useState<string[]>([]);
+  const [seleccionados, setSeleccionados] = useState<string[]>([]);
+  const [saliendo, setSaliendo] = useState(false);
   const [mapaAbierto, setMapaAbierto] = useState(false);
   const escritorio = useEsEscritorio();
   const paradas = paradasDelServidor
     .filter((p) => !noEntregadas.includes(p.id))
     .map((p) => ({ ...p, ...marcasPropias[p.id] }));
 
+  const rutaActiva = estadoRuta === "PLANIFICADA" || estadoRuta === "EN_TRANSITO";
   const enTransito = estadoRuta === "EN_TRANSITO";
+  const enAlmacen =
+    esMoto && rutaActiva
+      ? paradas.filter((p) => p.estado !== "EN_TRANSITO" && p.estado !== "ENTREGADO")
+      : [];
+  const enAlmacenIds = new Set(enAlmacen.map((p) => p.id));
+  const seleccionadosValidos = seleccionados.filter((id) => enAlmacenIds.has(id));
+  const todosSeleccionados = enAlmacen.length > 0 && seleccionadosValidos.length === enAlmacen.length;
+  const rutaEnTransitoEfectiva =
+    enTransito ||
+    (esMoto && rutaActiva && paradas.some((p) => p.estado === "EN_TRANSITO" || p.estado === "ENTREGADO"));
   // Una parada = un cliente (contarParadas): queda entregada cuando se
   // entregaron todos sus documentos.
   const totalParadas = contarParadas(paradas);
   const entregadas = totalParadas - contarParadas(paradas.filter((p) => p.estado !== "ENTREGADO"));
-  const siguiente = enTransito ? paradas.find((p) => p.estado === "EN_TRANSITO") : undefined;
+  const siguiente = rutaEnTransitoEfectiva ? paradas.find((p) => p.estado === "EN_TRANSITO") : undefined;
   const verMapa = escritorio || mapaAbierto;
+
+  function toggleSeleccion(id: string) {
+    setSeleccionados((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+  }
+
+  function toggleTodos() {
+    setSeleccionados(todosSeleccionados ? [] : enAlmacen.map((p) => p.id));
+  }
+
+  async function salirConSeleccionados() {
+    if (seleccionadosValidos.length === 0) return;
+    setSaliendo(true);
+    try {
+      const rutaActualizada = await apiPost<Ruta>(`/rutas/${rutaId}/paradas/salir`, {
+        despachoIds: seleccionadosValidos,
+      });
+      const ahora = new Date().toISOString();
+      const porId = new Map(rutaActualizada?.despachos?.map((d) => [d.id, d]) ?? []);
+      setMarcasPropias((previas) => {
+        const siguientes = { ...previas };
+        for (const id of seleccionadosValidos) {
+          const actualizado = porId.get(id);
+          siguientes[id] = {
+            ...siguientes[id],
+            estado: "EN_TRANSITO",
+            salidaEn: actualizado?.salidaEn ?? ahora,
+          };
+        }
+        return siguientes;
+      });
+      setSeleccionados([]);
+      toast.success(`Salida registrada con ${seleccionadosValidos.length} pedido(s)`);
+      router.refresh();
+    } catch (err) {
+      toast.error("No se pudo registrar la salida", { description: mensajeDeError(err, "Intenta de nuevo") });
+    } finally {
+      setSaliendo(false);
+    }
+  }
 
   function marcada(parada: Parada, marcas: MarcasParada) {
     setMarcasPropias((previas) => ({ ...previas, [parada.id]: marcas }));
@@ -103,9 +162,9 @@ export function ViajeEnCurso({
       <Card className="py-3">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4">
           <div className="min-w-0 space-y-0.5">
-            {enTransito && enCaminoDesde && <p className="text-xs text-muted-foreground">{enCaminoDesde}</p>}
+            {rutaEnTransitoEfectiva && enCaminoDesde && <p className="text-xs text-muted-foreground">{enCaminoDesde}</p>}
             <p className="text-base font-semibold">
-              {enTransito
+              {rutaEnTransitoEfectiva
                 ? `${entregadas} de ${totalParadas} parada(s) entregadas`
                 : `${textoParadas(paradas)} en esta ruta`}
             </p>
@@ -114,8 +173,12 @@ export function ViajeEnCurso({
                 Siguiente: {paradas.indexOf(siguiente) + 1}. {siguiente.destinoCliente.nombre}
               </p>
             )}
-            {enTransito && !siguiente && paradas.length > 0 && (
-              <p className="text-sm text-muted-foreground">Ya entregaste todas las paradas.</p>
+            {rutaEnTransitoEfectiva && !siguiente && paradas.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {esMoto && enAlmacen.length > 0
+                  ? "Tanda entregada. Selecciona los próximos pedidos cuando salgas del almacén."
+                  : "Ya entregaste todas las paradas."}
+              </p>
             )}
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
@@ -149,6 +212,7 @@ export function ViajeEnCurso({
                   ruta={puntos}
                   paradas={paradas}
                   noEntregados={noEntregados}
+                  esMoto={esMoto}
                   className="h-72 lg:h-[32rem]"
                   arrastreConUnDedo={false}
                 />
@@ -169,6 +233,35 @@ export function ViajeEnCurso({
             <CardTitle>Paradas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {esMoto && enAlmacen.length > 0 && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 sm:h-8"
+                    onClick={toggleTodos}
+                    disabled={saliendo}
+                  >
+                    {todosSeleccionados ? "Deseleccionar todos" : "Seleccionar todos"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {seleccionadosValidos.length} de {enAlmacen.length} en almacén seleccionado(s)
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-11 w-full sm:h-8 sm:w-auto"
+                  disabled={seleccionadosValidos.length === 0 || saliendo}
+                  onClick={salirConSeleccionados}
+                >
+                  <TruckIcon />
+                  {saliendo ? "Saliendo..." : `Salir con ${seleccionadosValidos.length} pedido(s)`}
+                </Button>
+              </div>
+            )}
             {conNoEntregadas(paradas, noEntregados).map((item, index) => {
               if (item.tipo === "no") {
                 return <TarjetaNoEntregada key={`no-${item.parada.despachoId}`} parada={item.parada} numero={index + 1} />;
@@ -176,6 +269,8 @@ export function ViajeEnCurso({
               const d = item.parada;
               const esSiguiente = d.id === siguiente?.id;
               const entregada = d.estado === "ENTREGADO";
+              const estaEnAlmacen = esMoto && rutaActiva && d.estado !== "EN_TRANSITO" && d.estado !== "ENTREGADO";
+              const estaSeleccionada = estaEnAlmacen && seleccionadosValidos.includes(d.id);
               const { lat, lng, telefono } = d.destinoCliente;
               const conUbicacion = lat != null && lng != null;
               return (
@@ -187,17 +282,32 @@ export function ViajeEnCurso({
                     // (cómo llegar, productos), para que «Llegué» quede a la vista.
                     // En pantallas grandes los botones van a la derecha.
                     "grid scroll-mt-24 gap-3 rounded-lg border p-3 text-sm sm:grid-cols-[1fr_auto] sm:items-start",
-                    esSiguiente ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border",
+                    esSiguiente
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                      : estaSeleccionada
+                        ? "border-primary/60 bg-primary/5"
+                        : "border-border",
                     entregada && "bg-muted/40"
                   )}
                 >
                   <div className="min-w-0 space-y-1 sm:col-start-1">
-                    <p className="flex flex-wrap items-center gap-2 font-medium text-foreground">
-                      <span>
+                    <div className="flex flex-wrap items-center gap-2 font-medium text-foreground">
+                      {estaEnAlmacen && (
+                        <Checkbox
+                          id={`sel-${d.id}`}
+                          checked={estaSeleccionada}
+                          onCheckedChange={() => toggleSeleccion(d.id)}
+                          aria-label={`Seleccionar ${d.destinoCliente.nombre} para salir`}
+                        />
+                      )}
+                      <label
+                        htmlFor={estaEnAlmacen ? `sel-${d.id}` : undefined}
+                        className={cn(estaEnAlmacen && "cursor-pointer")}
+                      >
                         {index + 1}. {d.destinoCliente.nombre}
-                      </span>
+                      </label>
                       {esSiguiente && <StatusBadge tone="primary" label="Siguiente" />}
-                    </p>
+                    </div>
                     <p className="text-muted-foreground">
                       <span className="font-medium text-foreground">{documentoDespacho(d)}</span> · cód.{" "}
                       {d.destinoCliente.codigo} · {d.destinoCliente.direccion}, {d.destinoCliente.ciudad}
@@ -207,8 +317,14 @@ export function ViajeEnCurso({
                     <ParadaAcciones
                       rutaId={rutaId}
                       despachoId={d.id}
-                      rutaEnTransito={enTransito}
-                      marcas={{ estado: d.estado, llegadaEn: d.llegadaEn, entregadoEn: d.entregadoEn }}
+                      rutaEnTransito={rutaEnTransitoEfectiva}
+                      esMoto={esMoto}
+                      marcas={{
+                        estado: d.estado,
+                        salidaEn: d.salidaEn,
+                        llegadaEn: d.llegadaEn,
+                        entregadoEn: d.entregadoEn,
+                      }}
                       onMarcado={(marcas) => marcada(d, marcas)}
                       onNoEntregado={() => setNoEntregadas((previas) => [...previas, d.id])}
                     />

@@ -41,6 +41,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
   // por cliente, la llegada y la entrega que marcó el repartidor (en la app
   // o en la web). Lo que falta queda en gris, en el orden de la ruta.
   const paradas = [...ruta.despachos].sort((a, b) => (a.ordenEnRuta ?? 0) - (b.ordenEnRuta ?? 0));
+  const esMoto = ruta.vehiculo?.tipo === "MOTO";
   const entregados = paradas.filter((d) => d.entregadoEn || d.estado === "ENTREGADO").length;
   const noEntregados = ruta.noEntregados ?? [];
   const hitos: Hito[] = [
@@ -73,16 +74,17 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
       const d = parada;
       const entregado = Boolean(d.entregadoEn) || d.estado === "ENTREGADO";
       const marcas = [
+        d.salidaEn && `Salió ${formatHora(d.salidaEn)}`,
         d.llegadaEn && `Llegó ${formatHora(d.llegadaEn)}`,
         d.entregadoEn && `Entregó ${formatHora(d.entregadoEn)}`,
       ].filter(Boolean);
       return {
         clave: d.id,
-        icono: entregado ? CheckIcon : d.llegadaEn ? MapPinIcon : CircleIcon,
-        hecho: entregado || Boolean(d.llegadaEn),
+        icono: entregado ? CheckIcon : d.llegadaEn ? MapPinIcon : d.salidaEn ? TruckIcon : CircleIcon,
+        hecho: entregado || Boolean(d.llegadaEn) || Boolean(d.salidaEn),
         titulo: `${numero}${d.destinoCliente.nombre}`,
         enlace: { href: `/despachos/${d.id}`, texto: d.numero },
-        estado: estadoDeParada(d),
+        estado: estadoDeParada(d, { esMoto }),
         detalle: marcas.length > 0 ? marcas.join(" · ") : undefined,
       };
     }),
@@ -116,6 +118,7 @@ export default async function SeguimientoDetallePage({ params }: PageProps<"/seg
               rutaId={ruta.id}
               recorridoInicial={recorrido}
               enTransito={ruta.estado === "EN_TRANSITO"}
+              esMoto={esMoto}
             />
           ) : (
             <Card>

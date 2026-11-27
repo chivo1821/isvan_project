@@ -395,6 +395,10 @@ class MarcaParada(BaseModel):
     lng: Optional[Annotated[float, Field(ge=-180, le=180)]] = None
 
 
+class SalirParadasRequest(MarcaParada):
+    despachoIds: list[str] = Field(min_length=1, max_length=200)
+
+
 class CambiarPasswordRequest(BaseModel):
     passwordActual: str
     passwordNueva: ClaveNueva
@@ -554,6 +558,10 @@ class Despacho(BaseModel):
     rutaId: Optional[str] = None
     ordenEnRuta: Optional[int] = None
     # Marcas que pone el repartidor en la calle (ver app/api/rutas.py).
+    salidaEn: Optional[Instante] = None
+    tandaSalida: Optional[str] = None
+    salidaLat: Optional[float] = None
+    salidaLng: Optional[float] = None
     llegadaEn: Optional[Instante] = None
     entregadoEn: Optional[Instante] = None
     items: list[DespachoItem] = []
@@ -880,6 +888,7 @@ class RendimientoConductor(BaseModel):
     # sus rutas que reverso la oficina (ver app/services/reversos.py).
     noEntregados: int = 0
     reversadosOficina: int = 0
+    esperaEntreSalidasMin: Optional[float] = None
 
 
 class RangoTabuladorDelivery(BaseModel):
@@ -939,6 +948,7 @@ class ResumenRendimiento(BaseModel):
     paradasMedidas: int
     promedioAtencionMin: Optional[float] = None
     promedioTrasladoMin: Optional[float] = None
+    esperaEntreSalidasMin: Optional[float] = None
     porConductor: list[RendimientoConductor] = []
 
 

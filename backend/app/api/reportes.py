@@ -143,16 +143,24 @@ def reporte_despachos():
 
     # Tiempo de traslado: desde que se entrego la parada anterior del mismo
     # viaje hasta que se llego a esta. Para la primera parada, desde que la
-    # ruta salio del almacen.
-    entrega_anterior: dict[str, datetime] = {}
+    # ruta salio del almacen (o la tanda en caso de motos).
+    entrega_anterior: dict[tuple[str, str], datetime] = {}
     for d in sorted(
         (d for d in despachos if d["rutaId"]),
-        key=lambda d: (d["rutaId"], d["ordenEnRuta"] or 0),
+        key=lambda d: (
+            d["rutaId"],
+            d.get("tandaSalida") or "unica",
+            (0, d["llegadaEn"]) if d["llegadaEn"] is not None else (1, 0),
+            (0, d["entregadoEn"]) if d["entregadoEn"] is not None else (1, 0),
+            d["ordenEnRuta"] or 0,
+        ),
     ):
-        previa = entrega_anterior.get(d["rutaId"]) or d["rutaIniciadaEn"]
-        d["trasladoMin"] = _minutos(previa, d["llegadaEn"])
+        clave = (d["rutaId"], d.get("tandaSalida") or "unica")
+        previa = entrega_anterior.get(clave) or d.get("salidaEn") or d["rutaIniciadaEn"]
+        traslado = _minutos(previa, d["llegadaEn"])
+        d["trasladoMin"] = max(0.0, traslado) if traslado is not None else None
         if d["entregadoEn"]:
-            entrega_anterior[d["rutaId"]] = d["entregadoEn"]
+            entrega_anterior[clave] = d["entregadoEn"]
 
     filas = []
     for d in despachos:
@@ -367,9 +375,10 @@ DIAS_DE_RENDIMIENTO = 30
 # Python.
 _PARADAS_CON_TIEMPOS = f"""
     WITH paradas AS (
-        SELECT d."rutaId", d."llegadaEn", d."entregadoEn", r."iniciadaEn", r."vehiculoId",
+        SELECT d."rutaId", d."salidaEn", d."tandaSalida", d."llegadaEn", d."entregadoEn", r."iniciadaEn", r."vehiculoId",
                LAG(d."entregadoEn") OVER (
-                   PARTITION BY d."rutaId" ORDER BY d."ordenEnRuta"
+                   PARTITION BY d."rutaId", COALESCE(d."tandaSalida", 'unica')
+                   ORDER BY d."llegadaEn" ASC NULLS LAST, d."entregadoEn" ASC NULLS LAST, d."ordenEnRuta" ASC
                ) AS "entregaAnterior"
         FROM "Despacho" d
         JOIN "Ruta" r ON r."id" = d."rutaId"
@@ -378,7 +387,7 @@ _PARADAS_CON_TIEMPOS = f"""
     )
     SELECT "vehiculoId",
            EXTRACT(EPOCH FROM ("entregadoEn" - "llegadaEn")) / 60 AS atencion,
-           EXTRACT(EPOCH FROM ("llegadaEn" - COALESCE("entregaAnterior", "iniciadaEn"))) / 60 AS traslado
+           GREATEST(0, EXTRACT(EPOCH FROM ("llegadaEn" - COALESCE("entregaAnterior", "salidaEn", "iniciadaEn"))) / 60) AS traslado
     FROM paradas
     WHERE "llegadaEn" IS NOT NULL
 """
@@ -390,6 +399,7 @@ def _promedio(valores: list[float]) -> float | None:
 
 
 @router.get("/resumen", response_model=ResumenRendimiento, dependencies=[Depends(requiere_rol("ADMIN"))])
+@router.get("/rendimiento", response_model=ResumenRendimiento, dependencies=[Depends(requiere_rol("ADMIN"))])
 def resumen_rendimiento():
     """Indicadores de rendimiento del reparto para el dashboard: cuanto se
     entrego, cuanto se tarda en cada cliente y como le va a cada conductor.
@@ -415,7 +425,8 @@ def resumen_rendimiento():
             '       COUNT(d."id") FILTER (WHERE d."entregadoEn" IS NOT NULL) AS "entregas", '
             '       COALESCE(SUM(DISTINCT r."distanciaTotalKm"), 0) AS "km" '
             'FROM "Ruta" r '
-            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '            'LEFT JOIN "Despacho" d ON d."rutaId" = r."id" '
+            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'LEFT JOIN "Despacho" d ON d."rutaId" = r."id" '
             'WHERE r."fechaCreacion" >= now() - %s::interval '
             # Por vehiculo: el chofer es una subconsulta sobre v."id", asi
             # que el id tiene que estar en el GROUP BY.
@@ -447,6 +458,49 @@ def resumen_rendimiento():
         )
         reversos_por_vehiculo = {f["vehiculoId"]: f for f in cur.fetchall()}
 
+        # Espera informativa en almacen entre tandas de un mismo motorizado
+        cur.execute(
+            'SELECT v."id" AS "vehiculoId", '
+            '       COALESCE(d."tandaSalida", r."id") AS "tandaId", '
+            '       MIN(COALESCE(d."salidaEn", r."iniciadaEn")) AS "salidaEn", '
+            '       MAX(d."entregadoEn") AS "maxEntregadoEn" '
+            'FROM "Despacho" d '
+            'JOIN "Ruta" r ON r."id" = d."rutaId" '
+            'JOIN "Vehiculo" v ON v."id" = r."vehiculoId" '
+            'WHERE v."tipo" = \'MOTO\' '
+            '  AND (r."fechaCreacion" >= now() - %s::interval OR d."entregadoEn" >= now() - %s::interval) '
+            '  AND (d."salidaEn" IS NOT NULL OR d."estado" IN (\'EN_TRANSITO\', \'ENTREGADO\')) '
+            'GROUP BY v."id", COALESCE(d."tandaSalida", r."id") '
+            'HAVING MIN(COALESCE(d."salidaEn", r."iniciadaEn")) IS NOT NULL '
+            'ORDER BY v."id", "salidaEn" ASC',
+            (f"{DIAS_DE_RENDIMIENTO} days", f"{DIAS_DE_RENDIMIENTO} days"),
+        )
+        tandas_por_vehiculo_dia: dict[tuple[str, date], list[dict]] = {}
+        for fila in cur.fetchall():
+            dia_caracas = a_caracas(fila["salidaEn"]).date()
+            tandas_por_vehiculo_dia.setdefault((fila["vehiculoId"], dia_caracas), []).append(fila)
+
+        esperas_por_vehiculo: dict[str, list[float]] = {}
+        for (veh_id, _dia), tandas in tandas_por_vehiculo_dia.items():
+            ultima_entrega_dia: datetime | None = None
+            for tanda in tandas:
+                if ultima_entrega_dia is not None and tanda["salidaEn"]:
+                    espera_min = (tanda["salidaEn"] - ultima_entrega_dia).total_seconds() / 60.0
+                    if espera_min >= 0:
+                        esperas_por_vehiculo.setdefault(veh_id, []).append(espera_min)
+                max_entregado = tanda["maxEntregadoEn"]
+                if max_entregado is not None:
+                    if ultima_entrega_dia is None or max_entregado > ultima_entrega_dia:
+                        ultima_entrega_dia = max_entregado
+
+        espera_promedio_vehiculo = {
+            vid: round(sum(esps) / len(esps), 1)
+            for vid, esps in esperas_por_vehiculo.items()
+            if esps
+        }
+        todas_esperas = [e for esps in esperas_por_vehiculo.values() for e in esps]
+        espera_global = round(sum(todas_esperas) / len(todas_esperas), 1) if todas_esperas else None
+
     atencion_por_vehiculo: dict[str, list[float]] = {}
     for t in tiempos:
         atencion_por_vehiculo.setdefault(t["vehiculoId"], []).append(t["atencion"])
@@ -458,6 +512,7 @@ def resumen_rendimiento():
         "paradasMedidas": len(tiempos),
         "promedioAtencionMin": _promedio([t["atencion"] for t in tiempos]),
         "promedioTrasladoMin": _promedio([t["traslado"] for t in tiempos]),
+        "esperaEntreSalidasMin": espera_global,
         "porConductor": [
             {
                 "conductor": v["conductor"],
@@ -467,6 +522,7 @@ def resumen_rendimiento():
                 "distanciaKm": round(float(v["km"]), 1),
                 "noEntregados": reversos_por_vehiculo.get(v["id"], {}).get("noEntregados", 0),
                 "reversadosOficina": reversos_por_vehiculo.get(v["id"], {}).get("reversadosOficina", 0),
+                "esperaEntreSalidasMin": espera_promedio_vehiculo.get(v["id"]),
             }
             for v in por_vehiculo
         ],

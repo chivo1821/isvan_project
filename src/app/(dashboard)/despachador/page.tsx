@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AvisosRuta } from "@/components/modules/rutas/avisos-ruta";
-import { ESTADO_RUTA_META, describirVehiculo, documentoDespacho, formatHora } from "@/lib/constants";
+import { ESTADO_RUTA_META, describirVehiculo, documentoDespacho, estadoDeParada, formatHora } from "@/lib/constants";
 import { getRutasActivas, type RutaConDetalle } from "@/lib/mock-data";
 import { getUsuarioActual } from "@/lib/session";
 
@@ -82,7 +82,11 @@ export default async function DespachadorPage() {
         [...porDia.entries()].map(([dia, delDia]) => (
           <section key={dia} className="space-y-3">
             <h2 className="font-heading text-base font-medium">{etiquetaDia(dia, hoy, manana, delDia[0].salidaProgramada)}</h2>
-            {delDia.map((r) => (
+            {delDia.map((r) => {
+              const esMoto = r.vehiculo?.tipo === "MOTO";
+              const enAlmacen = r.despachos.filter((d) => d.estado !== "EN_TRANSITO" && d.estado !== "ENTREGADO").length;
+              const enCamino = r.despachos.filter((d) => d.estado === "EN_TRANSITO").length;
+              return (
               <Card key={r.id}>
                 <CardContent className="space-y-3 text-sm">
                   <Link
@@ -97,7 +101,7 @@ export default async function DespachadorPage() {
                           <>
                             <WarehouseIcon className="size-4 text-muted-foreground" aria-hidden />
                             {/* Las motos salen en el día, sin hora fija (pedido del cliente). */}
-                            {r.vehiculo?.tipo === "MOTO"
+                            {esMoto
                               ? "Recoger en el almacén"
                               : `Recoger en el almacén a las ${formatHora(r.salidaProgramada)}`}
                           </>
@@ -105,6 +109,9 @@ export default async function DespachadorPage() {
                       </p>
                       <p className="text-muted-foreground">
                         Ruta {r.numero} · {describirVehiculo(r.vehiculo)} · {r.despachos.length} pedido(s)
+                        {esMoto && r.estado === "EN_TRANSITO" && enAlmacen > 0
+                          ? ` · ${enCamino} en camino · ${enAlmacen} en almacén`
+                          : ""}
                       </p>
                     </div>
                     <span className="flex items-center gap-2">
@@ -134,7 +141,8 @@ export default async function DespachadorPage() {
                             {[d.destinoCliente.direccion, d.destinoCliente.ciudad].filter(Boolean).join(", ")}
                           </span>
                         </span>
-                        <span className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground">
+                        <span className="flex flex-wrap items-center gap-1.5 pl-5 text-xs text-muted-foreground">
+                          {esMoto && <StatusBadge {...estadoDeParada(d, { esMoto: true })} />}
                           <PackageIcon className="size-3.5" aria-hidden />
                           {documentoDespacho(d)} · cód. {d.destinoCliente.codigo}
                           {d.items?.length ? ` · ${d.items.length} producto(s)` : ""}
@@ -149,7 +157,8 @@ export default async function DespachadorPage() {
                   </ol>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </section>
         ))
       )}

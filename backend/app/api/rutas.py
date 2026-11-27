@@ -29,6 +29,7 @@ from app.schemas import (
     RutaCreate,
     RutaProgramacion,
     RutasConRelaciones,
+    SalirParadasRequest,
     SugerenciaVehiculo,
     SugerenciaVehiculoRequest,
     en_utc,
@@ -134,6 +135,14 @@ def _verificar_ruta_propia(usuario: dict, ruta: dict) -> None:
         raise HTTPException(404, "Ruta no encontrada")
 
 
+def _es_moto(cur, vehiculo_id: str | None) -> bool:
+    if not vehiculo_id:
+        return False
+    cur.execute('SELECT "tipo"::text AS "tipo" FROM "Vehiculo" WHERE "id" = %s', (vehiculo_id,))
+    fila = cur.fetchone()
+    return bool(fila and fila.get("tipo") == "MOTO")
+
+
 @router.get("", response_model=list[Ruta])
 def listar_rutas(usuario: dict = Depends(get_current_user)):
     """Listado: cada ruta trae solo su ultimo punto (posicion actual), no el
@@ -189,7 +198,7 @@ def version_seguimiento(ruta: str | None = None):
                                  (SELECT COUNT(*) FROM "Despacho" d WHERE d."rutaId" = r."id")) AS fila
                 FROM rutas r
                 UNION ALL
-                SELECT concat_ws(',', d."id", d."estado", d."ordenEnRuta", d."llegadaEn", d."entregadoEn")
+                SELECT concat_ws(',', d."id", d."estado", d."ordenEnRuta", d."salidaEn", d."llegadaEn", d."entregadoEn")
                 FROM "Despacho" d
                 WHERE %(ruta)s::text IS NOT NULL AND d."rutaId" = %(ruta)s
             ) t
@@ -495,7 +504,7 @@ def ruta_con_relaciones(ruta_id: str, usuario: dict = Depends(get_current_user))
     """Una ruta (con el trazado completo, como GET /rutas/{id}) mas solo las
     relaciones que usa, en una sola llamada."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Ruta no encontrada")
@@ -570,7 +579,7 @@ def recorrido_real(ruta_id: str):
 @router.get("/{ruta_id}", response_model=Ruta)
 def obtener_ruta(ruta_id: str, usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Ruta no encontrada")
@@ -756,7 +765,7 @@ def recalcular_ruta(ruta_id: str):
     geometria guardada quedo mal (el trazado se calcula una sola vez al
     crear la ruta y queda congelado en RutaPunto)."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
@@ -806,7 +815,7 @@ def programar_ruta(ruta_id: str, data: RutaProgramacion):
     if not cambios:
         raise HTTPException(400, "No hay nada que cambiar")
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
@@ -978,7 +987,7 @@ def iniciar_ruta(ruta_id: str, data: MarcaParada | None = None, usuario: dict = 
     """El despachador marca que el vehiculo salio del almacen con todos los
     despachos de la ruta a la vez."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
@@ -989,24 +998,112 @@ def iniciar_ruta(ruta_id: str, data: MarcaParada | None = None, usuario: dict = 
         # aca (ver app/services/planificacion.py).
         if not ruta["vehiculoId"]:
             raise HTTPException(400, "La ruta no tiene vehiculo asignado: hay que asignarle uno antes de salir")
-        propios = [v for v in (ruta["vehiculoId"], ruta["vehiculoApoyoId"]) if v]
+
+        es_moto = _es_moto(cur, ruta["vehiculoId"])
+        if not es_moto:
+            propios = [v for v in (ruta["vehiculoId"], ruta["vehiculoApoyoId"]) if v]
+            cur.execute(
+                'SELECT "numero" FROM "Ruta" WHERE ("vehiculoId" = ANY(%s) OR "vehiculoApoyoId" = ANY(%s)) '
+                'AND "estado" = %s AND "id" <> %s',
+                (propios, propios, "EN_TRANSITO", ruta_id),
+            )
+            en_camino = cur.fetchone()
+            if en_camino:
+                raise HTTPException(
+                    400,
+                    f'El vehiculo esta haciendo la ruta {en_camino["numero"]}: hay que terminarla antes de salir con esta',
+                )
+
+        instante = _instante_marca(data)
         cur.execute(
-            'SELECT "numero" FROM "Ruta" WHERE ("vehiculoId" = ANY(%s) OR "vehiculoApoyoId" = ANY(%s)) '
-            'AND "estado" = %s AND "id" <> %s',
-            (propios, propios, "EN_TRANSITO", ruta_id),
+            'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',
+            (instante, ruta_id),
         )
-        en_camino = cur.fetchone()
-        if en_camino:
-            raise HTTPException(
-                400,
-                f'El vehiculo esta haciendo la ruta {en_camino["numero"]}: hay que terminarla antes de salir con esta',
+        if es_moto:
+            tanda_id = f"tanda-{uuid.uuid4().hex[:8]}"
+            lat, lng = _ubicacion_marca(data)
+            cur.execute(
+                'UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\', "salidaEn" = %s, "tandaSalida" = %s, '
+                '"salidaLat" = %s, "salidaLng" = %s WHERE "rutaId" = %s AND "estado" <> \'ENTREGADO\'',
+                (instante, tanda_id, lat, lng, ruta_id),
+            )
+        else:
+            cur.execute('UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "rutaId" = %s', (ruta_id,))
+        conn.commit()
+
+        return _sin_trazado(cur, ruta_id)
+
+
+@router.post(
+    "/{ruta_id}/paradas/salir",
+    response_model=Ruta,
+    dependencies=[Depends(requiere_rol("REPARTIDOR"))],
+)
+def salir_paradas(
+    ruta_id: str,
+    data: SalirParadasRequest,
+    usuario: dict = Depends(get_current_user),
+):
+    """Para motorizados: salir del almacen con una tanda de pedidos
+    (subconjunto de paradas de la ruta). Pasa la ruta a EN_TRANSITO si estaba
+    PLANIFICADA, y los despachos seleccionados a EN_TRANSITO con su tanda."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
+        ruta = cur.fetchone()
+        if not ruta:
+            raise HTTPException(404, "Ruta no encontrada")
+        _verificar_ruta_propia(usuario, ruta)
+        if ruta["estado"] not in ("PLANIFICADA", "EN_TRANSITO"):
+            raise HTTPException(400, "Solo se puede registrar salida en rutas planificadas o en transito")
+        if not ruta["vehiculoId"]:
+            raise HTTPException(400, "La ruta no tiene vehiculo asignado")
+        if not _es_moto(cur, ruta["vehiculoId"]):
+            raise HTTPException(400, "La salida por paradas solo aplica a motos")
+
+        ids = list(dict.fromkeys(data.despachoIds))
+        cur.execute(
+            'SELECT "id", "numero", "estado"::text AS "estado", "salidaEn" FROM "Despacho" '
+            'WHERE "id" = ANY(%s) AND "rutaId" = %s',
+            (ids, ruta_id),
+        )
+        encontrados = cur.fetchall()
+        encontrados_map = {d["id"]: d for d in encontrados}
+        faltantes = [did for did in ids if did not in encontrados_map]
+        if faltantes:
+            raise HTTPException(400, f"Despachos no pertenecen a esta ruta: {', '.join(faltantes)}")
+
+        for d in encontrados:
+            if d["salidaEn"] is not None or d["estado"] not in ("APROBADO", "EN_PREPARACION"):
+                if d["estado"] == "ENTREGADO":
+                    raise HTTPException(400, f"El despacho {d['numero']} ya fue entregado")
+                elif d["salidaEn"] is not None or d["estado"] == "EN_TRANSITO":
+                    raise HTTPException(400, f"El despacho {d['numero']} ya salio en una tanda previa")
+                else:
+                    raise HTTPException(400, f"El despacho {d['numero']} no esta pendiente de salir (estado: {d['estado']})")
+
+        tanda_id = f"tanda-{uuid.uuid4().hex[:8]}"
+        instante = _instante_marca(data)
+        lat, lng = _ubicacion_marca(data)
+
+        if ruta["estado"] == "PLANIFICADA":
+            cur.execute(
+                'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = COALESCE("iniciadaEn", %s) WHERE "id" = %s',
+                (instante, ruta_id),
+            )
+        elif ruta["iniciadaEn"] is None:
+            cur.execute(
+                'UPDATE "Ruta" SET "iniciadaEn" = %s WHERE "id" = %s',
+                (instante, ruta_id),
             )
 
         cur.execute(
-            'UPDATE "Ruta" SET "estado" = \'EN_TRANSITO\', "iniciadaEn" = %s WHERE "id" = %s',
-            (_instante_marca(data), ruta_id),
+            'UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\', "salidaEn" = %s, "tandaSalida" = %s, '
+            '"salidaLat" = %s, "salidaLng" = %s '
+            'WHERE "id" = ANY(%s) AND "rutaId" = %s AND "salidaEn" IS NULL',
+            (instante, tanda_id, lat, lng, ids, ruta_id),
         )
-        cur.execute('UPDATE "Despacho" SET "estado" = \'EN_TRANSITO\' WHERE "rutaId" = %s', (ruta_id,))
+        if cur.rowcount != len(ids):
+            raise HTTPException(409, "Uno o mas despachos ya salieron en otra tanda o cambiaron de estado")
         conn.commit()
 
         return _sin_trazado(cur, ruta_id)
@@ -1024,7 +1121,7 @@ def marcar_llegada_a_parada(
     entrega da el tiempo de atencion de esa parada, y contra la entrega
     anterior, el tiempo de traslado."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
@@ -1044,7 +1141,7 @@ def marcar_llegada_a_parada(
         lat, lng = _ubicacion_marca(data)
         cur.execute(
             'UPDATE "Despacho" SET "llegadaEn" = %s, "llegadaLat" = %s, "llegadaLng" = %s WHERE "id" = %s',
-            (_instante_marca(data, ruta["iniciadaEn"]), lat, lng, despacho_id),
+            (_instante_marca(data, despacho["salidaEn"] or ruta["iniciadaEn"]), lat, lng, despacho_id),
         )
         conn.commit()
 
@@ -1063,7 +1160,7 @@ def marcar_parada_entregada(
     viaje — no afecta a las demas paradas de la misma ruta. Cuando se
     entrega la ultima parada pendiente, la ruta pasa a COMPLETADA."""
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s', (ruta_id,))
+        cur.execute('SELECT * FROM "Ruta" WHERE "id" = %s FOR UPDATE', (ruta_id,))
         ruta = cur.fetchone()
         if not ruta:
             raise HTTPException(404, "Ruta no encontrada")
