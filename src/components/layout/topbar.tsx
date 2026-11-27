@@ -13,6 +13,7 @@ import {
 import { INICIO_POR_ROL, MODULOS_POR_ROL, enModulo } from "@/lib/constants";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { IndicadorTasaBcv } from "@/components/layout/indicador-tasa-bcv";
 import { UserNav } from "@/components/layout/user-nav";
 import type { Usuario } from "@/lib/mock-data";
 
@@ -49,6 +50,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   pedidos: "Pedidos",
   inventario: "Inventario",
   libro: "Libro de ventas",
+  bancos: "Bancos y caja",
   ISVAN: "ISVAN",
   TRALOG: "TRALOG",
 };
@@ -112,7 +114,10 @@ export function Topbar({
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      <UserNav user={user} />
+      <div className="flex items-center gap-2">
+        {user.rol !== "REPARTIDOR" && <IndicadorTasaBcv />}
+        <UserNav user={user} />
+      </div>
     </header>
   );
 }

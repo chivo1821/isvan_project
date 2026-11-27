@@ -16,8 +16,12 @@ export type EmpresaFiscal = {
   agenteRetencionIslr: boolean;
   activa: boolean;
   faltaParaFacturar: string[];
-  modulos: { ventas: boolean; inventario: boolean };
+  modulos: { ventas: boolean; inventario: boolean; bancos: boolean };
 };
+
+export type ModoPresupuestario = "MANUAL" | "SOBRE_ULTIMO" | "SOBRE_PROMEDIO";
+export type BaseCosto = "ULTIMO" | "PROMEDIO" | "PRESUPUESTARIO";
+export type MetodoMargen = "SOBRE_COSTO" | "SOBRE_VENTA";
 
 export type Producto = {
   id: string;
@@ -33,10 +37,58 @@ export type Producto = {
   requiereFrio: boolean;
   manejaLote: boolean;
   activo: boolean;
+  ultimoCostoCajaUsd?: number | null;
+  ultimoCostoCajaBs?: number | null;
+  costoPromedioCajaUsd?: number | null;
+  costoPromedioCajaBs?: number | null;
+  costoPresupuestarioCajaUsd?: number | null;
+  modoPresupuestario?: ModoPresupuestario;
+  porcentajePresupuestario?: number | null;
+  costosActualizadosEn?: string | null;
 };
 
-export type ListaPrecio = { id: string; codigo: string; nombre: string; activa: boolean; productosConPrecio: number; clientes: number };
-export type PrecioProducto = Producto & { precioCajaUsd: number | null };
+export type ListaPrecio = {
+  id: string;
+  codigo: string;
+  nombre: string;
+  activa: boolean;
+  productosConPrecio: number;
+  clientes: number;
+  baseCostoPorDefecto?: BaseCosto;
+  margenObjetivoPct?: number | null;
+  metodoMargen?: MetodoMargen;
+};
+
+export type ComparativaProducto = {
+  id: string;
+  codigo: number;
+  nombre: string;
+  grupo: string | null;
+  ultimoCostoCajaUsd: number | null;
+  costoPromedioCajaUsd: number | null;
+  costoPresupuestarioCajaUsd: number | null;
+  precios: Record<string, number | null>;
+};
+
+export type ComparativaPrecios = {
+  listas: ListaPrecio[];
+  productos: ComparativaProducto[];
+};
+
+export type PrecioProducto = Producto & {
+  precioCajaUsd: number | null;
+  margenPct?: number | null;
+  baseCostoUsada?: BaseCosto | "MANUAL" | null;
+  precioFijo?: boolean;
+  margenUltimoPct?: number | null;
+  margenPromedioPct?: number | null;
+  margenPresupuestarioPct?: number | null;
+  utilidadUltimoUsd?: number | null;
+  utilidadPromedioUsd?: number | null;
+  utilidadPresupuestarioUsd?: number | null;
+  bajoCosto?: boolean;
+  bajoMargenObjetivo?: boolean;
+};
 
 export type ClienteFiscal = {
   id: string;
@@ -140,7 +192,237 @@ export type Existencia = {
   cajas: number;
   reservado: number;
   disponible: number;
+  ultimoCostoCajaUsd?: number | null;
+  ultimoCostoCajaBs?: number | null;
+  costoPromedioCajaUsd?: number | null;
+  costoPromedioCajaBs?: number | null;
+  costoPresupuestarioCajaUsd?: number | null;
+  modoPresupuestario?: ModoPresupuestario;
+  porcentajePresupuestario?: number | null;
+  valorUltimoUsd?: number;
+  valorPromedioUsd?: number;
+  valorPromedioBs?: number;
+  valorPresupuestarioUsd?: number;
   lotes: { loteId: string; lote: string; vencimiento: string | null; cajas: number }[];
+};
+
+export type KardexMovimiento = {
+  id: number;
+  fecha: string;
+  tipo: string;
+  cajas: number;
+  costoUnitarioUsd: number | null;
+  costoUnitarioBs: number | null;
+  tasa: number | null;
+  valorTotalUsd: number | null;
+  valorTotalBs: number | null;
+  saldoCajasEmpresa: number | null;
+  costoPromedioResultanteUsd: number | null;
+  costoPromedioResultanteBs: number | null;
+  proveedor: string | null;
+  numeroFacturaCompra: string | null;
+  referencia: string | null;
+  lote: string;
+  almacen: string;
+  documento: string | null;
+  usuario: string | null;
+};
+
+export type FilaArt177 = {
+  productoId: string;
+  codigo: number;
+  nombre: string;
+  grupo: string | null;
+  unidadesPorCaja: number;
+  invInicialCajas: number;
+  invInicialBs: number;
+  invInicialUsd: number;
+  entradasCajas: number;
+  entradasBs: number;
+  entradasUsd: number;
+  salidasVentaCajas: number;
+  salidasVentaBs: number;
+  salidasVentaUsd: number;
+  retirosAutoconsumoCajas: number;
+  retirosAutoconsumoBs: number;
+  retirosAutoconsumoUsd: number;
+  ajustesCajas: number;
+  ajustesBs: number;
+  ajustesUsd: number;
+  invFinalCajas: number;
+  costoPromedioFinalBs: number;
+  costoPromedioFinalUsd: number;
+  invFinalBs: number;
+  invFinalUsd: number;
+};
+
+export type ReporteArt177 = {
+  empresaId: string;
+  mes: string;
+  filas: FilaArt177[];
+  totales: {
+    invInicialBs: number;
+    invInicialUsd: number;
+    entradasBs: number;
+    entradasUsd: number;
+    salidasVentaBs: number;
+    salidasVentaUsd: number;
+    retirosAutoconsumoBs: number;
+    retirosAutoconsumoUsd: number;
+    invFinalBs: number;
+    invFinalUsd: number;
+  };
+};
+
+// ---------- Modulo de Bancos y Flujo de Caja ----------
+
+export type TipoCuentaTesoreria =
+  | "BANCO_CORRIENTE"
+  | "BANCO_AHORRO"
+  | "BANCO_CUSTODIA_USD"
+  | "CAJA_EFECTIVO"
+  | "BILLETERA_DIGITAL";
+
+export type MonedaCuenta = "VES" | "USD";
+
+export type CuentaTesoreria = {
+  id: string;
+  empresaId: string;
+  nombre: string;
+  tipo: TipoCuentaTesoreria;
+  moneda: MonedaCuenta;
+  bancoCodigo: string | null;
+  bancoNombre: string | null;
+  numeroCuenta: string | null;
+  titular: string | null;
+  rif: string | null;
+  saldoInicial: number;
+  fechaSaldoInicial: string;
+  saldoActual: number;
+  saldoEquivalenteUsd: number;
+  enNegativo: boolean;
+  cuentaPortalId: string | null;
+  activa: boolean;
+  ultimoMovimientoEn: string | null;
+};
+
+export type ResumenBancos = {
+  tasaBcv: number | null;
+  fechaTasa: string | null;
+  disponibleUsd: number;
+  disponibleBs: number;
+  disponibleBsEnUsd: number;
+  disponibleConsolidadoUsd: number;
+  ingresosMesUsd: number;
+  egresosMesUsd: number;
+  flujoNetoMesUsd: number;
+  cuentasActivas: number;
+  cuentasEnNegativo: number;
+  cuentas: CuentaTesoreria[];
+};
+
+export type MovimientoBancario = {
+  id: number;
+  empresaId: string;
+  cuentaId: string;
+  cuentaNombre: string;
+  cuentaMoneda: MonedaCuenta;
+  fecha: string;
+  tipo: "INGRESO" | "EGRESO" | "TRANSFERENCIA_SALIDA" | "TRANSFERENCIA_ENTRADA" | "AJUSTE";
+  metodo: string;
+  categoria: string;
+  concepto: string;
+  tercero: string | null;
+  referencia: string | null;
+  monto: number;
+  tasa: number | null;
+  montoUsd: number;
+  montoBs: number | null;
+  saldoResultante: number;
+  transferenciaGrupoId: string | null;
+  pagoId: string | null;
+  gastoId: string | null;
+  conciliado: boolean;
+  conciliadoEn: string | null;
+  anuladoEn: string | null;
+  motivoAnulacion: string | null;
+  reversoDeId: number | null;
+  usuario: string | null;
+  creadoEn: string;
+};
+
+export type FlujoCajaPeriodo = {
+  periodo: string;
+  ingresosUsd: number;
+  egresosUsd: number;
+  netoUsd: number;
+  saldoAcumuladoUsd: number;
+};
+
+export type FlujoCajaCategoria = {
+  categoria: string;
+  ingresosUsd: number;
+  egresosUsd: number;
+  netoUsd: number;
+  movimientos: number;
+};
+
+export type FlujoCajaReporte = {
+  desde: string;
+  hasta: string;
+  agrupacion: "dia" | "semana" | "mes";
+  saldoInicialUsd: number;
+  totalIngresosUsd: number;
+  totalEgresosUsd: number;
+  flujoNetoUsd: number;
+  saldoFinalUsd: number;
+  series: FlujoCajaPeriodo[];
+  porCategoria: FlujoCajaCategoria[];
+};
+
+export type LineaConciliacion = {
+  indice: number;
+  fecha: string;
+  referencia: string | null;
+  descripcion: string;
+  monto: number;
+  saldo: number | null;
+  estado: "COINCIDE_MOVIMIENTO" | "COINCIDE_GASTO" | "SOLO_EN_BANCO" | "SOLO_EN_SISTEMA";
+  movimientoId: number | null;
+  gastoId: string | null;
+  gastoResumen: {
+    id: string;
+    fecha: string;
+    categoria: string;
+    proveedor: string | null;
+    referencia: string | null;
+    montoUsd: number;
+    montoBs: number | null;
+  } | null;
+};
+
+export type ConciliacionBancaria = {
+  id: string;
+  empresaId: string;
+  cuentaId: string;
+  cuentaNombre?: string;
+  archivo: string;
+  periodoDesde: string;
+  periodoHasta: string;
+  saldoExtractoFinal: number | null;
+  estado: "BORRADOR" | "CONFIRMADA";
+  resumen: {
+    totalLineasBanco: number;
+    coincideMovimiento: number;
+    coincideGasto: number;
+    soloEnBanco: number;
+    soloEnSistema: number;
+    totalEgresosBanco: number;
+    totalIngresosBanco: number;
+  };
+  lineas: LineaConciliacion[];
+  creadaEn: string;
+  confirmadaEn: string | null;
 };
 
 export type Ajuste = {
@@ -175,7 +457,15 @@ export type FilaLibro = {
   retencionIvaBs: number;
 };
 
-export type EstadoTasa = { fecha: string | null; tasa: number | null; fuente: string | null; vigente: boolean; diasDesde: number | null };
+export type EstadoTasa = {
+  fecha: string | null;
+  tasa: number | null;
+  fuente: string | null;
+  vigente: boolean;
+  alDia?: boolean;
+  diasDesde: number | null;
+  ultimoDiaHabil?: string | null;
+};
 
 export const TIPO_DOCUMENTO: Record<TipoDocumento, string> = {
   FA: "Factura",

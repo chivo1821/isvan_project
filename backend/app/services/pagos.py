@@ -20,7 +20,7 @@ from fastapi import HTTPException
 
 from app.core.fechas import ahora_utc, hoy_caracas
 from app.core.numero import siguiente_numero
-from app.services import bancos, cartera, tasa_bcv
+from app.services import bancos, cartera, empresas, tasa_bcv, tesoreria
 from app.services.cartera import CENTAVO, CERO, redondear
 from app.services.motorizados import validar_telefono
 
@@ -129,9 +129,100 @@ def _aplicaciones_validas(cur, empresa: str, codigo: str, aplicaciones: list[dic
     return list(por_doc.items())
 
 
+def _registrar_ingreso_tesoreria_si_aplica(
+    cur,
+    *,
+    pago: dict,
+    cuenta_tesoreria_id: str | None,
+    usuario_id: str | None,
+) -> None:
+    """Si se indicó `cuentaTesoreriaId` y el módulo `bancos` está activo para la
+    empresa fiscal del pago, registra el `INGRESO` en `MovimientoBancario`
+    enlazado a `pagoId`."""
+    cuenta_id_limpia = (cuenta_tesoreria_id or "").strip()
+    if not cuenta_id_limpia:
+        return
+
+    org_id = pago.get("organizacionId", "org-principal")
+    cur.execute(
+        'SELECT "id" FROM "EmpresaFiscal" WHERE "codigo" = %s AND "organizacionId" = %s LIMIT 1',
+        (str(pago["empresa"]), org_id),
+    )
+    emp_fila = cur.fetchone()
+    if not emp_fila:
+        return
+
+    empresa_id = emp_fila["id"]
+    if not empresas.modulo_activo(cur, "bancos", empresa_id):
+        return
+
+    cur.execute(
+        'SELECT "id" FROM "MovimientoBancario" WHERE "pagoId" = %s AND "anuladoEn" IS NULL LIMIT 1',
+        (pago["id"],),
+    )
+    if cur.fetchone():
+        return
+
+    cuenta = tesoreria.obtener_cuenta(cur, cuenta_id_limpia, empresa_id=empresa_id, bloquear=True)
+    cur.execute('UPDATE "Pago" SET "cuentaTesoreriaId" = %s WHERE "id" = %s', (cuenta["id"], pago["id"]))
+
+    monto_usd = Decimal(pago["montoUsd"])
+    monto_bs = Decimal(pago["montoBs"]) if pago.get("montoBs") is not None else None
+    tasa_pago = Decimal(pago["tasa"]) if pago.get("tasa") is not None else None
+
+    if cuenta["moneda"] == "VES":
+        if monto_bs is not None:
+            monto_mov = monto_bs
+        else:
+            tasa_calc = tasa_pago or tesoreria.obtener_tasa_fecha(cur, pago["fechaPago"])
+            if not tasa_calc or tasa_calc <= CERO:
+                raise HTTPException(
+                    409,
+                    "No hay tasa BCV disponible para registrar el ingreso del pago en bolívares",
+                )
+            monto_mov = redondear(monto_usd * tasa_calc)
+            monto_bs = monto_mov
+            tasa_pago = tasa_calc
+    else:
+        monto_mov = monto_usd
+
+    cur.execute(
+        'SELECT COALESCE(vc."nombre", c."nombre") AS "nombre" '
+        'FROM (SELECT 1) _ '
+        'LEFT JOIN "VentaCliente" vc ON vc."empresa" = %s AND vc."codigo" = %s '
+        'LEFT JOIN LATERAL (SELECT "nombre" FROM "Cliente" WHERE "empresa" = %s '
+        '  AND ltrim("codigo", \'0\') = %s LIMIT 1) c ON true',
+        (pago["empresa"], pago["codigoCliente"], pago["empresa"], pago["codigoCliente"]),
+    )
+    cli_fila = cur.fetchone()
+    tercero = (cli_fila["nombre"] if cli_fila and cli_fila.get("nombre") else None) or f"Cliente {pago['codigoCliente']}"
+
+    tesoreria.registrar_movimiento(
+        cur,
+        cuenta_id=cuenta["id"],
+        empresa_id=empresa_id,
+        fecha=pago["fechaPago"],
+        tipo="INGRESO",
+        metodo=pago["metodo"],
+        categoria="COBRANZA_CLIENTES",
+        concepto=f"Cobranza pago {pago['numero']} ({pago['codigoCliente']})",
+        tercero=tercero,
+        referencia=pago.get("referencia"),
+        monto=monto_mov,
+        tasa=tasa_pago,
+        monto_usd_explicito=monto_usd,
+        monto_bs_explicito=monto_bs,
+        pago_id=pago["id"],
+        usuario_id=usuario_id,
+        verificar_modulo=False,
+        cuenta_bloqueada=cuenta,
+    )
+
+
 def registrar(cur, *, empresa: str, codigo: str, datos: dict, aplicaciones: list[dict],
               cuenta_portal_id: str | None = None, usuario_id: str | None = None,
-              comprobante: tuple[str, str] | None = None) -> str:
+              comprobante: tuple[str, str] | None = None,
+              cuenta_tesoreria_id: str | None = None) -> str:
     """Guarda un pago y devuelve su id. Desde el portal queda REPORTADO; si
     lo registra cobranzas (usuario_id), VERIFICADO.
 
@@ -170,6 +261,16 @@ def registrar(cur, *, empresa: str, codigo: str, datos: dict, aplicaciones: list
         cur.execute("ROLLBACK TO SAVEPOINT pago_nuevo")
         raise HTTPException(409, "Ese pago ya fue reportado (mismo banco, referencia y fecha)") from e
     _guardar_aplicaciones(cur, pago_id, lista, automatica)
+    if verificado and cuenta_tesoreria_id:
+        cur.execute('SELECT * FROM "Pago" WHERE "id" = %s', (pago_id,))
+        pago_fila = cur.fetchone()
+        if pago_fila:
+            _registrar_ingreso_tesoreria_si_aplica(
+                cur,
+                pago=pago_fila,
+                cuenta_tesoreria_id=cuenta_tesoreria_id,
+                usuario_id=usuario_id,
+            )
     return pago_id
 
 
@@ -226,7 +327,14 @@ def _para_revisar(cur, pago_id: str) -> dict:
     return pago
 
 
-def verificar(cur, pago_id: str, usuario_id: str, aplicaciones: list[dict] | None) -> dict:
+def verificar(
+    cur,
+    pago_id: str,
+    usuario_id: str,
+    aplicaciones: list[dict] | None,
+    *,
+    cuenta_tesoreria_id: str | None = None,
+) -> dict:
     """Cobranzas confirma que el dinero llego. Puede corregir a que
     documentos se abona; si no manda aplicaciones, quedan las del cliente.
     Si al final no queda ninguna, se reparte a lo que vence primero y queda
@@ -248,6 +356,13 @@ def verificar(cur, pago_id: str, usuario_id: str, aplicaciones: list[dict] | Non
         "\"metodoVerificacion\" = 'MANUAL' WHERE \"id\" = %s",
         (usuario_id, ahora_utc(), pago_id),
     )
+    if cuenta_tesoreria_id:
+        _registrar_ingreso_tesoreria_si_aplica(
+            cur,
+            pago=pago,
+            cuenta_tesoreria_id=cuenta_tesoreria_id,
+            usuario_id=usuario_id,
+        )
     return pago
 
 
@@ -265,7 +380,7 @@ _SELECT_PAGO = (
     'SELECT p."id", p."numero", p."empresa"::text AS "empresa", p."codigoCliente", p."metodo", p."bancoCodigo", '
     'p."telefono", p."cedulaRif", p."cuenta", p."referencia", p."fechaPago", p."montoBs", p."tasa", p."montoUsd", '
     'p."comprobanteClave" IS NOT NULL AS "tieneComprobante", p."comprobanteTipo", p."nota", p."estado", '
-    'p."reportadoEn", p."revisadoEn", p."motivoRechazo", p."cuentaPortalId", '
+    'p."reportadoEn", p."revisadoEn", p."motivoRechazo", p."cuentaPortalId", p."cuentaTesoreriaId", '
     'r."nombre" AS "revisadoPor", g."nombre" AS "registradoPor", cp."nombre" AS "reportadoPor", cp."email" AS "reportadoPorEmail", '
     'COALESCE(vc."nombre", c."nombre") AS "cliente" '
     'FROM "Pago" p LEFT JOIN "Usuario" r ON r."id" = p."revisadoPorId" '

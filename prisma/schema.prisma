@@ -1308,6 +1308,8 @@ model Pago {
   motivoRechazo      String?
   // MANUAL hoy; BANCO cuando se concilie contra la API de los bancos.
   metodoVerificacion String?
+  // Cuenta bancaria/caja de la empresa donde entro el pago (modulo Bancos).
+  cuentaTesoreriaId  String?
 
   aplicaciones PagoAplicacion[]
 
@@ -1408,6 +1410,8 @@ model EmpresaFiscal {
   productos           Producto[]
   listasPrecio        ListaPrecio[]
   demandasNoAtendidas DemandaNoAtendida[]
+  cuentasTesoreria    CuentaTesoreria[]
+  conciliaciones      ConciliacionBancaria[]
 
   @@unique([organizacionId, codigo])
 }
@@ -1486,14 +1490,28 @@ model Producto {
   litrosPorUnidad Decimal?      @db.Decimal(12, 4)
   pesoCajaKg      Decimal?      @db.Decimal(10, 3)
   impuestoCodigo  String        @default("IVA_GENERAL")
-  requiereFrio    Boolean       @default(true)
-  manejaLote      Boolean       @default(true)
-  activo          Boolean       @default(true)
-  creadoEn        DateTime      @default(now())
-  actualizadoEn   DateTime      @default(now())
+  requiereFrio                Boolean       @default(true)
+  manejaLote                  Boolean       @default(true)
+  activo                      Boolean       @default(true)
+  // ---- Tres tipos de costos por caja (modulo Inventario y Costos) ----
+  // 1. Ultimo costo registrado (reposicion / ultima compra).
+  ultimoCostoCajaUsd          Decimal?      @db.Decimal(14, 4)
+  ultimoCostoCajaBs           Decimal?      @db.Decimal(20, 4)
+  // 2. Costo promedio ponderado movil (SENIAT - Art. 177 RISLR).
+  costoPromedioCajaUsd        Decimal?      @db.Decimal(14, 4)
+  costoPromedioCajaBs         Decimal?      @db.Decimal(20, 4)
+  // 3. Costo presupuestario configurable (manual o % sobre ultimo/promedio).
+  costoPresupuestarioCajaUsd  Decimal?      @db.Decimal(14, 4)
+  // MANUAL | SOBRE_ULTIMO | SOBRE_PROMEDIO
+  modoPresupuestario          String        @default("MANUAL")
+  porcentajePresupuestario    Decimal?      @db.Decimal(7, 2)
+  costosActualizadosEn        DateTime?
+  creadoEn                    DateTime      @default(now())
+  actualizadoEn               DateTime      @default(now())
 
   precios             ListaPrecioItem[]
   demandasNoAtendidas DemandaNoAtendida[]
+  historialCostos     HistorialCostoProducto[]
 
   @@unique([empresaId, codigo])
 }
@@ -1501,14 +1519,19 @@ model Producto {
 // Listas de precio en USD. El codigo es el de VentaCliente.listaPrecio
 // (el cliente la trae en Cliente.listaPrecioCodigo).
 model ListaPrecio {
-  id             String            @id @default(cuid())
-  organizacionId String            @default("org-principal")
-  empresaId      String
-  empresa        EmpresaFiscal     @relation(fields: [empresaId], references: [id])
-  codigo         String
-  nombre         String
-  activa         Boolean           @default(true)
-  items          ListaPrecioItem[]
+  id                  String            @id @default(cuid())
+  organizacionId      String            @default("org-principal")
+  empresaId           String
+  empresa             EmpresaFiscal     @relation(fields: [empresaId], references: [id])
+  codigo              String
+  nombre              String
+  activa              Boolean           @default(true)
+  // ULTIMO | PROMEDIO | PRESUPUESTARIO
+  baseCostoPorDefecto String            @default("ULTIMO")
+  margenObjetivoPct   Decimal?          @db.Decimal(6, 2)
+  // SOBRE_COSTO: precio = costo * (1 + m/100) | SOBRE_VENTA: precio = costo / (1 - m/100)
+  metodoMargen        String            @default("SOBRE_COSTO")
+  items               ListaPrecioItem[]
 
   @@unique([empresaId, codigo])
 }
@@ -1520,6 +1543,10 @@ model ListaPrecioItem {
   productoId       String
   producto         Producto    @relation(fields: [productoId], references: [id], onDelete: Cascade)
   precioCajaUsd    Decimal     @db.Decimal(14, 4)
+  margenPct        Decimal?    @db.Decimal(7, 2)
+  // ULTIMO | PROMEDIO | PRESUPUESTARIO | MANUAL
+  baseCostoUsada   String?
+  precioFijo       Boolean     @default(true)
   actualizadoEn    DateTime    @default(now())
   actualizadoPorId String?
 
@@ -1773,26 +1800,158 @@ model Existencia {
   @@index([productoId])
 }
 
-// Cada entrada o salida. Solo se agregan filas.
+// Cada entrada o salida. Solo se agregan filas (Kardex valorado Art. 177 RISLR).
 model MovimientoInventario {
+  id                         BigInt   @id @default(autoincrement())
+  organizacionId             String   @default("org-principal")
+  empresaId                  String
+  almacenId                  String
+  productoId                 String
+  loteId                     String
+  // ENTRADA | SALIDA_VENTA | DEVOLUCION | RETIRO | AUTOCONSUMO | TRASLADO_SALIDA | TRASLADO_ENTRADA | AJUSTE
+  tipo                       String
+  // Con signo: positivo entra, negativo sale.
+  cajas                      Decimal  @db.Decimal(14, 3)
+  // Valoracion por caja y snapshot de costo promedio ponderado (SENIAT).
+  costoUnitarioUsd           Decimal? @db.Decimal(14, 4)
+  costoUnitarioBs            Decimal? @db.Decimal(20, 4)
+  tasa                       Decimal? @db.Decimal(20, 8)
+  valorTotalUsd              Decimal? @db.Decimal(20, 2)
+  valorTotalBs               Decimal? @db.Decimal(20, 2)
+  saldoCajasEmpresa          Decimal? @db.Decimal(14, 3)
+  costoPromedioResultanteUsd Decimal? @db.Decimal(14, 4)
+  costoPromedioResultanteBs  Decimal? @db.Decimal(20, 4)
+  proveedor                  String?
+  numeroFacturaCompra        String?
+  documentoVentaId           String?
+  ajusteId                   String?
+  referencia                 String?
+  usuarioId                  String?
+  fecha                      DateTime @default(now())
+
+  @@index([productoId, fecha])
+  @@index([empresaId, fecha])
+  @@index([documentoVentaId])
+}
+
+// Auditoria de cambios en los 3 costos de un producto.
+model HistorialCostoProducto {
   id               BigInt   @id @default(autoincrement())
   organizacionId   String   @default("org-principal")
   empresaId        String
-  almacenId        String
   productoId       String
-  loteId           String
-  // ENTRADA | SALIDA_VENTA | DEVOLUCION | TRASLADO_SALIDA | TRASLADO_ENTRADA | AJUSTE
-  tipo             String
-  // Con signo: positivo entra, negativo sale.
-  cajas            Decimal  @db.Decimal(14, 3)
-  documentoVentaId String?
-  ajusteId         String?
-  referencia       String?
+  producto         Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  // ULTIMO | PROMEDIO | PRESUPUESTARIO
+  tipoCosto        String
+  costoAnteriorUsd Decimal? @db.Decimal(14, 4)
+  costoNuevoUsd    Decimal  @db.Decimal(14, 4)
+  costoNuevoBs     Decimal? @db.Decimal(20, 4)
+  tasa             Decimal? @db.Decimal(20, 8)
+  motivo           String?
+  movimientoId     BigInt?
   usuarioId        String?
   fecha            DateTime @default(now())
 
   @@index([productoId, fecha])
-  @@index([documentoVentaId])
+  @@index([empresaId, tipoCosto, fecha])
+}
+
+// ---------- Sistema administrativo: bancos y flujo de caja ----------
+
+model CuentaTesoreria {
+  id                String         @id @default(cuid())
+  organizacionId    String         @default("org-principal")
+  empresaId         String
+  empresa           EmpresaFiscal  @relation(fields: [empresaId], references: [id])
+  nombre            String
+  // BANCO_CORRIENTE | BANCO_AHORRO | BANCO_CUSTODIA_USD | CAJA_EFECTIVO | BILLETERA_DIGITAL
+  tipo              String
+  // VES | USD
+  moneda            String
+  bancoCodigo       String?
+  numeroCuenta      String?
+  titular           String?
+  rif               String?
+  saldoInicial      Decimal        @default(0) @db.Decimal(20, 2)
+  fechaSaldoInicial DateTime       @db.Date
+  saldoActual       Decimal        @default(0) @db.Decimal(20, 2)
+  // Enlace opcional a CuentaBancariaEmpresa (portal de cobranzas).
+  cuentaPortalId    String?
+  activa            Boolean        @default(true)
+  creadaEn          DateTime       @default(now())
+  actualizadaEn     DateTime       @default(now())
+
+  movimientos    MovimientoBancario[]
+  conciliaciones ConciliacionBancaria[]
+
+  @@index([empresaId, activa])
+}
+
+model MovimientoBancario {
+  id                    BigInt          @id @default(autoincrement())
+  organizacionId        String          @default("org-principal")
+  empresaId             String
+  cuentaId              String
+  cuenta                CuentaTesoreria @relation(fields: [cuentaId], references: [id])
+  fecha                 DateTime        @db.Date
+  // INGRESO | EGRESO | TRANSFERENCIA_SALIDA | TRANSFERENCIA_ENTRADA | AJUSTE
+  tipo                  String
+  // TRANSFERENCIA | PAGO_MOVIL | EFECTIVO | DIVISAS | ZELLE | CHEQUE | POS | COMISION_IGTF | OTRO
+  metodo                String
+  // COBRANZA_CLIENTES | COMPRA_INVENTARIO | GASTO_OPERATIVO | NOMINA | DELIVERY | IMPUESTOS_IGTF | TRASPASO | APORTE_CAPITAL | OTRO
+  categoria             String
+  concepto              String
+  tercero               String?
+  referencia            String?
+  // Con signo en la moneda de la cuenta (+ ingreso, - egreso).
+  monto                 Decimal         @db.Decimal(20, 2)
+  tasa                  Decimal?        @db.Decimal(20, 8)
+  montoUsd              Decimal         @db.Decimal(20, 2)
+  montoBs               Decimal?        @db.Decimal(20, 2)
+  saldoResultante       Decimal         @db.Decimal(20, 2)
+  transferenciaGrupoId  String?
+  pagoId                String?
+  gastoId               String?
+  liquidacionDeliveryId String?
+  conciliado            Boolean         @default(false)
+  conciliadoEn          DateTime?
+  conciliadoPorId       String?
+  anuladoEn             DateTime?
+  anuladoPorId          String?
+  motivoAnulacion       String?
+  reversoDeId           BigInt?
+  usuarioId             String?
+  creadoEn              DateTime        @default(now())
+
+  @@index([cuentaId, fecha])
+  @@index([empresaId, fecha])
+  @@index([transferenciaGrupoId])
+  @@index([pagoId])
+  @@index([gastoId])
+}
+
+model ConciliacionBancaria {
+  id                 String          @id @default(cuid())
+  organizacionId     String          @default("org-principal")
+  empresaId          String
+  empresa            EmpresaFiscal   @relation(fields: [empresaId], references: [id])
+  cuentaId           String
+  cuenta             CuentaTesoreria @relation(fields: [cuentaId], references: [id])
+  archivo            String
+  periodoDesde       DateTime        @db.Date
+  periodoHasta       DateTime        @db.Date
+  saldoExtractoFinal Decimal?        @db.Decimal(20, 2)
+  // BORRADOR | CONFIRMADA
+  estado             String          @default("BORRADOR")
+  resumen            Json
+  lineas             Json
+  creadaPorId        String
+  creadaEn           DateTime        @default(now())
+  confirmadaPorId    String?
+  confirmadaEn       DateTime?
+
+  @@index([cuentaId, creadaEn])
+  @@index([empresaId, creadaEn])
 }
 
 // Ajuste de inventario: lo propone uno y lo aprueba otro con permiso.

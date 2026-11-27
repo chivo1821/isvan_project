@@ -64,7 +64,10 @@ def resumen():
         por_verificar = cur.fetchone()["porVerificar"]
         cur.execute("SELECT count(*) AS n FROM \"CuentaPortal\" WHERE \"estado\" = 'POR_VALIDAR'")
         cuentas = cur.fetchone()["n"]
-        tasa = tasa_bcv.ultima(cur)
+        try:
+            tasa = tasa_bcv.tasa_actual(cur, hacer_commit=False)
+        except tasa_bcv.TasaNoDisponible:
+            tasa = None
     return {
         "carteraUsd": float(sum((e.saldo_usd() for e in estados.values()), Decimal(0))),
         "vencidoUsd": float(sum((e.vencido_usd(p.hoy) for e in estados.values()), Decimal(0))),
@@ -248,8 +251,16 @@ def _avisar_cliente(cur, pago: dict, asunto: str, parrafos: list[str]) -> None:
         correo.enviar_sin_fallar(cuenta["email"], asunto, [f"Hola, {cuenta['nombre']}.", *parrafos])
 
 
+class PagoManualConTesoreriaCreate(PagoManualCreate):
+    cuentaTesoreriaId: str | None = None
+
+
+class VerificarPagoConTesoreriaRequest(VerificarPagoRequest):
+    cuentaTesoreriaId: str | None = None
+
+
 @router.post("/pagos", status_code=201)
-def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
+def registrar_pago(data: PagoManualConTesoreriaCreate, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
     """Un pago recibido por fuera del portal (efectivo, divisas, retencion,
     ajuste, o un pago movil que el cliente no reporto). Queda verificado."""
     try:
@@ -261,6 +272,7 @@ def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol(
             pago_id = pagos.registrar(
                 cur, empresa=data.empresa, codigo=data.codigoCliente, datos=datos,
                 aplicaciones=[a.model_dump() for a in data.aplicaciones], usuario_id=usuario["id"],
+                cuenta_tesoreria_id=data.cuentaTesoreriaId,
             )
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
@@ -269,12 +281,13 @@ def registrar_pago(data: PagoManualCreate, usuario: dict = Depends(requiere_rol(
 
 
 @router.post("/pagos/{pago_id}/verificar")
-def verificar_pago(pago_id: str, data: VerificarPagoRequest, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
+def verificar_pago(pago_id: str, data: VerificarPagoConTesoreriaRequest, usuario: dict = Depends(requiere_rol("COBRANZAS"))):
     with get_connection() as conn, conn.cursor() as cur:
         try:
             pago = pagos.verificar(
                 cur, pago_id, usuario["id"],
                 [a.model_dump() for a in data.aplicaciones] if data.aplicaciones is not None else None,
+                cuenta_tesoreria_id=data.cuentaTesoreriaId,
             )
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
@@ -505,7 +518,7 @@ def guardar_tasa(data: TasaManualRequest, usuario: dict = Depends(requiere_rol("
 def actualizar_tasas():
     with get_connection() as conn, conn.cursor() as cur:
         try:
-            cambios = tasa_bcv.actualizar(cur)
+            cambios = tasa_bcv.actualizar(cur, con_respaldo=True, verificar_vigencia_bcv=True)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, str(e)) from e
         conn.commit()
@@ -599,7 +612,7 @@ def tarea_tasa_bcv(authorization: str | None = Header(default=None)):
         conn.commit()
     with get_connection() as conn, conn.cursor() as cur:
         try:
-            cambios = tasa_bcv.actualizar(cur)
+            cambios = tasa_bcv.actualizar(cur, con_respaldo=True, verificar_vigencia_bcv=True)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, str(e)) from e
         conn.commit()

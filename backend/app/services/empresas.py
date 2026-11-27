@@ -43,7 +43,7 @@ def faltantes_para_facturar(empresa: dict) -> list[str]:
 # ---------- Interruptores de modulos por empresa ----------
 # En Configuracion, clave "modulo.<modulo>.<empresaId>" = true/false. Apagados
 # por defecto: lo nuevo no aparece hasta encenderlo.
-MODULOS = ("ventas", "inventario")
+MODULOS = ("ventas", "inventario", "bancos")
 
 
 def _clave(modulo: str, empresa_id: str) -> str:

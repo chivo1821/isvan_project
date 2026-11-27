@@ -38,9 +38,28 @@ DESVIACION_MAXIMA = Decimal("0.30")
 
 # Antes de usar la tasa se consulta la fuente automatica, como mucho cada tantos
 # minutos (por proceso): una tasa nueva se toma en cuanto se publica, sin
-# pedirla en cada reporte. El cron diario (tareas/tasa-bcv) la trae igual.
-MINUTOS_ENTRE_CONSULTAS = 30
+# pedirla en cada reporte. Si la tasa guardada esta atrasada respecto al ultimo
+# dia habil bancario, se reintenta cada 5 minutos.
+MINUTOS_ENTRE_CONSULTAS = 15
+MINUTOS_REINTENTO_ATRASADA = 5
 _ultima_consulta: datetime | None = None
+
+
+def ultimo_dia_habil(hoy: date | None = None) -> date:
+    """Ultimo dia habil bancario (lunes a viernes) hasta hoy en Caracas."""
+    d = hoy or hoy_caracas()
+    if d.weekday() == 5:  # sabado -> viernes
+        return d - timedelta(days=1)
+    if d.weekday() == 6:  # domingo -> viernes
+        return d - timedelta(days=2)
+    return d
+
+
+def esta_al_dia(fecha: date | None, hoy: date | None = None) -> bool:
+    """True si la fecha valor de la tasa cubre al menos el ultimo dia habil."""
+    if fecha is None:
+        return False
+    return fecha >= ultimo_dia_habil(hoy)
 
 _log = logging.getLogger(__name__)
 
@@ -408,34 +427,48 @@ def _validar_respaldo(cur, tasas: list[tuple[date, Decimal]]) -> None:
                 raise TasaNoDisponible(f"Tasa BCV directa {tasa} se desvia mas de 30% de la ultima guardada ({base})")
 
 
-def actualizar(cur, con_respaldo: bool = True) -> int:
+def actualizar(cur, con_respaldo: bool = True, verificar_vigencia_bcv: bool = False) -> int:
     """Trae las tasas de DolarApi (o del respaldo BCV_DIRECTO si falla) y guarda
     las fechas que falten o que tenian otra tasa automatica. Nunca pisa tasas
-    MANUAL. Devuelve cuantas filas cambio."""
-    tasas: list[tuple[date, Decimal]] = []
-    fuente = "DOLARAPI"
+    MANUAL. Si `verificar_vigencia_bcv=True` y la fecha mas reciente de DolarApi
+    es anterior al ultimo dia habil bancario, consulta tambien el BCV directo y
+    agrega la tasa si es mas reciente. Devuelve cuantas filas cambio."""
+    registros: list[tuple[date, Decimal, str]] = []
     error_primario: str | None = None
 
     try:
-        tasas = leer_dolarapi()
-        if not tasas:
+        tasas_primarias = leer_dolarapi()
+        if tasas_primarias:
+            registros = [(fecha, tasa, "DOLARAPI") for fecha, tasa in tasas_primarias]
+        else:
             error_primario = "DolarApi no devolvio tasas"
     except TasaNoDisponible as e:
         error_primario = str(e)
 
-    if not tasas and not con_respaldo:
+    if not registros and not con_respaldo:
         raise TasaNoDisponible(f"DolarApi no disponible ({error_primario})")
 
-    if not tasas:
+    if not registros:
         _log.warning("Fuente primaria DolarApi no disponible (%s); intentando respaldo BCV", error_primario)
         try:
-            tasas = leer_respaldo()
-            fuente = "BCV_DIRECTO"
+            tasas_respaldo = leer_respaldo()
         except TasaNoDisponible as e:
             raise TasaNoDisponible(f"DolarApi ({error_primario}) y respaldo BCV ({e}) no respondieron") from e
-        if not tasas:
+        if not tasas_respaldo:
             raise TasaNoDisponible(f"DolarApi ({error_primario}) y respaldo BCV no devolvieron tasas")
-        _validar_respaldo(cur, tasas)
+        _validar_respaldo(cur, tasas_respaldo)
+        registros = [(fecha, tasa, "BCV_DIRECTO") for fecha, tasa in tasas_respaldo]
+    elif con_respaldo and verificar_vigencia_bcv:
+        max_fecha_primaria = max(f for f, _, _ in registros)
+        if not esta_al_dia(max_fecha_primaria):
+            try:
+                tasas_bcv = leer_respaldo()
+                nuevas_bcv = [(f, t) for f, t in tasas_bcv if f > max_fecha_primaria]
+                if nuevas_bcv:
+                    _validar_respaldo(cur, nuevas_bcv)
+                    registros.extend((f, t, "BCV_DIRECTO") for f, t in nuevas_bcv)
+            except TasaNoDisponible as e:
+                _log.warning("DolarApi trajo fecha %s y respaldo BCV no aporto tasa mas nueva: %s", max_fecha_primaria, e)
 
     ahora = ahora_utc()
     cur.executemany(
@@ -446,7 +479,7 @@ def actualizar(cur, con_respaldo: bool = True) -> int:
         '"registradoEn" = EXCLUDED."registradoEn" '
         'WHERE "TasaCambio"."fuente" <> \'MANUAL\' '
         'AND ("TasaCambio"."tasa" <> EXCLUDED."tasa" OR "TasaCambio"."fuente" <> EXCLUDED."fuente")',
-        [(fecha, tasa, fuente, ahora) for fecha, tasa in tasas],
+        [(fecha, tasa, fuente, ahora) for fecha, tasa, fuente in registros],
     )
     return cur.rowcount
 
@@ -471,23 +504,44 @@ def ultima(cur) -> dict | None:
     return cur.fetchone()
 
 
-def tasa_actual(cur) -> dict:
-    """{"fecha", "tasa", "fuente"}: la ultima tasa publicada. Antes, si paso un
-    rato desde la ultima consulta, la pide a DolarApi; si DolarApi no responde
-    se usa la ultima guardada, y si no hay ninguna, TasaNoDisponible
-    (cobranzas puede cargarla a mano).
+def tasa_actual(
+    cur,
+    *,
+    con_respaldo: bool = True,
+    forzar: bool = False,
+    hacer_commit: bool = True,
+) -> dict:
+    """{"fecha", "tasa", "fuente"}: la ultima tasa publicada. Antes, si paso
+    un rato desde la ultima consulta (15 min normal, 5 min si la guardada no
+    cubre el ultimo dia habil), la pide a DolarApi y cruza contra BCV directo.
 
-    Llamarla ANTES de escribir nada en la transaccion: si actualiza, hace
-    commit para no perder las tasas aunque lo que sigue falle."""
+    Si `hacer_commit=False` (cuando se llama en medio de otra transaccion),
+    abre una conexion corta independiente para persistir las tasas sin tocar la
+    transaccion del llamador."""
     global _ultima_consulta
-    ahora = ahora_utc()
-    if _ultima_consulta is None or ahora - _ultima_consulta > timedelta(minutes=MINUTOS_ENTRE_CONSULTAS):
-        _ultima_consulta = ahora
-        try:
-            actualizar(cur, con_respaldo=False)
-            cur.connection.commit()
-        except TasaNoDisponible as e:
-            _log.warning("%s", e)
+    en_tests = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    fila_previa = ultima(cur)
+    al_dia = esta_al_dia(fila_previa["fecha"]) if fila_previa else False
+
+    if not en_tests or forzar:
+        ahora = ahora_utc()
+        minutos = MINUTOS_ENTRE_CONSULTAS if al_dia else MINUTOS_REINTENTO_ATRASADA
+        debe_consultar = forzar or _ultima_consulta is None or (ahora - _ultima_consulta > timedelta(minutes=minutos))
+        if debe_consultar:
+            _ultima_consulta = ahora
+            try:
+                if hacer_commit:
+                    actualizar(cur, con_respaldo=con_respaldo, verificar_vigencia_bcv=True)
+                    cur.connection.commit()
+                else:
+                    from app.core.db import get_connection
+
+                    with get_connection() as conn_tasa, conn_tasa.cursor() as cur_tasa:
+                        actualizar(cur_tasa, con_respaldo=con_respaldo, verificar_vigencia_bcv=True)
+                        conn_tasa.commit()
+            except TasaNoDisponible as e:
+                _log.warning("%s", e)
+
     fila = ultima(cur)
     if fila is None:
         raise TasaNoDisponible("No hay tasa BCV registrada")

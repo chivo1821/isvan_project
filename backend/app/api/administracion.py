@@ -130,26 +130,55 @@ def ver_bitacora(entidad: str, entidad_id: str, usuario: dict = Depends(requiere
         return bitacora.de(cur, entidad, entidad_id)
 
 
-def estado_tasa(cur) -> dict:
-    """La tasa con que se emitiria hoy y si sirve para emitir."""
-    fila = tasa_bcv.ultima(cur)
+def estado_tasa(cur, refrescar: bool = True) -> dict:
+    """La tasa con que se emitiria hoy, si cubre el ultimo dia habil y si sirve para emitir."""
+    if refrescar:
+        try:
+            fila = tasa_bcv.tasa_actual(cur, hacer_commit=False)
+        except tasa_bcv.TasaNoDisponible:
+            fila = None
+    else:
+        fila = tasa_bcv.ultima(cur)
     hoy = hoy_caracas()
+    ultimo_habil = tasa_bcv.ultimo_dia_habil(hoy)
     if not fila:
-        return {"fecha": None, "tasa": None, "fuente": None, "vigente": False, "diasDesde": None}
+        return {
+            "fecha": None,
+            "tasa": None,
+            "fuente": None,
+            "vigente": False,
+            "alDia": False,
+            "diasDesde": None,
+            "ultimoDiaHabil": ultimo_habil,
+        }
     dias = (hoy - fila["fecha"]).days
     return {
         "fecha": fila["fecha"],
         "tasa": float(fila["tasa"]),
         "fuente": fila["fuente"],
         "vigente": dias <= DIAS_TASA_VIGENTE,
+        "alDia": tasa_bcv.esta_al_dia(fila["fecha"], hoy),
         "diasDesde": dias,
+        "ultimoDiaHabil": ultimo_habil,
     }
 
 
 @router.get("/tasa/estado")
 def ver_estado_tasa(usuario: dict = Depends(get_current_user)):
     with get_connection() as conn, conn.cursor() as cur:
-        return estado_tasa(cur)
+        return estado_tasa(cur, refrescar=True)
+
+
+@router.post("/tasa/actualizar")
+def refrescar_tasa(usuario: dict = Depends(get_current_user)):
+    """Fuerza la actualizacion de la tasa BCV desde DolarApi + respaldo BCV directo."""
+    with get_connection() as conn, conn.cursor() as cur:
+        try:
+            cambios = tasa_bcv.actualizar(cur, con_respaldo=True, verificar_vigencia_bcv=True)
+            conn.commit()
+        except tasa_bcv.TasaNoDisponible as e:
+            raise HTTPException(503, str(e)) from e
+        return {**estado_tasa(cur, refrescar=False), "actualizadas": cambios}
 
 
 def tasa_para_emitir(cur) -> dict:

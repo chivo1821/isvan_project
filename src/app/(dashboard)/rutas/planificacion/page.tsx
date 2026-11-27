@@ -1,10 +1,9 @@
 import Link from "@/components/shared/enlace";
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { AjustesPlanificacionDialog } from "@/components/modules/rutas/ajustes-planificacion-dialog";
-import { RutaAgendaCard } from "@/components/modules/rutas/ruta-agenda-card";
+import { PlanificacionAgenda } from "@/components/modules/rutas/planificacion-agenda";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { apiGet } from "@/lib/api-client";
 import {
   diaCaracas,
@@ -14,10 +13,8 @@ import {
   sumarDias,
   type AjustePlanificacion,
   type Agenda,
-  type RutaAgenda,
 } from "@/lib/planificacion";
 import { getUsuarioActual } from "@/lib/session";
-import { cn } from "@/lib/utils";
 
 type SearchParams = { vista?: string; fecha?: string };
 type Vista = "dia" | "semana";
@@ -47,14 +44,6 @@ export default async function PlanificacionPage({ searchParams }: { searchParams
   const limiteMoto = ajustes.find((a) => a.clave === "motoDistanciaMaxKm");
 
   const dias = Array.from({ length: vista === "dia" ? 1 : 7 }, (_, i) => sumarDias(desde, i));
-  const porDia = new Map<string, RutaAgenda[]>(dias.map((d) => [d, []]));
-  for (const r of agenda.rutas) porDia.get(diaCaracas(r.salidaProgramada))?.push(r);
-
-  const todas = [...agenda.rutas, ...agenda.atrasadas];
-  const activas = todas.filter((r) => r.estado === "PLANIFICADA" || r.estado === "EN_TRANSITO");
-  const sinVehiculo = activas.filter((r) => !r.vehiculoId).length;
-  const conAvisos = activas.filter((r) => r.avisos.length > 0).length;
-  const pedidos = agenda.rutas.reduce((n, r) => n + r.pedidos.length, 0);
 
   const rango =
     vista === "dia" ? `${etiquetaDia(fecha, hoy)} · ${formatDia(fecha)}` : `${formatDia(desde)} – ${formatDia(hasta)}`;
@@ -111,105 +100,14 @@ export default async function PlanificacionPage({ searchParams }: { searchParams
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Resumen etiqueta="Rutas" valor={agenda.rutas.length} />
-        <Resumen etiqueta="Pedidos" valor={pedidos} />
-        <Resumen etiqueta="Sin vehículo" valor={sinVehiculo} alerta={sinVehiculo > 0} />
-        <Resumen etiqueta="Con avisos" valor={conAvisos} alerta={conAvisos > 0} />
-      </div>
-
-      {agenda.atrasadas.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="flex items-center gap-1.5 font-heading text-base font-medium">
-            <TriangleAlertIcon className="size-4 text-[var(--warning)]" aria-hidden />
-            Atrasadas: debían salir antes y siguen planificadas ({agenda.atrasadas.length})
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {agenda.atrasadas.map((r) => (
-              <RutaAgendaCard
-                key={r.id}
-                ruta={r}
-                vehiculos={agenda.vehiculos}
-                puedeProgramar={puedeProgramar}
-                mostrarFecha
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {vista === "dia" ? (
-        (porDia.get(fecha) ?? []).length === 0 ? (
-          <SinRutas puedeProgramar={puedeProgramar} />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {porDia.get(fecha)!.map((r) => (
-              <RutaAgendaCard key={r.id} ruta={r} vehiculos={agenda.vehiculos} puedeProgramar={puedeProgramar} />
-            ))}
-          </div>
-        )
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
-          {dias.map((d) => {
-            const delDia = porDia.get(d) ?? [];
-            return (
-              <section
-                key={d}
-                className={cn("space-y-2 rounded-lg border p-2", d === hoy ? "border-primary/50 bg-primary/5" : "bg-muted/30")}
-              >
-                <Link href={enlace("dia", d)} className="block rounded-md px-1 hover:bg-muted">
-                  <span className="block text-sm font-medium">{etiquetaDia(d, hoy)}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {formatDia(d)} · {delDia.length} ruta(s)
-                  </span>
-                </Link>
-                {delDia.length === 0 ? (
-                  <p className="px-1 py-3 text-xs text-muted-foreground">Sin salidas</p>
-                ) : (
-                  delDia.map((r) => (
-                    <RutaAgendaCard
-                      key={r.id}
-                      ruta={r}
-                      vehiculos={agenda.vehiculos}
-                      puedeProgramar={puedeProgramar}
-                      compacta
-                    />
-                  ))
-                )}
-              </section>
-            );
-          })}
-        </div>
-      )}
+      <PlanificacionAgenda
+        agenda={agenda}
+        vista={vista}
+        fecha={fecha}
+        hoy={hoy}
+        dias={dias}
+        puedeProgramar={puedeProgramar}
+      />
     </div>
-  );
-}
-
-function Resumen({ etiqueta, valor, alerta = false }: { etiqueta: string; valor: number; alerta?: boolean }) {
-  return (
-    <Card className="py-3">
-      <CardContent className="px-4">
-        <p className="text-xs text-muted-foreground">{etiqueta}</p>
-        <p className={cn("text-2xl font-bold tabular-nums", alerta && "text-warning")}>{valor}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SinRutas({ puedeProgramar }: { puedeProgramar: boolean }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
-        No hay rutas que salgan este día.
-        {puedeProgramar && (
-          <Button asChild variant="outline" size="sm">
-            <Link href="/rutas/nueva">
-              <PlusIcon />
-              Planificar una ruta
-            </Link>
-          </Button>
-        )}
-      </CardContent>
-    </Card>
   );
 }
