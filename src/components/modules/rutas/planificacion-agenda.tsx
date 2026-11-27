@@ -117,7 +117,7 @@ export function PlanificacionAgenda({
             aria-hidden
           />
           <Input
-            type="search"
+            type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar ruta, placa, conductor, cliente, código o factura…"

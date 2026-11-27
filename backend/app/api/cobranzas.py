@@ -64,7 +64,10 @@ def resumen():
         por_verificar = cur.fetchone()["porVerificar"]
         cur.execute("SELECT count(*) AS n FROM \"CuentaPortal\" WHERE \"estado\" = 'POR_VALIDAR'")
         cuentas = cur.fetchone()["n"]
-        tasa = tasa_bcv.ultima(cur)
+        try:
+            tasa = tasa_bcv.tasa_actual(cur, hacer_commit=False)
+        except tasa_bcv.TasaNoDisponible:
+            tasa = None
     return {
         "carteraUsd": float(sum((e.saldo_usd() for e in estados.values()), Decimal(0))),
         "vencidoUsd": float(sum((e.vencido_usd(p.hoy) for e in estados.values()), Decimal(0))),
@@ -515,7 +518,7 @@ def guardar_tasa(data: TasaManualRequest, usuario: dict = Depends(requiere_rol("
 def actualizar_tasas():
     with get_connection() as conn, conn.cursor() as cur:
         try:
-            cambios = tasa_bcv.actualizar(cur)
+            cambios = tasa_bcv.actualizar(cur, con_respaldo=True, verificar_vigencia_bcv=True)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, str(e)) from e
         conn.commit()
@@ -609,7 +612,7 @@ def tarea_tasa_bcv(authorization: str | None = Header(default=None)):
         conn.commit()
     with get_connection() as conn, conn.cursor() as cur:
         try:
-            cambios = tasa_bcv.actualizar(cur)
+            cambios = tasa_bcv.actualizar(cur, con_respaldo=True, verificar_vigencia_bcv=True)
         except tasa_bcv.TasaNoDisponible as e:
             raise HTTPException(503, str(e)) from e
         conn.commit()

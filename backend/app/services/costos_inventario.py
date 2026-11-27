@@ -48,13 +48,16 @@ def q8(valor: Decimal | int | float | str) -> Decimal:
 
 
 def resolver_tasa(cur, tasa_explicita: Decimal | None = None) -> Decimal | None:
-    """Devuelve la tasa explicita (si > 0) o la ultima tasa BCV registrada."""
+    """Devuelve la tasa explicita (si > 0) o la ultima tasa BCV actualizada."""
     if tasa_explicita is not None:
         t = Decimal(tasa_explicita)
         if t <= CERO:
             raise HTTPException(400, "La tasa debe ser mayor que cero")
         return q8(t)
-    fila = tasa_bcv.ultima(cur)
+    try:
+        fila = tasa_bcv.tasa_actual(cur, hacer_commit=False)
+    except tasa_bcv.TasaNoDisponible:
+        fila = None
     if fila and fila.get("tasa") is not None:
         return q8(Decimal(str(fila["tasa"])))
     return None

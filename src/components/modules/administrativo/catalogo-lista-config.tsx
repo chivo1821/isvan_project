@@ -23,6 +23,7 @@ export function ListaConfigDialog({
   const [abierto, setAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
+  const [nombre, setNombre] = useState<string>(lista.nombre);
   const [baseCosto, setBaseCosto] = useState<BaseCosto>(lista.baseCostoPorDefecto ?? "PROMEDIO");
   const [metodoMargen, setMetodoMargen] = useState<MetodoMargen>(lista.metodoMargen ?? "SOBRE_VENTA");
   const [margenObjetivoPct, setMargenObjetivoPct] = useState<string>(
@@ -30,10 +31,15 @@ export function ListaConfigDialog({
   );
 
   async function guardar() {
+    if (!nombre.trim()) {
+      toast.error("El nombre de la lista es obligatorio");
+      return;
+    }
     setGuardando(true);
     try {
       const pct = parseFloat(margenObjetivoPct.replace(",", "."));
       await apiPut(`/catalogo/listas/${lista.id}`, {
+        nombre: nombre.trim(),
         baseCostoPorDefecto: baseCosto,
         metodoMargen,
         margenObjetivoPct: Number.isNaN(pct) ? null : pct,
@@ -68,6 +74,17 @@ export function ListaConfigDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-sm">
+          <div className="space-y-1.5">
+            <Label htmlFor="cfg-nombre">Nombre / segmento de clientes</Label>
+            <Input
+              id="cfg-nombre"
+              className="h-8 text-xs sm:text-sm"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="ej. Clientes Tipo A — Mayoristas"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="cfg-base">Base de costo por defecto</Label>
             <Select value={baseCosto} onValueChange={(v) => setBaseCosto(v as BaseCosto)}>

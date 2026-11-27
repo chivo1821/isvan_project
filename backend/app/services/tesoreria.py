@@ -121,7 +121,10 @@ def obtener_tasa_fecha(cur, fecha: date) -> Decimal | None:
 
 
 def _tasa_actual_valor(cur) -> tuple[Decimal | None, date | None]:
-    fila = tasa_bcv.ultima(cur)
+    try:
+        fila = tasa_bcv.tasa_actual(cur, hacer_commit=False)
+    except tasa_bcv.TasaNoDisponible:
+        fila = None
     if not fila:
         return None, None
     return Decimal(str(fila["tasa"])), fila["fecha"]

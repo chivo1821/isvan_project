@@ -100,6 +100,12 @@ class FichaFiscal(BaseModel):
     listaPrecioCodigo: str | None = Field(default=None, max_length=40)
 
 
+class AsignarListaClientesDatos(BaseModel):
+    empresaId: str
+    clienteIds: list[str] = Field(min_length=1, max_length=1000)
+    listaPrecioCodigo: str | None = Field(default=None, max_length=40)
+
+
 def _producto_json(p: dict) -> dict:
     actualizado_costos = p.get("costosActualizadosEn")
     return {
@@ -372,6 +378,98 @@ def listar_listas(empresaId: str, usuario: dict = Depends(requiere_permiso("cata
             (empresaId,),
         )
         return [_lista_json(f) for f in cur.fetchall()]
+
+
+@router.post("/listas/inicializar-abc", status_code=201)
+def inicializar_listas_abc(empresaId: str, usuario: dict = Depends(requiere_permiso("precios.editar"))):
+    """Crea las listas estandar por tipo de cliente (A, B y C) si no existen."""
+    plantillas = [
+        ("A", "Clientes Tipo A"),
+        ("B", "Clientes Tipo B"),
+        ("C", "Clientes Tipo C"),
+    ]
+    with get_connection() as conn, conn.cursor() as cur:
+        empresa = empresas.exigir(cur, usuario, empresaId)
+        creadas = 0
+        for codigo, nombre in plantillas:
+            cur.execute(
+                'INSERT INTO "ListaPrecio" ("id", "organizacionId", "empresaId", "codigo", "nombre") '
+                "VALUES ('lista-' || substr(md5(%s || %s), 1, 16), %s, %s, %s, %s) "
+                'ON CONFLICT ("empresaId", "codigo") DO NOTHING',
+                (empresaId, codigo, empresa["organizacionId"], empresaId, codigo, nombre),
+            )
+            creadas += cur.rowcount
+        if creadas:
+            bitacora.registrar(
+                cur, usuario["id"], "EmpresaFiscal", empresaId, "inicializar_listas_abc", None, {"creadas": creadas}
+            )
+        cur.execute(
+            'SELECT l."id", l."codigo", l."nombre", l."activa", '
+            'l."baseCostoPorDefecto", l."margenObjetivoPct", l."metodoMargen", '
+            'count(i."id") AS "productosConPrecio", '
+            '(SELECT count(*) FROM "Cliente" c JOIN "EmpresaFiscal" e ON e."codigo" = c."empresa"::text '
+            ' WHERE e."id" = l."empresaId" AND c."listaPrecioCodigo" = l."codigo") AS "clientes" '
+            'FROM "ListaPrecio" l LEFT JOIN "ListaPrecioItem" i ON i."listaId" = l."id" '
+            'WHERE l."empresaId" = %s GROUP BY l."id" ORDER BY l."codigo"',
+            (empresaId,),
+        )
+        salida = [_lista_json(f) for f in cur.fetchall()]
+        conn.commit()
+    return salida
+
+
+@router.get("/listas/comparativa")
+def comparativa_listas(empresaId: str, usuario: dict = Depends(requiere_permiso("catalogo.ver"))):
+    """Devuelve todos los productos activos y sus precios en cada lista de la empresa
+    para comparar lado a lado (ej. Clientes Tipo A vs B vs C)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        empresas.exigir(cur, usuario, empresaId)
+        cur.execute(
+            'SELECT l."id", l."codigo", l."nombre", l."activa", '
+            'l."baseCostoPorDefecto", l."margenObjetivoPct", l."metodoMargen", '
+            'count(i."id") AS "productosConPrecio", '
+            '(SELECT count(*) FROM "Cliente" c JOIN "EmpresaFiscal" e ON e."codigo" = c."empresa"::text '
+            ' WHERE e."id" = l."empresaId" AND c."listaPrecioCodigo" = l."codigo") AS "clientes" '
+            'FROM "ListaPrecio" l LEFT JOIN "ListaPrecioItem" i ON i."listaId" = l."id" '
+            'WHERE l."empresaId" = %s GROUP BY l."id" ORDER BY l."codigo"',
+            (empresaId,),
+        )
+        listas = [_lista_json(f) for f in cur.fetchall()]
+        cur.execute(
+            'SELECT p."id", p."codigo", p."nombre", p."grupo", '
+            'p."ultimoCostoCajaUsd", p."costoPromedioCajaUsd", p."costoPresupuestarioCajaUsd" '
+            'FROM "Producto" p WHERE p."empresaId" = %s AND p."activo" ORDER BY p."grupo", p."nombre" LIMIT 2000',
+            (empresaId,),
+        )
+        productos = cur.fetchall()
+        cur.execute(
+            'SELECT i."productoId", i."listaId", i."precioCajaUsd" '
+            'FROM "ListaPrecioItem" i JOIN "ListaPrecio" l ON l."id" = i."listaId" '
+            'WHERE l."empresaId" = %s',
+            (empresaId,),
+        )
+        precios_map: dict[str, dict[str, float]] = {}
+        for f in cur.fetchall():
+            precios_map.setdefault(f["productoId"], {})[f["listaId"]] = float(f["precioCajaUsd"])
+
+        filas = [
+            {
+                "id": p["id"],
+                "codigo": int(p["codigo"]),
+                "nombre": p["nombre"],
+                "grupo": p.get("grupo"),
+                "ultimoCostoCajaUsd": float(p["ultimoCostoCajaUsd"]) if p.get("ultimoCostoCajaUsd") is not None else None,
+                "costoPromedioCajaUsd": (
+                    float(p["costoPromedioCajaUsd"]) if p.get("costoPromedioCajaUsd") is not None else None
+                ),
+                "costoPresupuestarioCajaUsd": (
+                    float(p["costoPresupuestarioCajaUsd"]) if p.get("costoPresupuestarioCajaUsd") is not None else None
+                ),
+                "precios": {l["id"]: precios_map.get(p["id"], {}).get(l["id"]) for l in listas},
+            }
+            for p in productos
+        ]
+    return {"listas": listas, "productos": filas}
 
 
 @router.post("/listas", status_code=201)
@@ -686,23 +784,72 @@ def editar_ficha(cliente_id: str, data: FichaFiscal, usuario: dict = Depends(req
     return {**valores, "id": cliente_id}
 
 
+@router.put("/clientes/lista-precio")
+def asignar_lista_clientes(
+    data: AsignarListaClientesDatos,
+    usuario: dict = Depends(requiere_permiso("clientes.ficha_fiscal")),
+):
+    """Asigna (o quita) masivamente una lista de precios (ej. A, B, C) a un conjunto de clientes."""
+    codigo_lista = data.listaPrecioCodigo.strip() if data.listaPrecioCodigo and data.listaPrecioCodigo.strip() else None
+    with get_connection() as conn, conn.cursor() as cur:
+        empresa = empresas.exigir(cur, usuario, data.empresaId)
+        if codigo_lista is not None:
+            cur.execute(
+                'SELECT 1 FROM "ListaPrecio" WHERE "empresaId" = %s AND "codigo" = %s',
+                (data.empresaId, codigo_lista),
+            )
+            if not cur.fetchone():
+                raise HTTPException(404, f"La lista de precios '{codigo_lista}' no existe en esta empresa")
+        cur.execute(
+            'UPDATE "Cliente" SET "listaPrecioCodigo" = %s '
+            'WHERE "id" = ANY(%s) AND "empresa"::text = %s',
+            (codigo_lista, data.clienteIds, empresa["codigo"]),
+        )
+        actualizados = cur.rowcount
+        bitacora.registrar(
+            cur,
+            usuario["id"],
+            "Cliente",
+            data.empresaId,
+            "asignar_lista_precio",
+            None,
+            {"listaPrecioCodigo": codigo_lista, "actualizados": actualizados, "clienteIds": data.clienteIds[:100]},
+        )
+        conn.commit()
+    return {"actualizados": actualizados, "listaPrecioCodigo": codigo_lista}
+
+
 @router.get("/clientes")
 def listar_clientes(
     empresaId: str,
     buscar: str | None = Query(default=None, max_length=80),
+    listaPrecio: str | None = Query(default=None, max_length=40),
     usuario: dict = Depends(requiere_permiso("catalogo.ver")),
 ):
     """Clientes de la empresa con su ficha fiscal y comercial (para pedidos
-    y para completar la ficha)."""
+    y para completar la ficha). Soporta filtro por listaPrecio (codigo o 'SIN_LISTA')."""
     with get_connection() as conn, conn.cursor() as cur:
         empresa = empresas.exigir(cur, usuario, empresaId)
+        condiciones = ['"empresa"::text = %s']
+        params: list = [empresa["codigo"]]
+        if buscar:
+            termino = buscar.strip()
+            condiciones.append('("nombre" ILIKE %s OR "codigo" = %s OR "razonSocial" ILIKE %s OR "rifCedula" ILIKE %s)')
+            params += [f"%{termino}%", termino, f"%{termino}%", f"%{termino}%"]
+        if listaPrecio:
+            lp = listaPrecio.strip()
+            if lp == "SIN_LISTA":
+                condiciones.append('("listaPrecioCodigo" IS NULL OR "listaPrecioCodigo" = \'\')')
+            else:
+                condiciones.append('"listaPrecioCodigo" = %s')
+                params.append(lp)
         cur.execute(
             'SELECT "id", "codigo", "nombre", "ciudad", "rifCedula", "razonSocial", "domicilioFiscal", '
             '"contribuyenteEspecial", "porcentajeRetencionIva", "limiteCreditoUsd", "diasCredito", "rutaVenta", '
-            '"tipoVenta", "listaPrecioCodigo" FROM "Cliente" WHERE "empresa"::text = %s '
-            'AND (%s::text IS NULL OR "nombre" ILIKE %s OR "codigo" = %s OR "razonSocial" ILIKE %s OR "rifCedula" ILIKE %s) '
+            '"tipoVenta", "listaPrecioCodigo" FROM "Cliente" '
+            f'WHERE {" AND ".join(condiciones)} '
             'ORDER BY "nombre" LIMIT 300',
-            (empresa["codigo"], buscar, f"%{buscar}%", (buscar or "").strip(), f"%{buscar}%", f"%{buscar}%"),
+            params,
         )
         return [
             {**c, "limiteCreditoUsd": float(c["limiteCreditoUsd"]) if c["limiteCreditoUsd"] is not None else None}

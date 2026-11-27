@@ -59,6 +59,22 @@ export type ListaPrecio = {
   metodoMargen?: MetodoMargen;
 };
 
+export type ComparativaProducto = {
+  id: string;
+  codigo: number;
+  nombre: string;
+  grupo: string | null;
+  ultimoCostoCajaUsd: number | null;
+  costoPromedioCajaUsd: number | null;
+  costoPresupuestarioCajaUsd: number | null;
+  precios: Record<string, number | null>;
+};
+
+export type ComparativaPrecios = {
+  listas: ListaPrecio[];
+  productos: ComparativaProducto[];
+};
+
 export type PrecioProducto = Producto & {
   precioCajaUsd: number | null;
   margenPct?: number | null;
@@ -441,7 +457,15 @@ export type FilaLibro = {
   retencionIvaBs: number;
 };
 
-export type EstadoTasa = { fecha: string | null; tasa: number | null; fuente: string | null; vigente: boolean; diasDesde: number | null };
+export type EstadoTasa = {
+  fecha: string | null;
+  tasa: number | null;
+  fuente: string | null;
+  vigente: boolean;
+  alDia?: boolean;
+  diasDesde: number | null;
+  ultimoDiaHabil?: string | null;
+};
 
 export const TIPO_DOCUMENTO: Record<TipoDocumento, string> = {
   FA: "Factura",

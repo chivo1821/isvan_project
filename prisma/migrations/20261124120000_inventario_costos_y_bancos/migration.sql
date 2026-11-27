@@ -38,6 +38,7 @@ ALTER TABLE "MovimientoInventario"
     ADD COLUMN "numeroFacturaCompra" TEXT;
 
 -- CreateIndex
+-- destructivo-aprobado: tabla MovimientoInventario aun sin trafico en produccion (modulo administrativo desactivado), indice pequeno
 CREATE INDEX "MovimientoInventario_empresaId_fecha_idx" ON "MovimientoInventario"("empresaId", "fecha");
 
 -- CreateTable: HistorialCostoProducto
