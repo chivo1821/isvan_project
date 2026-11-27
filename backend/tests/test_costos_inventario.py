@@ -98,17 +98,37 @@ def entorno_costos(db, cliente_api, usuario):
 
     crear_producto.seq = 0  # type: ignore[attr-defined]
 
-    return {
-        "api": api,
-        "admin": admin,
-        "empresaId": emp_id,
-        "almacenA": alm_a,
-        "almacenB": alm_b,
-        "clienteId": cli_id,
-        "listaCodigo": f"LP-{sufijo}",
-        "crear_producto": crear_producto,
-        "sufijo": sufijo,
-    }
+    try:
+        yield {
+            "api": api,
+            "admin": admin,
+            "empresaId": emp_id,
+            "almacenA": alm_a,
+            "almacenB": alm_b,
+            "clienteId": cli_id,
+            "listaCodigo": f"LP-{sufijo}",
+            "crear_producto": crear_producto,
+            "sufijo": sufijo,
+        }
+    finally:
+        db.rollback()
+        db.execute(
+            'DELETE FROM "DespachoItem" WHERE "despachoId" IN '
+            '(SELECT "id" FROM "Despacho" WHERE "destinoClienteId" = %s)',
+            (cli_id,),
+        )
+        db.execute('DELETE FROM "Despacho" WHERE "destinoClienteId" = %s', (cli_id,))
+        db.execute('DELETE FROM "DocumentoCobro" WHERE "codigoCliente" = %s', (f"C-{sufijo}",))
+        db.execute('DELETE FROM "Venta" WHERE "empresa" = \'ISVAN\' AND "numDoc" LIKE \'FA-%\'')
+        db.execute('DELETE FROM "Configuracion" WHERE "clave" LIKE %s', (f"modulo.%.{emp_id}",))
+        db.execute(
+            'UPDATE "EmpresaFiscal" SET "rif" = NULL, "domicilioFiscal" = NULL, '
+            '"contribuyenteEspecial" = FALSE, "agenteRetencionIva" = FALSE, "porcentajeRetencionIva" = NULL '
+            'WHERE "id" = %s',
+            (emp_id,),
+        )
+        db.execute('DELETE FROM "TasaCambio"')
+        db.commit()
 
 
 def test_tres_costos_cpp_movil_seniat_y_recalculo_presupuestario(entorno_costos, db, cliente_api, usuario):

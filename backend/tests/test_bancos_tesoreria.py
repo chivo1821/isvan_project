@@ -21,6 +21,17 @@ from app.core.fechas import hoy_caracas
 from app.services import extracto_bancario
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _limpiar_tasa_al_final(base_url):
+    yield
+    with psycopg.connect(base_url) as conn:
+        conn.execute('DELETE FROM "TasaCambio"')
+        conn.execute(
+            'DELETE FROM "Configuracion" WHERE "clave" LIKE \'modulo.%.emp-isvan\' OR "clave" LIKE \'modulo.%.emp-tralog\''
+        )
+        conn.commit()
+
+
 @pytest.fixture()
 def entorno_bancos(db, usuario, cliente_api):
     """Empresa fiscal aislada con módulo `bancos` encendido y tasa BCV = 50 Bs/USD."""

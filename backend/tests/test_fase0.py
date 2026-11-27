@@ -16,7 +16,7 @@ def test_empresas_iniciales_sin_datos_fiscales(cliente_api, usuario):
     por_codigo = {e["codigo"]: e for e in r.json()}
     assert {"ISVAN", "TRALOG"} <= set(por_codigo)
     assert "rif" in por_codigo["TRALOG"]["faltaParaFacturar"]
-    assert por_codigo["TRALOG"]["modulos"] == {"ventas": False, "inventario": False}
+    assert por_codigo["TRALOG"]["modulos"] == {"ventas": False, "inventario": False, "bancos": False}
 
 
 DATOS_TRALOG = {
